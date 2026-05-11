@@ -1,0 +1,238 @@
+import type {
+  AppData,
+  Ingredient,
+  Nutrition,
+  PriceImpactRow,
+  Product,
+  ProductCostSummary,
+  ProductNutritionSummary,
+  RecipeItem,
+} from "./types";
+
+export const TAX_RATE = 0.1;
+
+const zeroNutrition: Nutrition = {
+  calories: 0,
+  protein: 0,
+  fat: 0,
+  carbs: 0,
+  salt: 0,
+};
+
+export function priceWithTax(price: number, taxType: Ingredient["taxType"]): number {
+  return taxType === "税抜" ? price * (1 + TAX_RATE) : price;
+}
+
+export function pricePerGram(ingredient: Ingredient): number {
+  if (!ingredient.packageAmountGram) return 0;
+  return priceWithTax(ingredient.price, ingredient.taxType) / ingredient.packageAmountGram;
+}
+
+export function ingredientUnitLabel(ingredient: Ingredient): string {
+  return ingredient.packageUnit || "g";
+}
+
+export function amountToGram(ingredient: Ingredient, amount: number): number {
+  const unit = ingredientUnitLabel(ingredient);
+  if (unit === "g" || unit === "ml") return amount;
+  return amount * (ingredient.gramPerUnit || 0);
+}
+
+export function ingredientCost(ingredient: Ingredient, amount: number): number {
+  return pricePerGram(ingredient) * amount;
+}
+
+export function recipeItemAmountGram(item: RecipeItem): number {
+  if (item.usageType === "count") {
+    if (!item.totalCount) return 0;
+    return (item.baseAmountGram * item.usedCount) / item.totalCount;
+  }
+  if (item.usageType === "fraction") {
+    if (!item.fractionDenominator) return 0;
+    return item.baseAmountGram / item.fractionDenominator;
+  }
+  return item.amountGram;
+}
+
+export function isPackagingIngredient(ingredient: Ingredient): boolean {
+  return /包材|包装|箱|袋|シール|台紙|カップ|トレー/.test(`${ingredient.category} ${ingredient.name}`);
+}
+
+export function getProductRecipeItems(recipeItems: RecipeItem[], productId: string): RecipeItem[] {
+  return recipeItems.filter((item) => item.productId === productId);
+}
+
+export function totalRecipeWeight(recipeItems: RecipeItem[], productId: string, ingredients: Ingredient[]): number {
+  return getProductRecipeItems(recipeItems, productId).reduce((sum, item) => {
+    const ingredient = ingredients.find((candidate) => candidate.id === item.ingredientId);
+    return ingredient ? sum + amountToGram(ingredient, recipeItemAmountGram(item)) : sum;
+  }, 0);
+}
+
+export function calculateProductCost(
+  product: Product,
+  ingredients: Ingredient[],
+  recipeItems: RecipeItem[],
+): ProductCostSummary {
+  const productItems = getProductRecipeItems(recipeItems, product.id);
+  const materialTotalCost = productItems.reduce((sum, item) => {
+    const ingredient = ingredients.find((candidate) => candidate.id === item.ingredientId);
+    if (!ingredient || isPackagingIngredient(ingredient)) return sum;
+    return sum + ingredientCost(ingredient, recipeItemAmountGram(item));
+  }, 0);
+  const packagingTotalCost = productItems.reduce((sum, item) => {
+    const ingredient = ingredients.find((candidate) => candidate.id === item.ingredientId);
+    if (!ingredient || !isPackagingIngredient(ingredient)) return sum;
+    return sum + ingredientCost(ingredient, recipeItemAmountGram(item));
+  }, 0);
+  const totalCost = materialTotalCost + packagingTotalCost;
+  const materialCostPerPiece = product.yieldCount ? materialTotalCost / product.yieldCount : 0;
+  const packagingCostPerPiece = product.yieldCount ? packagingTotalCost / product.yieldCount : 0;
+  const costPerPiece = product.yieldCount ? totalCost / product.yieldCount : 0;
+  const sellingPrice = priceWithTax(product.sellingPrice, product.taxType);
+  const materialCostRate = sellingPrice ? (materialCostPerPiece / sellingPrice) * 100 : 0;
+  const packagingCostRate = sellingPrice ? (packagingCostPerPiece / sellingPrice) * 100 : 0;
+  const costRate = sellingPrice ? (costPerPiece / sellingPrice) * 100 : 0;
+
+  return {
+    product,
+    materialTotalCost,
+    packagingTotalCost,
+    totalCost,
+    materialCostPerPiece,
+    packagingCostPerPiece,
+    costPerPiece,
+    materialCostRate,
+    packagingCostRate,
+    costRate,
+    totalRecipeWeightGram: totalRecipeWeight(recipeItems, product.id, ingredients),
+  };
+}
+
+export function nutritionForAmount(ingredient: Ingredient, amountGram: number): Nutrition {
+  return {
+    calories: ((ingredient.caloriesPer100g ?? 0) * amountGram) / 100,
+    protein: ((ingredient.proteinPer100g ?? 0) * amountGram) / 100,
+    fat: ((ingredient.fatPer100g ?? 0) * amountGram) / 100,
+    carbs: ((ingredient.carbsPer100g ?? 0) * amountGram) / 100,
+    salt: ((ingredient.saltPer100g ?? 0) * amountGram) / 100,
+  };
+}
+
+export function addNutrition(a: Nutrition, b: Nutrition): Nutrition {
+  return {
+    calories: a.calories + b.calories,
+    protein: a.protein + b.protein,
+    fat: a.fat + b.fat,
+    carbs: a.carbs + b.carbs,
+    salt: a.salt + b.salt,
+  };
+}
+
+export function divideNutrition(nutrition: Nutrition, divisor: number): Nutrition {
+  if (!divisor) return { ...zeroNutrition };
+  return {
+    calories: nutrition.calories / divisor,
+    protein: nutrition.protein / divisor,
+    fat: nutrition.fat / divisor,
+    carbs: nutrition.carbs / divisor,
+    salt: nutrition.salt / divisor,
+  };
+}
+
+export function multiplyNutrition(nutrition: Nutrition, multiplier: number): Nutrition {
+  return {
+    calories: nutrition.calories * multiplier,
+    protein: nutrition.protein * multiplier,
+    fat: nutrition.fat * multiplier,
+    carbs: nutrition.carbs * multiplier,
+    salt: nutrition.salt * multiplier,
+  };
+}
+
+export function hasNutrition(ingredient: Ingredient): boolean {
+  return [
+    ingredient.caloriesPer100g,
+    ingredient.proteinPer100g,
+    ingredient.fatPer100g,
+    ingredient.carbsPer100g,
+    ingredient.saltPer100g,
+  ].every((value) => value !== null && Number.isFinite(value));
+}
+
+export function calculateProductNutrition(
+  product: Product,
+  ingredients: Ingredient[],
+  recipeItems: RecipeItem[],
+): ProductNutritionSummary {
+  const productItems = getProductRecipeItems(recipeItems, product.id);
+  const totalNutrition = productItems.reduce((sum, item) => {
+    const ingredient = ingredients.find((candidate) => candidate.id === item.ingredientId);
+    if (!ingredient || isPackagingIngredient(ingredient)) return sum;
+    return addNutrition(sum, nutritionForAmount(ingredient, amountToGram(ingredient, recipeItemAmountGram(item))));
+  }, zeroNutrition);
+  const basisWeightGram = product.afterBakeWeightGram || totalRecipeWeight(recipeItems, product.id, ingredients);
+  const nutritionPerPiece = divideNutrition(totalNutrition, product.yieldCount);
+  const nutritionPer100g = multiplyNutrition(divideNutrition(totalNutrition, basisWeightGram), 100);
+  const missingNutritionIngredientIds = productItems
+    .map((item) => ingredients.find((ingredient) => ingredient.id === item.ingredientId))
+    .filter((ingredient): ingredient is Ingredient => Boolean(ingredient))
+    .filter((ingredient) => !hasNutrition(ingredient))
+    .map((ingredient) => ingredient.id);
+
+  return {
+    product,
+    totalNutrition,
+    nutritionPerPiece,
+    nutritionPer100g,
+    basisWeightGram,
+    missingNutritionIngredientIds,
+  };
+}
+
+export function calculatePriceImpact(
+  data: AppData,
+  ingredientId: string,
+  newPrice: number,
+): PriceImpactRow[] {
+  const ingredient = data.ingredients.find((item) => item.id === ingredientId);
+  if (!ingredient) return [];
+
+  const affectedProductIds = new Set(
+    data.recipeItems.filter((item) => item.ingredientId === ingredientId).map((item) => item.productId),
+  );
+  const newIngredients = data.ingredients.map((item) => (item.id === ingredientId ? { ...item, price: newPrice } : item));
+
+  return data.products
+    .filter((product) => affectedProductIds.has(product.id))
+    .map((product) => {
+      const oldCost = calculateProductCost(product, data.ingredients, data.recipeItems);
+      const newCost = calculateProductCost(product, newIngredients, data.recipeItems);
+      return {
+        product,
+        oldCost: oldCost.costPerPiece,
+        newCost: newCost.costPerPiece,
+        increase: newCost.costPerPiece - oldCost.costPerPiece,
+        oldCostRate: oldCost.costRate,
+        newCostRate: newCost.costRate,
+        costRateIncreasePoint: newCost.costRate - oldCost.costRate,
+        recommendedPrice: product.targetCostRate ? newCost.costPerPiece / (product.targetCostRate / 100) : 0,
+      };
+    })
+    .sort((a, b) => b.increase - a.increase);
+}
+
+export function collectAllergens(productId: string, ingredients: Ingredient[], recipeItems: RecipeItem[]): string[] {
+  const productIngredientIds = new Set(getProductRecipeItems(recipeItems, productId).map((item) => item.ingredientId));
+  const allergens = ingredients
+    .filter((ingredient) => productIngredientIds.has(ingredient.id))
+    .flatMap((ingredient) => [...ingredient.allergens, ingredient.otherAllergen].filter(Boolean));
+  return [...new Set(allergens)].sort();
+}
+
+export function collectLabelNames(productId: string, ingredients: Ingredient[], recipeItems: RecipeItem[]): string[] {
+  return getProductRecipeItems(recipeItems, productId)
+    .map((item) => ingredients.find((ingredient) => ingredient.id === item.ingredientId))
+    .filter((ingredient): ingredient is Ingredient => Boolean(ingredient))
+    .map((ingredient) => ingredient.labelName || ingredient.name);
+}
