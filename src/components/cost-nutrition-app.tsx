@@ -50,6 +50,16 @@ type OcrPriceCandidate = {
   newPrice: number;
   confidence: "高" | "中";
 };
+type IngredientVisionOcrResult = {
+  name: string;
+  packageName: string;
+  supplier: string;
+  packageAmount: number | null;
+  packageUnit: string;
+  price: number | null;
+  memo: string;
+  confidence: "high" | "medium" | "low";
+};
 
 function yen(value: number) {
   return new Intl.NumberFormat("ja-JP", { style: "currency", currency: "JPY", maximumFractionDigits: 1 }).format(value || 0);
@@ -289,6 +299,69 @@ function parseIngredientOcrText(text: string, base: Ingredient): Ingredient {
   };
 }
 
+function fileToImageDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("画像を読み込めませんでした。JPGまたはPNGで試してください。"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("画像形式を読み込めませんでした。iPad設定で「互換性優先」にしてJPGで撮影してください。"));
+    image.src = src;
+  });
+}
+
+async function preprocessImageForOcr(file: File): Promise<string> {
+  const dataUrl = await fileToImageDataUrl(file);
+  const image = await loadImage(dataUrl);
+  const maxSize = 1800;
+  const scale = Math.min(1, maxSize / Math.max(image.naturalWidth, image.naturalHeight));
+  const width = Math.max(1, Math.round(image.naturalWidth * scale));
+  const height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) return dataUrl;
+
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, width, height);
+  context.drawImage(image, 0, 0, width, height);
+
+  const imageData = context.getImageData(0, 0, width, height);
+  const data = imageData.data;
+  for (let index = 0; index < data.length; index += 4) {
+    const gray = data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114;
+    const contrasted = gray > 175 ? 255 : gray < 95 ? 0 : gray * 1.35 - 45;
+    const value = Math.max(0, Math.min(255, contrasted));
+    data[index] = value;
+    data[index + 1] = value;
+    data[index + 2] = value;
+  }
+  context.putImageData(imageData, 0, 0);
+  return canvas.toDataURL("image/jpeg", 0.78);
+}
+
+function ingredientFromVisionResult(result: IngredientVisionOcrResult, base: Ingredient): Ingredient {
+  const generatedText = [
+    result.name ? `原材料名: ${result.name}` : "",
+    result.packageName ? `製品名: ${result.packageName}` : "",
+    result.supplier ? `仕入先: ${result.supplier}` : "",
+    result.packageAmount ? `内容量: ${result.packageAmount}${result.packageUnit}` : "",
+    result.price ? `仕入価格: ${result.price}円` : "",
+  ].filter(Boolean).join("\n");
+  return {
+    ...parseIngredientOcrText(generatedText, base),
+    memo: [base.memo, result.memo, `AI OCR信頼度: ${result.confidence}`].filter(Boolean).join("\n"),
+  };
+}
+
 const emptyIngredient = (): Ingredient => ({
   id: "",
   name: "",
@@ -354,6 +427,9 @@ export function CostNutritionApp() {
   const [storeModalMode, setStoreModalMode] = useState<StoreModalMode>("switch");
   const [ingredientOcrText, setIngredientOcrText] = useState("原材料名: 全卵\n製品名: 赤玉 Lサイズ 10個\n仕入先: 山手鶏卵\n内容量: 10個\n仕入価格: 420円");
   const [ingredientOcrImageName, setIngredientOcrImageName] = useState("");
+  const [ingredientOcrImage, setIngredientOcrImage] = useState<File | null>(null);
+  const [ingredientOcrStatus, setIngredientOcrStatus] = useState("");
+  const [isIngredientOcrReading, setIsIngredientOcrReading] = useState(false);
   const [ingredientOcrCandidate, setIngredientOcrCandidate] = useState<Ingredient | null>(null);
 
   useEffect(() => {
@@ -447,6 +523,53 @@ export function CostNutritionApp() {
   function analyzeIngredientOcr() {
     const candidate = parseIngredientOcrText(ingredientOcrText, ingredientForm);
     setIngredientOcrCandidate(candidate);
+  }
+
+  async function readIngredientImageWithOcr() {
+    if (!ingredientOcrImage) {
+      alert("撮影画像を選択してください。");
+      return;
+    }
+    setIsIngredientOcrReading(true);
+    setIngredientOcrStatus("画像を圧縮中...");
+    try {
+      const preprocessedImage = await preprocessImageForOcr(ingredientOcrImage);
+      setIngredientOcrStatus("OpenAI Visionで読み取り中... 撮影1回につき1リクエストです。");
+      const response = await fetch("/api/ingredient-vision-ocr", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageDataUrl: preprocessedImage }),
+      });
+
+      const json = await response.json();
+      if (!response.ok) {
+        throw new Error(json.error || "OpenAI Vision OCRに失敗しました。");
+      }
+
+      const result = json.result as IngredientVisionOcrResult;
+      const text = [
+        result.name ? `原材料名: ${result.name}` : "",
+        result.packageName ? `製品名: ${result.packageName}` : "",
+        result.supplier ? `仕入先: ${result.supplier}` : "",
+        result.packageAmount ? `内容量: ${result.packageAmount}${result.packageUnit}` : "",
+        result.price ? `仕入価格: ${result.price}円` : "",
+        result.memo ? `メモ: ${result.memo}` : "",
+      ].filter(Boolean).join("\n");
+
+      if (!result.name && !result.packageName && !result.price) {
+        setIngredientOcrText(text);
+        setIngredientOcrCandidate(null);
+        setIngredientOcrStatus("登録に必要な情報を抽出できませんでした。画像を撮り直すか、読み取り結果を手直ししてください。");
+        return;
+      }
+      setIngredientOcrText(text);
+      setIngredientOcrCandidate(ingredientFromVisionResult(result, ingredientForm));
+      setIngredientOcrStatus("読み取り完了。確認画面で内容を確認してください。");
+    } catch (error) {
+      setIngredientOcrStatus(error instanceof Error ? error.message : "OCR読み取りに失敗しました。");
+    } finally {
+      setIsIngredientOcrReading(false);
+    }
   }
 
   function applyIngredientOcrCandidate() {
@@ -893,10 +1016,15 @@ export function CostNutritionApp() {
                   type="file"
                   accept="image/*"
                   capture="environment"
-                  onChange={(event) => setIngredientOcrImageName(event.target.files?.[0]?.name ?? "")}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] ?? null;
+                    setIngredientOcrImage(file);
+                    setIngredientOcrImageName(file?.name ?? "");
+                    setIngredientOcrStatus("");
+                  }}
                 />
                 <span className="text-xs font-bold text-neutral-500">
-                  {ingredientOcrImageName ? `選択中: ${ingredientOcrImageName}` : "画像選択後、読み取り結果を右に貼り付けます。"}
+                  {ingredientOcrImageName ? `選択中: ${ingredientOcrImageName}` : "iPadではここからカメラ撮影できます。"}
                 </span>
               </label>
               <label className="grid gap-1 font-bold text-neutral-600">
@@ -907,12 +1035,21 @@ export function CostNutritionApp() {
                   onChange={(event) => setIngredientOcrText(event.target.value)}
                 />
               </label>
-              <button className="self-end rounded-md bg-teal-700 px-4 py-2 font-bold text-white" onClick={analyzeIngredientOcr}>
-                読み込み確認
-              </button>
+              <div className="grid gap-2 self-end">
+                <button
+                  className="rounded-md bg-teal-700 px-4 py-2 font-bold text-white disabled:bg-neutral-300"
+                  disabled={isIngredientOcrReading}
+                  onClick={readIngredientImageWithOcr}
+                >
+                  {isIngredientOcrReading ? "AI読み取り中" : "AIで画像読み取り"}
+                </button>
+                <button className="rounded-md border border-neutral-300 bg-white px-4 py-2 font-bold text-neutral-700" onClick={analyzeIngredientOcr}>
+                  読み込み確認
+                </button>
+              </div>
             </div>
             <p className="mt-2 text-xs font-bold text-teal-900">
-              MVPではOCR結果テキストを確認してから反映します。将来、画像からの自動文字認識に差し替えます。
+              {ingredientOcrStatus || "画像を圧縮し、gpt-4oで1回だけ読み取ります。確認POPUPで内容を確認してからフォームへ反映します。"}
             </p>
           </section>
           <div className="grid gap-3 md:grid-cols-3">
