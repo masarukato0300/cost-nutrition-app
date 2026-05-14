@@ -31,12 +31,11 @@ const pages = [
   { key: "cost", label: "原価計算" },
   { key: "nutrition", label: "栄養成分計算" },
   { key: "impact", label: "影響分析" },
-  { key: "ocr", label: "OCR反映" },
   { key: "label", label: "ラベル表示" },
   { key: "master", label: "原材料マスター" },
 ] as const;
 
-type PageKey = (typeof pages)[number]["key"];
+type PageKey = (typeof pages)[number]["key"] | "ocr";
 type StoreAccount = {
   id: string;
   pin: string;
