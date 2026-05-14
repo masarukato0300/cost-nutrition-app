@@ -7,29 +7,40 @@ type IngredientOcrResult = {
   packageAmount: number | null;
   packageUnit: string;
   price: number | null;
-  rawText: string;
   memo: string;
   confidence: "high" | "medium" | "low";
 };
 
 const schema = {
-  name: "ingredient_ocr_result",
+  name: "ingredient_ocr_results",
   strict: true,
   schema: {
     type: "object",
     additionalProperties: false,
     properties: {
-      name: { type: "string", description: "原材料名。例: 全卵、薄力粉、グラニュー糖" },
-      packageName: { type: "string", description: "製品名または商品名。例: 赤玉 Lサイズ 10個" },
-      supplier: { type: "string", description: "仕入先、メーカー、供給元。不明なら空文字" },
-      packageAmount: { type: ["number", "null"], description: "内容量の数値部分。不明ならnull" },
-      packageUnit: { type: "string", description: "内容量の単位。例: g, kg, ml, L, 個, 枚, 本。不明なら空文字" },
-      price: { type: ["number", "null"], description: "仕入価格または新価格。税込税抜は問わず数値のみ。不明ならnull" },
       rawText: { type: "string", description: "画像内で読み取れた文字を、行ごとにできるだけそのまま転記" },
       memo: { type: "string", description: "読み取り根拠、注意点、曖昧な点" },
-      confidence: { type: "string", enum: ["high", "medium", "low"], description: "読み取り信頼度" },
+      ingredients: {
+        type: "array",
+        description: "画像から抽出した原材料候補。複数商品が写っている場合は順番にすべて入れる",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            name: { type: "string", description: "原材料名。例: 全卵、薄力粉、グラニュー糖" },
+            packageName: { type: "string", description: "製品名または商品名。例: 赤玉 Lサイズ 10個" },
+            supplier: { type: "string", description: "仕入先、メーカー、供給元。不明なら空文字" },
+            packageAmount: { type: ["number", "null"], description: "内容量の数値部分。不明ならnull" },
+            packageUnit: { type: "string", description: "内容量の単位。例: g, kg, ml, L, 個, 枚, 本。不明なら空文字" },
+            price: { type: ["number", "null"], description: "仕入価格または新価格。税込税抜は問わず数値のみ。不明ならnull" },
+            memo: { type: "string", description: "この候補の読み取り根拠、注意点、曖昧な点" },
+            confidence: { type: "string", enum: ["high", "medium", "low"], description: "読み取り信頼度" },
+          },
+          required: ["name", "packageName", "supplier", "packageAmount", "packageUnit", "price", "memo", "confidence"],
+        },
+      },
     },
-    required: ["name", "packageName", "supplier", "packageAmount", "packageUnit", "price", "rawText", "memo", "confidence"],
+    required: ["rawText", "memo", "ingredients"],
   },
 } as const;
 
@@ -60,7 +71,7 @@ export async function POST(request: Request) {
         {
           role: "system",
           content:
-            "あなたは洋菓子店・飲食店向けの原材料ラベル、納品書、価格改定通知を読むOCR補助です。まず画像内の文字をできるだけ読み取り、その中から原材料登録に必要な情報を抽出してください。登録値は推測しすぎず、ただし価格・内容量・商品名らしい文字が見える場合は候補として入れてください。",
+            "あなたは洋菓子店・飲食店向けの原材料ラベル、納品書、価格表、納品書、価格改定通知を読むOCR補助です。まず画像内の文字をできるだけ読み取り、その中から原材料登録に必要な情報を抽出してください。複数の原材料・商品行が写っている場合は、先頭だけでなく読み取れる候補を順番にすべてingredientsへ入れてください。",
         },
         {
           role: "user",
@@ -68,7 +79,7 @@ export async function POST(request: Request) {
             {
               type: "text",
               text:
-                "この画像から原材料登録用の情報を抽出してください。rawTextには見える文字を行ごとに転記してください。nameには食品としての原材料名、packageNameには袋や伝票に書かれた製品名・商品名、priceには仕入価格・税込価格・新価格らしい数値を入れてください。価格が複数ある場合は、登録に使う可能性が高い最終価格または新価格を選び、迷った理由をmemoに書いてください。返答は指定JSON schemaのみ。",
+                "この画像から原材料登録用の情報を抽出してください。rawTextには見える文字を行ごとに転記してください。ingredientsには、価格表や納品書の各行、複数ラベル、複数商品をできるだけ分けて入れてください。nameには食品としての原材料名、packageNameには袋や伝票に書かれた製品名・商品名、priceには仕入価格・税込価格・新価格らしい数値を入れてください。価格が複数ある場合は、登録に使う可能性が高い最終価格または新価格を選び、迷った理由をmemoに書いてください。返答は指定JSON schemaのみ。",
             },
             {
               type: "image_url",
@@ -80,7 +91,7 @@ export async function POST(request: Request) {
           ],
         },
       ],
-      max_tokens: 900,
+      max_tokens: 1800,
       response_format: {
         type: "json_schema",
         json_schema: schema,
@@ -103,7 +114,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = JSON.parse(content) as IngredientOcrResult;
+    const result = JSON.parse(content) as { rawText: string; memo: string; ingredients: IngredientOcrResult[] };
     return NextResponse.json({ result });
   } catch {
     return NextResponse.json({ error: "OCR結果JSONを解析できませんでした。", raw: content }, { status: 502 });

@@ -57,9 +57,14 @@ type IngredientVisionOcrResult = {
   packageAmount: number | null;
   packageUnit: string;
   price: number | null;
-  rawText: string;
+  rawText?: string;
   memo: string;
   confidence: "high" | "medium" | "low";
+};
+type IngredientVisionOcrResponse = {
+  rawText: string;
+  memo: string;
+  ingredients: IngredientVisionOcrResult[];
 };
 
 function yen(value: number) {
@@ -421,6 +426,8 @@ export function CostNutritionApp() {
   const [ingredientOcrStatus, setIngredientOcrStatus] = useState("");
   const [isIngredientOcrReading, setIsIngredientOcrReading] = useState(false);
   const [ingredientOcrCandidate, setIngredientOcrCandidate] = useState<Ingredient | null>(null);
+  const [ingredientOcrCandidates, setIngredientOcrCandidates] = useState<Ingredient[]>([]);
+  const [ingredientOcrCandidateIndex, setIngredientOcrCandidateIndex] = useState(0);
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -512,6 +519,8 @@ export function CostNutritionApp() {
 
   function analyzeIngredientOcr() {
     const candidate = parseIngredientOcrText(ingredientOcrText, ingredientForm);
+    setIngredientOcrCandidates([candidate]);
+    setIngredientOcrCandidateIndex(0);
     setIngredientOcrCandidate(candidate);
   }
 
@@ -536,26 +545,39 @@ export function CostNutritionApp() {
         throw new Error(json.error || "OpenAI Vision OCRに失敗しました。");
       }
 
-      const result = json.result as IngredientVisionOcrResult;
+      const result = json.result as IngredientVisionOcrResponse | IngredientVisionOcrResult;
+      const rawText = "ingredients" in result ? result.rawText : result.rawText || "";
+      const resultMemo = "ingredients" in result ? result.memo : result.memo;
+      const results = "ingredients" in result ? result.ingredients : [result];
+      const validResults = results.filter((item) => item.name || item.packageName || item.price);
       const text = [
-        result.name ? `原材料名: ${result.name}` : "",
-        result.packageName ? `製品名: ${result.packageName}` : "",
-        result.supplier ? `仕入先: ${result.supplier}` : "",
-        result.packageAmount ? `内容量: ${result.packageAmount}${result.packageUnit}` : "",
-        result.price ? `仕入価格: ${result.price}円` : "",
-        result.rawText ? `\n--- 読み取れた文字 ---\n${result.rawText}` : "",
-        result.memo ? `メモ: ${result.memo}` : "",
+        validResults.map((item, index) => [
+          `--- 候補 ${index + 1} ---`,
+          item.name ? `原材料名: ${item.name}` : "",
+          item.packageName ? `製品名: ${item.packageName}` : "",
+          item.supplier ? `仕入先: ${item.supplier}` : "",
+          item.packageAmount ? `内容量: ${item.packageAmount}${item.packageUnit}` : "",
+          item.price ? `仕入価格: ${item.price}円` : "",
+          item.memo ? `メモ: ${item.memo}` : "",
+        ].filter(Boolean).join("\n")).join("\n\n"),
+        rawText ? `\n--- 読み取れた文字 ---\n${rawText}` : "",
+        resultMemo ? `全体メモ: ${resultMemo}` : "",
       ].filter(Boolean).join("\n");
 
-      if (!result.name && !result.packageName && !result.price) {
+      if (validResults.length === 0) {
         setIngredientOcrText(text);
         setIngredientOcrCandidate(null);
-        setIngredientOcrStatus(result.rawText ? "文字は一部読めましたが、登録項目に分けられませんでした。読み取り結果を手直しして「読み込み確認」を押してください。" : "登録に必要な情報を抽出できませんでした。明るい場所で、紙を画面いっぱいに入れて撮り直してください。");
+        setIngredientOcrCandidates([]);
+        setIngredientOcrCandidateIndex(0);
+        setIngredientOcrStatus(rawText ? "文字は一部読めましたが、登録項目に分けられませんでした。読み取り結果を手直しして「読み込み確認」を押してください。" : "登録に必要な情報を抽出できませんでした。明るい場所で、紙を画面いっぱいに入れて撮り直してください。");
         return;
       }
+      const candidates = validResults.map((item) => ingredientFromVisionResult({ ...item, rawText }, ingredientForm));
       setIngredientOcrText(text);
-      setIngredientOcrCandidate(ingredientFromVisionResult(result, ingredientForm));
-      setIngredientOcrStatus("読み取り完了。確認画面で内容を確認してください。");
+      setIngredientOcrCandidates(candidates);
+      setIngredientOcrCandidateIndex(0);
+      setIngredientOcrCandidate(candidates[0]);
+      setIngredientOcrStatus(`読み取り完了。${candidates.length}件の候補があります。確認画面で1件ずつ反映してください。`);
     } catch (error) {
       setIngredientOcrStatus(error instanceof Error ? error.message : "OCR読み取りに失敗しました。");
     } finally {
@@ -566,7 +588,20 @@ export function CostNutritionApp() {
   function applyIngredientOcrCandidate() {
     if (!ingredientOcrCandidate) return;
     setIngredientForm(ingredientOcrCandidate);
+    const nextIndex = ingredientOcrCandidateIndex + 1;
+    setIngredientOcrCandidateIndex(nextIndex);
     setIngredientOcrCandidate(null);
+    setIngredientOcrStatus(
+      nextIndex < ingredientOcrCandidates.length
+        ? `${ingredientOcrCandidateIndex + 1}件目をフォームへ反映しました。保存後、「次の候補を確認」を押してください。`
+        : "最後の候補をフォームへ反映しました。内容を確認して保存してください。",
+    );
+  }
+
+  function showNextIngredientOcrCandidate() {
+    const nextCandidate = ingredientOcrCandidates[ingredientOcrCandidateIndex];
+    if (!nextCandidate) return;
+    setIngredientOcrCandidate(nextCandidate);
   }
 
   const selectedProduct = data.products.find((product) => product.id === selectedProductId) ?? data.products[0];
@@ -975,7 +1010,10 @@ export function CostNutritionApp() {
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-3">
           <section className="w-full max-w-xl rounded-md border border-neutral-200 bg-white p-4 shadow-xl">
             <h2 className="text-lg font-black">OCR読み込み確認</h2>
-            <p className="mt-1 text-xs font-bold text-neutral-500">内容が合っているか確認してから原材料登録フォームへ反映します。</p>
+            <p className="mt-1 text-xs font-bold text-neutral-500">
+              内容が合っているか確認してから原材料登録フォームへ反映します。
+              {ingredientOcrCandidates.length > 1 ? ` ${ingredientOcrCandidateIndex + 1}/${ingredientOcrCandidates.length}件目` : ""}
+            </p>
             <dl className="mt-4 grid grid-cols-[120px_1fr] gap-2 text-sm">
               <dt className="font-bold text-neutral-500">原材料名</dt><dd>{ingredientOcrCandidate.name || "-"}</dd>
               <dt className="font-bold text-neutral-500">製品名</dt><dd>{ingredientOcrCandidate.packageName || "-"}</dd>
@@ -988,7 +1026,7 @@ export function CostNutritionApp() {
                 戻る
               </button>
               <button className="rounded-md bg-teal-700 px-4 py-2 font-bold text-white" onClick={applyIngredientOcrCandidate}>
-                合っているので反映
+                フォームへ反映
               </button>
             </div>
           </section>
@@ -1037,6 +1075,11 @@ export function CostNutritionApp() {
                 <button className="rounded-md border border-neutral-300 bg-white px-4 py-2 font-bold text-neutral-700" onClick={analyzeIngredientOcr}>
                   読み込み確認
                 </button>
+                {ingredientOcrCandidateIndex < ingredientOcrCandidates.length && !ingredientOcrCandidate && (
+                  <button className="rounded-md border border-teal-700 bg-white px-4 py-2 font-bold text-teal-800" onClick={showNextIngredientOcrCandidate}>
+                    次の候補を確認
+                  </button>
+                )}
               </div>
             </div>
             <p className="mt-2 text-xs font-bold text-teal-900">
