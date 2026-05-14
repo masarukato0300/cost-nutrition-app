@@ -36,7 +36,70 @@ const pages = [
   { key: "master", label: "原材料マスター" },
 ] as const;
 
-type PageKey = (typeof pages)[number]["key"] | "ocr";
+type PageNavKey = (typeof pages)[number]["key"];
+type PageKey = PageNavKey | "ocr";
+const pageTones: Record<PageNavKey, { navActive: string; navIdle: string; topCard: string; mark: string }> = {
+  top: {
+    navActive: "border-emerald-500 bg-emerald-50 text-emerald-900 shadow-sm",
+    navIdle: "border-emerald-100 bg-white text-neutral-700 hover:border-emerald-300 hover:bg-emerald-50",
+    topCard: "border-emerald-100 bg-emerald-50/70 hover:border-emerald-400",
+    mark: "bg-emerald-500",
+  },
+  help: {
+    navActive: "border-sky-500 bg-sky-50 text-sky-900 shadow-sm",
+    navIdle: "border-sky-100 bg-white text-neutral-700 hover:border-sky-300 hover:bg-sky-50",
+    topCard: "border-sky-100 bg-sky-50/70 hover:border-sky-400",
+    mark: "bg-sky-500",
+  },
+  ingredient: {
+    navActive: "border-rose-500 bg-rose-50 text-rose-900 shadow-sm",
+    navIdle: "border-rose-100 bg-white text-neutral-700 hover:border-rose-300 hover:bg-rose-50",
+    topCard: "border-rose-100 bg-rose-50/70 hover:border-rose-400",
+    mark: "bg-rose-500",
+  },
+  product: {
+    navActive: "border-amber-500 bg-amber-50 text-amber-900 shadow-sm",
+    navIdle: "border-amber-100 bg-white text-neutral-700 hover:border-amber-300 hover:bg-amber-50",
+    topCard: "border-amber-100 bg-amber-50/70 hover:border-amber-400",
+    mark: "bg-amber-500",
+  },
+  recipe: {
+    navActive: "border-teal-500 bg-teal-50 text-teal-900 shadow-sm",
+    navIdle: "border-teal-100 bg-white text-neutral-700 hover:border-teal-300 hover:bg-teal-50",
+    topCard: "border-teal-100 bg-teal-50/70 hover:border-teal-400",
+    mark: "bg-teal-500",
+  },
+  cost: {
+    navActive: "border-orange-500 bg-orange-50 text-orange-900 shadow-sm",
+    navIdle: "border-orange-100 bg-white text-neutral-700 hover:border-orange-300 hover:bg-orange-50",
+    topCard: "border-orange-100 bg-orange-50/70 hover:border-orange-400",
+    mark: "bg-orange-500",
+  },
+  nutrition: {
+    navActive: "border-lime-500 bg-lime-50 text-lime-900 shadow-sm",
+    navIdle: "border-lime-100 bg-white text-neutral-700 hover:border-lime-300 hover:bg-lime-50",
+    topCard: "border-lime-100 bg-lime-50/70 hover:border-lime-400",
+    mark: "bg-lime-500",
+  },
+  impact: {
+    navActive: "border-red-500 bg-red-50 text-red-900 shadow-sm",
+    navIdle: "border-red-100 bg-white text-neutral-700 hover:border-red-300 hover:bg-red-50",
+    topCard: "border-red-100 bg-red-50/70 hover:border-red-400",
+    mark: "bg-red-500",
+  },
+  label: {
+    navActive: "border-violet-500 bg-violet-50 text-violet-900 shadow-sm",
+    navIdle: "border-violet-100 bg-white text-neutral-700 hover:border-violet-300 hover:bg-violet-50",
+    topCard: "border-violet-100 bg-violet-50/70 hover:border-violet-400",
+    mark: "bg-violet-500",
+  },
+  master: {
+    navActive: "border-cyan-500 bg-cyan-50 text-cyan-900 shadow-sm",
+    navIdle: "border-cyan-100 bg-white text-neutral-700 hover:border-cyan-300 hover:bg-cyan-50",
+    topCard: "border-cyan-100 bg-cyan-50/70 hover:border-cyan-400",
+    mark: "bg-cyan-500",
+  },
+};
 type StoreAccount = {
   id: string;
   pin: string;
@@ -175,6 +238,10 @@ function ingredientOptionLabel(ingredient: Ingredient) {
   return ingredient.packageName && ingredient.packageName !== ingredient.name
     ? `${ingredient.packageName}（${ingredient.name}）`
     : ingredient.name;
+}
+
+function pageTone(pageKey: PageNavKey) {
+  return pageTones[pageKey];
 }
 
 function isNutritionEmpty(ingredient: Ingredient) {
@@ -1199,12 +1266,16 @@ export function CostNutritionApp() {
     : "";
 
   const recipeRows = data.recipeItems.filter((item) => item.productId === selectedProduct?.id);
+  const currentTone = activePage === "ocr" ? pageTones.ingredient : pageTone(activePage);
 
   return (
     <main className="mx-auto flex w-full max-w-7xl flex-col gap-4 p-3 text-sm text-neutral-900 md:p-5">
-      <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <header className="flex flex-col gap-3 rounded-md border border-white/80 bg-white/85 p-4 shadow-sm md:flex-row md:items-center md:justify-between">
         <div>
-          <p className="font-bold text-teal-700">洋菓子店・飲食店向け MVP</p>
+          <p className="flex items-center gap-2 font-bold text-teal-700">
+            <span className={`h-3 w-3 rounded-full ${currentTone.mark}`} />
+            洋菓子店・飲食店向け MVP
+          </p>
           <h1 className="text-2xl font-black md:text-3xl">原価計算＋栄養成分表示</h1>
           <p className="mt-1 text-xs font-bold text-neutral-500">現在の店舗: {currentStoreId}</p>
         </div>
@@ -1218,20 +1289,21 @@ export function CostNutritionApp() {
         </div>
       </header>
 
-      <nav className="sticky top-0 z-10 grid grid-cols-2 gap-2 rounded-md border border-neutral-200 bg-white/95 p-2 shadow-sm backdrop-blur md:grid-cols-4 lg:grid-cols-6">
-        {pages.map((page) => (
-          <button
-            key={page.key}
-            className={`min-h-11 rounded-md border px-2 py-2 font-bold ${
-              activePage === page.key
-                ? "border-teal-700 bg-teal-50 text-teal-800"
-                : "border-neutral-200 bg-white text-neutral-700"
-            }`}
-            onClick={() => setActivePage(page.key)}
-          >
-            {page.label}
-          </button>
-        ))}
+      <nav className="sticky top-0 z-10 grid grid-cols-2 gap-2 rounded-md border border-white/80 bg-white/95 p-2 shadow-sm backdrop-blur md:grid-cols-4 lg:grid-cols-6">
+        {pages.map((page) => {
+          const tone = pageTone(page.key);
+          return (
+            <button
+              key={page.key}
+              className={`min-h-11 rounded-md border px-2 py-2 font-bold transition-colors ${
+                activePage === page.key ? tone.navActive : tone.navIdle
+              }`}
+              onClick={() => setActivePage(page.key)}
+            >
+              {page.label}
+            </button>
+          );
+        })}
       </nav>
 
       <section className="grid grid-cols-4 gap-1 md:gap-2">
@@ -1244,16 +1316,22 @@ export function CostNutritionApp() {
       {activePage === "top" && (
         <Panel title="TOP">
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-            {pages.filter((page) => page.key !== "top").map((page) => (
+            {pages.filter((page) => page.key !== "top").map((page) => {
+              const tone = pageTone(page.key);
+              return (
               <button
                 key={page.key}
-                className="min-h-24 rounded-md border border-neutral-200 bg-white p-4 text-left shadow-sm hover:border-teal-600 hover:bg-teal-50"
+                className={`min-h-24 rounded-md border p-4 text-left shadow-sm transition-colors ${tone.topCard}`}
                 onClick={() => setActivePage(page.key)}
               >
-                <span className="block text-lg font-black text-neutral-900">{page.label}</span>
+                <span className="flex items-center gap-2 text-lg font-black text-neutral-900">
+                  <span className={`h-2.5 w-2.5 rounded-full ${tone.mark}`} />
+                  {page.label}
+                </span>
                 <span className="mt-2 block text-xs font-bold text-neutral-500">{topPageDescription(page.key)}</span>
               </button>
-            ))}
+              );
+            })}
           </div>
         </Panel>
       )}
@@ -1978,8 +2056,11 @@ function LabelPreview({ text }: { text: string }) {
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-md border border-neutral-200 bg-white p-4 shadow-sm">
-      <h2 className="mb-3 text-lg font-black">{title}</h2>
+    <section className="rounded-md border border-white/80 bg-white/90 p-4 shadow-sm">
+      <h2 className="mb-3 flex items-center gap-2 text-lg font-black text-neutral-950">
+        <span className="h-6 w-1.5 rounded-full bg-teal-500" />
+        {title}
+      </h2>
       {children}
     </section>
   );
@@ -1996,10 +2077,10 @@ function Metric({
   tone?: "normal" | "warn" | "danger";
   compact?: boolean;
 }) {
-  const toneClass = tone === "danger" ? "border-red-200 bg-red-50 text-red-800" : tone === "warn" ? "border-amber-200 bg-amber-50 text-amber-800" : "border-neutral-200 bg-white";
+  const toneClass = tone === "danger" ? "border-red-200 bg-red-50 text-red-800" : tone === "warn" ? "border-amber-200 bg-amber-50 text-amber-800" : "border-sky-100 bg-sky-50 text-sky-900";
   return (
-    <div className={`rounded-md border ${compact ? "px-2 py-2 md:px-3" : "p-4"} ${toneClass}`}>
-      <p className={`${compact ? "text-[10px] leading-tight md:text-xs" : "text-xs"} font-bold text-neutral-500`}>{label}</p>
+    <div className={`rounded-md border shadow-sm ${compact ? "px-2 py-2 md:px-3" : "p-4"} ${toneClass}`}>
+      <p className={`${compact ? "text-[10px] leading-tight md:text-xs" : "text-xs"} font-bold opacity-70`}>{label}</p>
       <strong className={`${compact ? "text-sm leading-tight md:text-base" : "text-xl"}`}>{value}</strong>
     </div>
   );
@@ -2124,7 +2205,7 @@ function TextInput({
     <label className="grid gap-1 font-bold text-neutral-600">
       <span>{label}</span>
       <input
-        className="rounded-md border border-neutral-300 px-3 py-2 text-neutral-900"
+        className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-neutral-900 shadow-sm outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
         value={value}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {
@@ -2153,7 +2234,7 @@ function CategoryInput({
       <span>{label}</span>
       <div className="grid grid-cols-[120px_1fr] gap-2">
         <select
-          className="rounded-md border border-neutral-300 px-2 py-2 text-neutral-900"
+          className="rounded-md border border-neutral-200 bg-white px-2 py-2 text-neutral-900 shadow-sm outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
           value={isExisting ? value : "__custom"}
           onChange={(event) => {
             if (event.target.value !== "__custom") onChange(event.target.value);
@@ -2165,7 +2246,7 @@ function CategoryInput({
           <option value="__custom">新規入力</option>
         </select>
         <input
-          className="rounded-md border border-neutral-300 px-3 py-2 text-neutral-900"
+          className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-neutral-900 shadow-sm outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
           placeholder="パレットにないカテゴリ"
           value={value}
           onChange={(event) => onChange(event.target.value)}
@@ -2179,7 +2260,7 @@ function NumberInput({ label, value, onChange }: { label: string; value: number;
   return (
     <label className="grid gap-1 font-bold text-neutral-600">
       <span>{label}</span>
-      <input className="rounded-md border border-neutral-300 px-3 py-2 text-right text-neutral-900" type="number" value={value} onChange={(event) => onChange(Number(event.target.value))} />
+      <input className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-right text-neutral-900 shadow-sm outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100" type="number" value={value} onChange={(event) => onChange(Number(event.target.value))} />
     </label>
   );
 }
@@ -2189,7 +2270,7 @@ function PinInput({ label, value, onChange }: { label: string; value: string; on
     <label className="grid gap-1 font-bold text-neutral-600">
       <span>{label}</span>
       <input
-        className="rounded-md border border-neutral-300 px-3 py-2 text-center tracking-[0.2em] text-neutral-900"
+        className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-center tracking-[0.2em] text-neutral-900 shadow-sm outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
         inputMode="numeric"
         maxLength={4}
         value={value}
@@ -2215,7 +2296,7 @@ function SelectInput({
   return (
     <label className="grid gap-1 font-bold text-neutral-600">
       <span>{label}</span>
-      <select className="rounded-md border border-neutral-300 px-3 py-2 text-neutral-900" value={value} onChange={(event) => onChange(event.target.value)}>
+      <select className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-neutral-900 shadow-sm outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100" value={value} onChange={(event) => onChange(event.target.value)}>
         {options.map((option) => (
           <option key={option} value={option}>{optionLabels[option] ?? option}</option>
         ))}
