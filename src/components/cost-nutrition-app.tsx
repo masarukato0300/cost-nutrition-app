@@ -454,7 +454,7 @@ const emptyIngredient = (): Ingredient => ({
   packageUnit: "g",
   gramPerUnit: 1,
   price: 0,
-  taxType: "税込",
+  taxType: "税抜",
   caloriesPer100g: 0,
   proteinPer100g: 0,
   fatPer100g: 0,
