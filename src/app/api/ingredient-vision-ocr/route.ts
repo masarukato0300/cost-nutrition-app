@@ -7,6 +7,7 @@ type IngredientOcrResult = {
   packageAmount: number | null;
   packageUnit: string;
   price: number | null;
+  rawText: string;
   memo: string;
   confidence: "high" | "medium" | "low";
 };
@@ -24,10 +25,11 @@ const schema = {
       packageAmount: { type: ["number", "null"], description: "内容量の数値部分。不明ならnull" },
       packageUnit: { type: "string", description: "内容量の単位。例: g, kg, ml, L, 個, 枚, 本。不明なら空文字" },
       price: { type: ["number", "null"], description: "仕入価格または新価格。税込税抜は問わず数値のみ。不明ならnull" },
+      rawText: { type: "string", description: "画像内で読み取れた文字を、行ごとにできるだけそのまま転記" },
       memo: { type: "string", description: "読み取り根拠、注意点、曖昧な点" },
       confidence: { type: "string", enum: ["high", "medium", "low"], description: "読み取り信頼度" },
     },
-    required: ["name", "packageName", "supplier", "packageAmount", "packageUnit", "price", "memo", "confidence"],
+    required: ["name", "packageName", "supplier", "packageAmount", "packageUnit", "price", "rawText", "memo", "confidence"],
   },
 } as const;
 
@@ -58,7 +60,7 @@ export async function POST(request: Request) {
         {
           role: "system",
           content:
-            "あなたは洋菓子店・飲食店向けの原材料ラベル、納品書、価格改定通知を読むOCR補助です。画像から原材料登録に必要な情報だけを抽出してください。曖昧な項目は推測しすぎず空文字またはnullにしてください。",
+            "あなたは洋菓子店・飲食店向けの原材料ラベル、納品書、価格改定通知を読むOCR補助です。まず画像内の文字をできるだけ読み取り、その中から原材料登録に必要な情報を抽出してください。登録値は推測しすぎず、ただし価格・内容量・商品名らしい文字が見える場合は候補として入れてください。",
         },
         {
           role: "user",
@@ -66,7 +68,7 @@ export async function POST(request: Request) {
             {
               type: "text",
               text:
-                "この画像から原材料登録用の情報を抽出してください。価格が複数ある場合は、仕入価格または新価格として最も登録すべき価格をpriceに入れてください。返答は指定JSON schemaのみ。",
+                "この画像から原材料登録用の情報を抽出してください。rawTextには見える文字を行ごとに転記してください。nameには食品としての原材料名、packageNameには袋や伝票に書かれた製品名・商品名、priceには仕入価格・税込価格・新価格らしい数値を入れてください。価格が複数ある場合は、登録に使う可能性が高い最終価格または新価格を選び、迷った理由をmemoに書いてください。返答は指定JSON schemaのみ。",
             },
             {
               type: "image_url",
@@ -78,6 +80,7 @@ export async function POST(request: Request) {
           ],
         },
       ],
+      max_tokens: 900,
       response_format: {
         type: "json_schema",
         json_schema: schema,
@@ -88,7 +91,7 @@ export async function POST(request: Request) {
   if (!response.ok) {
     const errorText = await response.text();
     return NextResponse.json(
-      { error: `OpenAI Vision OCRに失敗しました。${errorText}` },
+      { error: `OpenAI Vision OCRに失敗しました。${shortenError(errorText)}` },
       { status: response.status },
     );
   }
@@ -104,5 +107,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ result });
   } catch {
     return NextResponse.json({ error: "OCR結果JSONを解析できませんでした。", raw: content }, { status: 502 });
+  }
+}
+
+function shortenError(errorText: string) {
+  try {
+    const json = JSON.parse(errorText);
+    return json.error?.message || errorText.slice(0, 500);
+  } catch {
+    return errorText.slice(0, 500);
   }
 }

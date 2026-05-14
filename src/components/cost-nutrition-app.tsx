@@ -57,6 +57,7 @@ type IngredientVisionOcrResult = {
   packageAmount: number | null;
   packageUnit: string;
   price: number | null;
+  rawText: string;
   memo: string;
   confidence: "high" | "medium" | "low";
 };
@@ -320,32 +321,20 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 async function preprocessImageForOcr(file: File): Promise<string> {
   const dataUrl = await fileToImageDataUrl(file);
   const image = await loadImage(dataUrl);
-  const maxSize = 1800;
+  const maxSize = 2400;
   const scale = Math.min(1, maxSize / Math.max(image.naturalWidth, image.naturalHeight));
   const width = Math.max(1, Math.round(image.naturalWidth * scale));
   const height = Math.max(1, Math.round(image.naturalHeight * scale));
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
-  const context = canvas.getContext("2d", { willReadFrequently: true });
+  const context = canvas.getContext("2d");
   if (!context) return dataUrl;
 
   context.fillStyle = "#ffffff";
   context.fillRect(0, 0, width, height);
   context.drawImage(image, 0, 0, width, height);
-
-  const imageData = context.getImageData(0, 0, width, height);
-  const data = imageData.data;
-  for (let index = 0; index < data.length; index += 4) {
-    const gray = data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114;
-    const contrasted = gray > 175 ? 255 : gray < 95 ? 0 : gray * 1.35 - 45;
-    const value = Math.max(0, Math.min(255, contrasted));
-    data[index] = value;
-    data[index + 1] = value;
-    data[index + 2] = value;
-  }
-  context.putImageData(imageData, 0, 0);
-  return canvas.toDataURL("image/jpeg", 0.78);
+  return canvas.toDataURL("image/jpeg", 0.9);
 }
 
 function ingredientFromVisionResult(result: IngredientVisionOcrResult, base: Ingredient): Ingredient {
@@ -355,6 +344,7 @@ function ingredientFromVisionResult(result: IngredientVisionOcrResult, base: Ing
     result.supplier ? `仕入先: ${result.supplier}` : "",
     result.packageAmount ? `内容量: ${result.packageAmount}${result.packageUnit}` : "",
     result.price ? `仕入価格: ${result.price}円` : "",
+    result.rawText ? `読み取り文字:\n${result.rawText}` : "",
   ].filter(Boolean).join("\n");
   return {
     ...parseIngredientOcrText(generatedText, base),
@@ -553,13 +543,14 @@ export function CostNutritionApp() {
         result.supplier ? `仕入先: ${result.supplier}` : "",
         result.packageAmount ? `内容量: ${result.packageAmount}${result.packageUnit}` : "",
         result.price ? `仕入価格: ${result.price}円` : "",
+        result.rawText ? `\n--- 読み取れた文字 ---\n${result.rawText}` : "",
         result.memo ? `メモ: ${result.memo}` : "",
       ].filter(Boolean).join("\n");
 
       if (!result.name && !result.packageName && !result.price) {
         setIngredientOcrText(text);
         setIngredientOcrCandidate(null);
-        setIngredientOcrStatus("登録に必要な情報を抽出できませんでした。画像を撮り直すか、読み取り結果を手直ししてください。");
+        setIngredientOcrStatus(result.rawText ? "文字は一部読めましたが、登録項目に分けられませんでした。読み取り結果を手直しして「読み込み確認」を押してください。" : "登録に必要な情報を抽出できませんでした。明るい場所で、紙を画面いっぱいに入れて撮り直してください。");
         return;
       }
       setIngredientOcrText(text);
