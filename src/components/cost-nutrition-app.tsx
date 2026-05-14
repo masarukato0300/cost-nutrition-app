@@ -122,6 +122,10 @@ function loadCurrentStoreId(stores: StoreAccount[]) {
 function normalizeData(parsed: AppData): AppData {
   return {
     ...parsed,
+    products: parsed.products.map((product) => ({
+      ...product,
+      isIntermediateMaterial: Boolean(product.isIntermediateMaterial),
+    })),
     ingredients: parsed.ingredients.map((ingredient) => ({
       ...ingredient,
       category: ingredient.category || inferIngredientCategory(ingredient.name),
@@ -147,6 +151,8 @@ function loadData(storeId = defaultStoreId): AppData {
 function normalizeRecipeItem(item: RecipeItem): RecipeItem {
   return {
     ...item,
+    itemType: item.itemType || "ingredient",
+    intermediateProductId: item.intermediateProductId || "",
     usageType: item.usageType || "gram",
     baseAmountGram: item.baseAmountGram || item.amountGram || 0,
     usedCount: item.usedCount || 1,
@@ -552,6 +558,7 @@ const emptyIngredient = (): Ingredient => ({
 const emptyProduct = (): Product => ({
   id: "",
   name: "",
+  isIntermediateMaterial: false,
   sellingPrice: 0,
   taxType: "税込",
   targetCostRate: 32,
@@ -577,7 +584,7 @@ export function CostNutritionApp() {
   const [productForm, setProductForm] = useState<Product>(() => emptyProduct());
   const [recipeProductName, setRecipeProductName] = useState("");
   const [recipeIngredientId, setRecipeIngredientId] = useState(data.ingredients[0]?.id ?? "");
-  const [recipeAmountGram, setRecipeAmountGram] = useState(0);
+  const [recipeProductIsIntermediate, setRecipeProductIsIntermediate] = useState(false);
   const [activeIngredientCategory, setActiveIngredientCategory] = useState("すべて");
   const [impactIngredientId, setImpactIngredientId] = useState(data.ingredients[4]?.id ?? data.ingredients[0]?.id ?? "");
   const [impactNewPrice, setImpactNewPrice] = useState(data.ingredients[4]?.price + 100 || 0);
@@ -798,16 +805,15 @@ export function CostNutritionApp() {
   }
 
   const selectedProduct = data.products.find((product) => product.id === selectedProductId) ?? data.products[0];
-  const selectedRecipeIngredient = data.ingredients.find((ingredient) => ingredient.id === recipeIngredientId);
   const costSummary = selectedProduct
-    ? calculateProductCost(selectedProduct, data.ingredients, data.recipeItems)
+    ? calculateProductCost(selectedProduct, data.ingredients, data.recipeItems, data.products)
     : null;
   const nutritionSummary = selectedProduct
-    ? calculateProductNutrition(selectedProduct, data.ingredients, data.recipeItems)
+    ? calculateProductNutrition(selectedProduct, data.ingredients, data.recipeItems, data.products)
     : null;
   const impactRows = calculatePriceImpact(data, impactIngredientId, impactNewPrice);
   const ingredientCategories = useMemo(
-    () => ["すべて", ...Array.from(new Set(data.ingredients.map((ingredient) => ingredient.category || "未分類")))],
+    () => ["すべて", "中間材料", ...Array.from(new Set(data.ingredients.map((ingredient) => ingredient.category || "未分類")))],
     [data.ingredients],
   );
   const editableIngredientCategories = useMemo(
@@ -816,7 +822,16 @@ export function CostNutritionApp() {
   );
   const filteredIngredients = activeIngredientCategory === "すべて"
     ? data.ingredients
+    : activeIngredientCategory === "中間材料"
+      ? []
     : data.ingredients.filter((ingredient) => (ingredient.category || "未分類") === activeIngredientCategory);
+  const intermediateProducts = useMemo(
+    () => data.products.filter((product) => product.isIntermediateMaterial && product.id !== selectedProduct?.id),
+    [data.products, selectedProduct?.id],
+  );
+  const visibleIntermediateProducts = activeIngredientCategory === "すべて" || activeIngredientCategory === "中間材料"
+    ? intermediateProducts
+    : [];
   const possibleDuplicateIngredients = useMemo(
     () => findDuplicateIngredients(ingredientForm, data.ingredients).slice(0, 3),
     [data.ingredients, ingredientForm],
@@ -836,7 +851,7 @@ export function CostNutritionApp() {
   const selectedStandardNutrition = standardNutritionFoods.find((food) => food.id === selectedStandardNutritionId) ?? standardNutritionMatches[0];
 
   const dashboard = useMemo(() => {
-    const productCosts = data.products.map((product) => calculateProductCost(product, data.ingredients, data.recipeItems));
+    const productCosts = data.products.map((product) => calculateProductCost(product, data.ingredients, data.recipeItems, data.products));
     return {
       productCount: data.products.length,
       highCostCount: productCosts.filter((item) => item.costRate >= 35).length,
@@ -935,6 +950,7 @@ export function CostNutritionApp() {
     const isEdit = Boolean(productForm.id);
     const product: Product = {
       ...productForm,
+      isIntermediateMaterial: productForm.isIntermediateMaterial,
       id: productForm.id || createId("prd"),
       createdAt: productForm.createdAt || now(),
       updatedAt: now(),
@@ -950,7 +966,7 @@ export function CostNutritionApp() {
 
   function updateRecipeProductName(value: string) {
     setRecipeProductName(value);
-    setProductForm((current) => ({ ...current, name: value }));
+    setProductForm((current) => ({ ...current, name: value, isIntermediateMaterial: recipeProductIsIntermediate }));
   }
 
   function addProductFromRecipeName() {
@@ -961,6 +977,7 @@ export function CostNutritionApp() {
     if (existingProduct) {
       setSelectedProductId(existingProduct.id);
       setProductForm(existingProduct);
+      setRecipeProductIsIntermediate(existingProduct.isIntermediateMaterial);
       setRecipeProductName("");
       return;
     }
@@ -968,6 +985,7 @@ export function CostNutritionApp() {
     const product: Product = {
       ...emptyProduct(),
       name,
+      isIntermediateMaterial: recipeProductIsIntermediate,
       id: createId("prd"),
       sellingPrice: productForm.sellingPrice || 0,
       taxType: productForm.taxType,
@@ -985,11 +1003,8 @@ export function CostNutritionApp() {
     commit({ ...data, products: [...data.products, product] });
     setSelectedProductId(product.id);
     setProductForm(product);
+    setRecipeProductIsIntermediate(false);
     setRecipeProductName("");
-  }
-
-  function addRecipeItem() {
-    addRecipeItemForIngredient(recipeIngredientId, recipeAmountGram);
   }
 
   function addRecipeItemForIngredient(ingredientId: string, amountGram: number) {
@@ -998,6 +1013,8 @@ export function CostNutritionApp() {
       id: createId("rec"),
       productId: selectedProduct.id,
       ingredientId,
+      itemType: "ingredient",
+      intermediateProductId: "",
       usageType: "gram",
       amountGram,
       baseAmountGram: amountGram,
@@ -1009,7 +1026,26 @@ export function CostNutritionApp() {
     };
     commit({ ...data, recipeItems: [...data.recipeItems, item] });
     setRecipeIngredientId(ingredientId);
-    setRecipeAmountGram(0);
+  }
+
+  function addRecipeItemForIntermediate(intermediateProductId: string, amountGram: number) {
+    if (!selectedProduct || !intermediateProductId || intermediateProductId === selectedProduct.id) return;
+    const item: RecipeItem = {
+      id: createId("rec"),
+      productId: selectedProduct.id,
+      ingredientId: "",
+      itemType: "intermediate",
+      intermediateProductId,
+      usageType: "gram",
+      amountGram,
+      baseAmountGram: amountGram,
+      usedCount: 1,
+      totalCount: 1,
+      fractionDenominator: 1,
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    commit({ ...data, recipeItems: [...data.recipeItems, item] });
   }
 
   function updateRecipeItemAmount(recipeItemId: string, amountGram: number) {
@@ -1046,9 +1082,44 @@ export function CostNutritionApp() {
 
   function dropRecipeIngredient(event: React.DragEvent<HTMLDivElement>) {
     event.preventDefault();
-    const ingredientId = event.dataTransfer.getData("text/plain");
-    if (!ingredientId) return;
-    addRecipeItemForIngredient(ingredientId, recipeAmountGram || 0);
+    const raw = event.dataTransfer.getData("application/json") || event.dataTransfer.getData("text/plain");
+    if (!raw) return;
+    try {
+      const payload = JSON.parse(raw) as { type: "ingredient" | "intermediate"; id: string };
+      if (payload.type === "intermediate") addRecipeItemForIntermediate(payload.id, 0);
+      else addRecipeItemForIngredient(payload.id, 0);
+    } catch {
+      addRecipeItemForIngredient(raw, 0);
+    }
+  }
+
+  function deletePaletteItem(type: "ingredient" | "intermediate", id: string) {
+    const label = type === "ingredient"
+      ? data.ingredients.find((ingredient) => ingredient.id === id)?.name
+      : data.products.find((product) => product.id === id)?.name;
+    if (!label || !confirm(`${label} を削除しますか？関連するレシピ行からも外れます。`)) return;
+    if (type === "ingredient") {
+      commit({
+        ...data,
+        ingredients: data.ingredients.filter((ingredient) => ingredient.id !== id),
+        recipeItems: data.recipeItems.filter((item) => item.ingredientId !== id),
+      });
+      return;
+    }
+    commit({
+      ...data,
+      products: data.products.filter((product) => product.id !== id),
+      recipeItems: data.recipeItems.filter((item) => item.productId !== id && item.intermediateProductId !== id),
+    });
+    if (selectedProductId === id) setSelectedProductId(data.products.find((product) => product.id !== id)?.id ?? "");
+  }
+
+  function dropPaletteItemToTrash(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const raw = event.dataTransfer.getData("application/json");
+    if (!raw) return;
+    const payload = JSON.parse(raw) as { type: "ingredient" | "intermediate"; id: string };
+    deletePaletteItem(payload.type, payload.id);
   }
 
   function deleteRecipeItem(recipeItemId: string) {
@@ -1511,38 +1582,46 @@ export function CostNutritionApp() {
           <button className="mt-3 rounded-md bg-teal-700 px-4 py-2 font-bold text-white" onClick={saveProduct}>
             商品を保存
           </button>
+          <label className="mt-3 flex w-fit items-center gap-2 rounded-md border border-neutral-200 bg-white px-3 py-2 font-bold text-neutral-700">
+            <input
+              type="checkbox"
+              checked={productForm.isIntermediateMaterial}
+              onChange={(event) => setProductForm({ ...productForm, isIntermediateMaterial: event.target.checked })}
+            />
+            中間材料として使う
+          </label>
         </Panel>
       )}
 
       {activePage === "recipe" && (
         <Panel title="レシピ登録">
-          <div className="grid gap-3 md:grid-cols-[1fr_1fr_140px]">
+          <div className="grid gap-3 md:grid-cols-[1fr_180px_140px]">
             <TextInput
               label="新しい商品名"
               value={recipeProductName}
               onChange={updateRecipeProductName}
               onEnter={addProductFromRecipeName}
             />
-            <div className="self-end rounded-md border border-teal-200 bg-teal-50 p-3 text-xs font-bold text-teal-900">
-              入力した商品名は商品登録にも反映されます。
-            </div>
+            <label className="self-end flex min-h-10 items-center gap-2 rounded-md border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-bold text-teal-900">
+              <input
+                type="checkbox"
+                checked={recipeProductIsIntermediate}
+                onChange={(event) => {
+                  setRecipeProductIsIntermediate(event.target.checked);
+                  setProductForm((current) => ({ ...current, isIntermediateMaterial: event.target.checked }));
+                }}
+              />
+              中間材料
+            </label>
             <button className="self-end rounded-md bg-teal-700 px-4 py-2 font-bold text-white" onClick={addProductFromRecipeName}>
               商品追加
             </button>
           </div>
-          <div className="mt-3 grid gap-3 md:grid-cols-4">
+          <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr]">
             <SelectInput label="商品" value={selectedProduct?.id ?? ""} options={data.products.map((product) => product.id)} optionLabels={Object.fromEntries(data.products.map((product) => [product.id, product.name]))} onChange={setSelectedProductId} />
-            <SelectInput
-              label="原材料（製品名）"
-              value={recipeIngredientId}
-              options={data.ingredients.map((ingredient) => ingredient.id)}
-              optionLabels={Object.fromEntries(data.ingredients.map((ingredient) => [ingredient.id, ingredientOptionLabel(ingredient)]))}
-              onChange={setRecipeIngredientId}
-            />
-            <NumberInput label={`使用量${selectedRecipeIngredient ? `（${ingredientUnitLabel(selectedRecipeIngredient)}）` : ""}`} value={recipeAmountGram} onChange={setRecipeAmountGram} />
-            <button className="self-end rounded-md bg-neutral-900 px-4 py-2 font-bold text-white" onClick={addRecipeItem}>
-              選択中の材料を追加
-            </button>
+            <div className="self-end rounded-md border border-neutral-200 bg-neutral-50 p-3 text-xs font-bold text-neutral-600">
+              左のパレットからドラッグして追加します。使用量は追加後に表で入力してください。
+            </div>
           </div>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-[320px_1fr]">
@@ -1564,20 +1643,53 @@ export function CostNutritionApp() {
                 ))}
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2">
+                {visibleIntermediateProducts.map((product) => {
+                  const summary = calculateProductCost(product, data.ingredients, data.recipeItems, data.products);
+                  const unitCost = summary.totalRecipeWeightGram ? summary.totalCost / summary.totalRecipeWeightGram : 0;
+                  return (
+                    <button
+                      key={product.id}
+                      draggable
+                      className="relative min-h-20 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-left"
+                      onClick={() => setSelectedProductId(product.id)}
+                      onDragStart={(event) => {
+                        event.dataTransfer.setData("application/json", JSON.stringify({ type: "intermediate", id: product.id }));
+                        event.dataTransfer.effectAllowed = "copy";
+                      }}
+                    >
+                      <span className="block pr-8 font-black">{product.name}</span>
+                      <span className="mt-1 inline-block rounded bg-emerald-100 px-2 py-1 text-[11px] font-bold text-emerald-700">中間材料</span>
+                      <span className="mt-1 block text-xs text-neutral-500">{yen(unitCost)} / g</span>
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        title="削除"
+                        className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-md bg-red-50 text-sm font-black text-red-700"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          deletePaletteItem("intermediate", product.id);
+                        }}
+                      >
+                        ×
+                      </span>
+                    </button>
+                  );
+                })}
                 {filteredIngredients.map((ingredient) => (
                   <button
                     key={ingredient.id}
                     draggable
-                    className={`min-h-20 rounded-md border bg-white p-2 text-left ${
+                    className={`relative min-h-20 rounded-md border bg-white p-2 text-left ${
                       recipeIngredientId === ingredient.id ? "border-teal-700 ring-2 ring-teal-100" : "border-neutral-200"
                     }`}
                     onClick={() => setRecipeIngredientId(ingredient.id)}
                     onDragStart={(event) => {
+                      event.dataTransfer.setData("application/json", JSON.stringify({ type: "ingredient", id: ingredient.id }));
                       event.dataTransfer.setData("text/plain", ingredient.id);
                       event.dataTransfer.effectAllowed = "copy";
                     }}
                   >
-                    <span className="block font-black">{ingredient.packageName || ingredient.name}</span>
+                    <span className="block pr-8 font-black">{ingredient.packageName || ingredient.name}</span>
                     {ingredient.packageName && ingredient.packageName !== ingredient.name && (
                       <span className="block text-[11px] font-bold text-neutral-500">{ingredient.name}</span>
                     )}
@@ -1585,8 +1697,27 @@ export function CostNutritionApp() {
                       {ingredient.category || "未分類"}
                     </span>
                     <span className="mt-1 block text-xs text-neutral-500">{yen(pricePerGram(ingredient))} / {ingredientUnitLabel(ingredient)}</span>
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      title="削除"
+                      className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-md bg-red-50 text-sm font-black text-red-700"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        deletePaletteItem("ingredient", ingredient.id);
+                      }}
+                    >
+                      ×
+                    </span>
                   </button>
                 ))}
+              </div>
+              <div
+                className="mt-3 rounded-md border-2 border-dashed border-red-300 bg-red-50 p-3 text-center text-sm font-black text-red-700"
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={dropPaletteItemToTrash}
+              >
+                ゴミ箱へドラッグして削除
               </div>
             </aside>
 
@@ -1596,11 +1727,13 @@ export function CostNutritionApp() {
               onDrop={dropRecipeIngredient}
             >
               <div className="mb-3 rounded-md bg-teal-50 p-3 text-sm font-bold text-teal-900">
-                左の原材料カードをここへドラッグすると、レシピ行に追加されます。追加後、使用量は表の中で直接入力できます。
+                左のカードをここへドラッグすると、レシピ行に追加されます。中間材料も同じように追加できます。
               </div>
               <RecipeTable
                 rows={recipeRows}
                 ingredients={data.ingredients}
+                products={data.products}
+                recipeItems={data.recipeItems}
                 onDelete={deleteRecipeItem}
                 onAmountChange={updateRecipeItemAmount}
                 onItemChange={updateRecipeItem}
@@ -1631,7 +1764,7 @@ export function CostNutritionApp() {
               <Metric label="レシピ重量" value={`${number(costSummary.totalRecipeWeightGram)}g`} />
             </div>
           )}
-          <RecipeTable rows={recipeRows} ingredients={data.ingredients} onDelete={deleteRecipeItem} />
+          <RecipeTable rows={recipeRows} ingredients={data.ingredients} products={data.products} recipeItems={data.recipeItems} onDelete={deleteRecipeItem} />
         </Panel>
       )}
 
@@ -1783,8 +1916,8 @@ function buildLabelText(
   nutritionSummary: NonNullable<ReturnType<typeof calculateProductNutrition>>,
   data: AppData,
 ) {
-  const allergens = collectAllergens(product.id, data.ingredients, data.recipeItems);
-  const labelNames = collectLabelNames(product.id, data.ingredients, data.recipeItems);
+  const allergens = collectAllergens(product.id, data.ingredients, data.recipeItems, data.products);
+  const labelNames = collectLabelNames(product.id, data.ingredients, data.recipeItems, data.products);
   return [
     product.name,
     "",
@@ -1969,12 +2102,16 @@ function SelectInput({
 function RecipeTable({
   rows,
   ingredients,
+  products,
+  recipeItems,
   onDelete,
   onAmountChange,
   onItemChange,
 }: {
   rows: RecipeItem[];
   ingredients: Ingredient[];
+  products: Product[];
+  recipeItems: RecipeItem[];
   onDelete: (recipeItemId: string) => void;
   onAmountChange?: (recipeItemId: string, amountGram: number) => void;
   onItemChange?: (recipeItemId: string, patch: Partial<RecipeItem>) => void;
@@ -1996,19 +2133,22 @@ function RecipeTable({
         <tbody>
           {rows.map((item) => {
             const ingredient = ingredients.find((candidate) => candidate.id === item.ingredientId);
+            const intermediate = products.find((candidate) => candidate.id === item.intermediateProductId);
             const normalizedItem = normalizeRecipeItem(item);
             const amount = recipeItemAmountGram(normalizedItem);
             const unit = ingredient ? ingredientUnitLabel(ingredient) : "";
-            const nutritionGram = ingredient ? amountToGram(ingredient, amount) : 0;
+            const intermediateSummary = intermediate ? calculateProductCost(intermediate, ingredients, recipeItems, products) : null;
+            const intermediateUnitCost = intermediateSummary?.totalRecipeWeightGram ? intermediateSummary.totalCost / intermediateSummary.totalRecipeWeightGram : 0;
+            const nutritionGram = ingredient ? amountToGram(ingredient, amount) : amount;
             return (
               <tr key={item.id} className="border-t border-neutral-200">
                 <td className="p-3">
-                  <strong>{ingredient?.packageName || ingredient?.name}</strong>
+                  <strong>{item.itemType === "intermediate" ? intermediate?.name : ingredient?.packageName || ingredient?.name}</strong>
                   {ingredient?.packageName && ingredient.packageName !== ingredient.name && (
                     <span className="ml-2 text-[11px] font-bold text-neutral-500">{ingredient.name}</span>
                   )}
                   <span className="ml-2 rounded bg-neutral-100 px-2 py-1 text-[11px] font-bold text-neutral-600">
-                    {ingredient?.category || "未分類"}
+                    {item.itemType === "intermediate" ? "中間材料" : ingredient?.category || "未分類"}
                   </span>
                 </td>
                 <td className="p-3">
@@ -2034,8 +2174,12 @@ function RecipeTable({
                   )}
                 </td>
                 <td className="p-3 text-right">{number(nutritionGram)}g</td>
-                <td className="p-3 text-right">{ingredient ? `${yen(pricePerGram(ingredient))} / ${unit}` : "-"}</td>
-                <td className="p-3 text-right">{ingredient ? yen(pricePerGram(ingredient) * amount) : "-"}</td>
+                <td className="p-3 text-right">
+                  {item.itemType === "intermediate" ? `${yen(intermediateUnitCost)} / g` : ingredient ? `${yen(pricePerGram(ingredient))} / ${unit}` : "-"}
+                </td>
+                <td className="p-3 text-right">
+                  {item.itemType === "intermediate" ? yen(intermediateUnitCost * amount) : ingredient ? yen(pricePerGram(ingredient) * amount) : "-"}
+                </td>
                 <td className="p-3 text-right">
                   <button className="rounded-md bg-red-50 px-3 py-1 font-bold text-red-700" onClick={() => onDelete(item.id)}>
                     削除

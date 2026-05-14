@@ -69,18 +69,71 @@ export function totalRecipeWeight(recipeItems: RecipeItem[], productId: string, 
   }, 0);
 }
 
-export function calculateProductCost(
+function getIntermediateBasisWeight(product: Product, ingredients: Ingredient[], recipeItems: RecipeItem[], visited: Set<string>): number {
+  return product.afterBakeWeightGram || totalRecipeWeightWithProducts(recipeItems, product.id, ingredients, [], visited) || 1;
+}
+
+function totalRecipeWeightWithProducts(
+  recipeItems: RecipeItem[],
+  productId: string,
+  ingredients: Ingredient[],
+  products: Product[],
+  visited = new Set<string>(),
+): number {
+  if (visited.has(productId)) return 0;
+  return getProductRecipeItems(recipeItems, productId).reduce((sum, item) => {
+    const amount = recipeItemAmountGram(item);
+    if (item.itemType === "intermediate") return sum + amount;
+    const ingredient = ingredients.find((candidate) => candidate.id === item.ingredientId);
+    return ingredient ? sum + amountToGram(ingredient, amount) : sum;
+  }, 0);
+}
+
+function intermediateCostPerGram(
   product: Product,
   ingredients: Ingredient[],
+  products: Product[],
   recipeItems: RecipeItem[],
+  visited: Set<string>,
+): number {
+  if (visited.has(product.id)) return 0;
+  const summary = calculateProductCostInternal(product, ingredients, products, recipeItems, new Set(visited).add(product.id));
+  const basisWeight = getIntermediateBasisWeight(product, ingredients, recipeItems, visited);
+  return basisWeight ? summary.totalCost / basisWeight : 0;
+}
+
+function recipeItemCost(
+  item: RecipeItem,
+  ingredients: Ingredient[],
+  products: Product[],
+  recipeItems: RecipeItem[],
+  visited: Set<string>,
+) {
+  const amount = recipeItemAmountGram(item);
+  if (item.itemType === "intermediate") {
+    const product = products.find((candidate) => candidate.id === item.intermediateProductId);
+    return product ? intermediateCostPerGram(product, ingredients, products, recipeItems, visited) * amount : 0;
+  }
+  const ingredient = ingredients.find((candidate) => candidate.id === item.ingredientId);
+  return ingredient ? ingredientCost(ingredient, amount) : 0;
+}
+
+function calculateProductCostInternal(
+  product: Product,
+  ingredients: Ingredient[],
+  products: Product[],
+  recipeItems: RecipeItem[],
+  visited: Set<string>,
 ): ProductCostSummary {
   const productItems = getProductRecipeItems(recipeItems, product.id);
   const materialTotalCost = productItems.reduce((sum, item) => {
+    if (item.itemType === "intermediate") return sum + recipeItemCost(item, ingredients, products, recipeItems, visited);
     const ingredient = ingredients.find((candidate) => candidate.id === item.ingredientId);
     if (!ingredient || isPackagingIngredient(ingredient)) return sum;
     return sum + ingredientCost(ingredient, recipeItemAmountGram(item));
   }, 0);
   const packagingTotalCost = productItems.reduce((sum, item) => {
+    if (item.itemType === "intermediate") return sum;
     const ingredient = ingredients.find((candidate) => candidate.id === item.ingredientId);
     if (!ingredient || !isPackagingIngredient(ingredient)) return sum;
     return sum + ingredientCost(ingredient, recipeItemAmountGram(item));
@@ -105,8 +158,17 @@ export function calculateProductCost(
     materialCostRate,
     packagingCostRate,
     costRate,
-    totalRecipeWeightGram: totalRecipeWeight(recipeItems, product.id, ingredients),
+    totalRecipeWeightGram: totalRecipeWeightWithProducts(recipeItems, product.id, ingredients, products, visited),
   };
+}
+
+export function calculateProductCost(
+  product: Product,
+  ingredients: Ingredient[],
+  recipeItems: RecipeItem[],
+  products: Product[] = [],
+): ProductCostSummary {
+  return calculateProductCostInternal(product, ingredients, products, recipeItems, new Set<string>());
 }
 
 export function nutritionForAmount(ingredient: Ingredient, amountGram: number): Nutrition {
@@ -164,17 +226,26 @@ export function calculateProductNutrition(
   product: Product,
   ingredients: Ingredient[],
   recipeItems: RecipeItem[],
+  products: Product[] = [],
 ): ProductNutritionSummary {
   const productItems = getProductRecipeItems(recipeItems, product.id);
   const totalNutrition = productItems.reduce((sum, item) => {
+    if (item.itemType === "intermediate") {
+      const intermediate = products.find((candidate) => candidate.id === item.intermediateProductId);
+      if (!intermediate) return sum;
+      const intermediateNutrition = calculateProductNutrition(intermediate, ingredients, recipeItems, products).totalNutrition;
+      const basisWeight = getIntermediateBasisWeight(intermediate, ingredients, recipeItems, new Set([product.id]));
+      return addNutrition(sum, multiplyNutrition(divideNutrition(intermediateNutrition, basisWeight), recipeItemAmountGram(item)));
+    }
     const ingredient = ingredients.find((candidate) => candidate.id === item.ingredientId);
     if (!ingredient || isPackagingIngredient(ingredient)) return sum;
     return addNutrition(sum, nutritionForAmount(ingredient, amountToGram(ingredient, recipeItemAmountGram(item))));
   }, zeroNutrition);
-  const basisWeightGram = product.afterBakeWeightGram || totalRecipeWeight(recipeItems, product.id, ingredients);
+  const basisWeightGram = product.afterBakeWeightGram || totalRecipeWeightWithProducts(recipeItems, product.id, ingredients, products);
   const nutritionPerPiece = divideNutrition(totalNutrition, product.yieldCount);
   const nutritionPer100g = multiplyNutrition(divideNutrition(totalNutrition, basisWeightGram), 100);
   const missingNutritionIngredientIds = productItems
+    .filter((item) => item.itemType !== "intermediate")
     .map((item) => ingredients.find((ingredient) => ingredient.id === item.ingredientId))
     .filter((ingredient): ingredient is Ingredient => Boolean(ingredient))
     .filter((ingredient) => !hasNutrition(ingredient))
@@ -222,17 +293,27 @@ export function calculatePriceImpact(
     .sort((a, b) => b.increase - a.increase);
 }
 
-export function collectAllergens(productId: string, ingredients: Ingredient[], recipeItems: RecipeItem[]): string[] {
-  const productIngredientIds = new Set(getProductRecipeItems(recipeItems, productId).map((item) => item.ingredientId));
-  const allergens = ingredients
-    .filter((ingredient) => productIngredientIds.has(ingredient.id))
-    .flatMap((ingredient) => [...ingredient.allergens, ingredient.otherAllergen].filter(Boolean));
+export function collectAllergens(productId: string, ingredients: Ingredient[], recipeItems: RecipeItem[], products: Product[] = []): string[] {
+  const allergens = getProductRecipeItems(recipeItems, productId).flatMap((item) => {
+    if (item.itemType === "intermediate") {
+      const intermediate = products.find((product) => product.id === item.intermediateProductId);
+      return intermediate ? collectAllergens(intermediate.id, ingredients, recipeItems, products) : [];
+    }
+    const ingredient = ingredients.find((candidate) => candidate.id === item.ingredientId);
+    return ingredient ? [...ingredient.allergens, ingredient.otherAllergen].filter(Boolean) : [];
+  });
   return [...new Set(allergens)].sort();
 }
 
-export function collectLabelNames(productId: string, ingredients: Ingredient[], recipeItems: RecipeItem[]): string[] {
+export function collectLabelNames(productId: string, ingredients: Ingredient[], recipeItems: RecipeItem[], products: Product[] = []): string[] {
   return getProductRecipeItems(recipeItems, productId)
-    .map((item) => ingredients.find((ingredient) => ingredient.id === item.ingredientId))
-    .filter((ingredient): ingredient is Ingredient => Boolean(ingredient))
-    .map((ingredient) => ingredient.labelName || ingredient.name);
+    .flatMap((item) => {
+      if (item.itemType === "intermediate") {
+        const intermediate = products.find((product) => product.id === item.intermediateProductId);
+        return intermediate ? collectLabelNames(intermediate.id, ingredients, recipeItems, products) : [];
+      }
+      const ingredient = ingredients.find((candidate) => candidate.id === item.ingredientId);
+      return ingredient ? [ingredient.labelName || ingredient.name] : [];
+    })
+    .filter(Boolean);
 }

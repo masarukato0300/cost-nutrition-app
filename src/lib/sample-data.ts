@@ -147,6 +147,7 @@ export const sampleData: AppData = {
     {
       id: "prd-shortcake",
       name: "苺のショートケーキ",
+      isIntermediateMaterial: false,
       sellingPrice: 620,
       taxType: "税込",
       targetCostRate: 32,
@@ -161,12 +162,12 @@ export const sampleData: AppData = {
     },
   ],
   recipeItems: [
-    { id: "rec-flour", productId: "prd-shortcake", ingredientId: "ing-flour", usageType: "gram", amountGram: 120, baseAmountGram: 120, usedCount: 1, totalCount: 1, fractionDenominator: 1, createdAt: now, updatedAt: now },
-    { id: "rec-sugar", productId: "prd-shortcake", ingredientId: "ing-sugar", usageType: "gram", amountGram: 140, baseAmountGram: 140, usedCount: 1, totalCount: 1, fractionDenominator: 1, createdAt: now, updatedAt: now },
-    { id: "rec-egg", productId: "prd-shortcake", ingredientId: "ing-egg", usageType: "gram", amountGram: 280, baseAmountGram: 280, usedCount: 1, totalCount: 1, fractionDenominator: 1, createdAt: now, updatedAt: now },
-    { id: "rec-butter", productId: "prd-shortcake", ingredientId: "ing-butter", usageType: "gram", amountGram: 45, baseAmountGram: 45, usedCount: 1, totalCount: 1, fractionDenominator: 1, createdAt: now, updatedAt: now },
-    { id: "rec-cream", productId: "prd-shortcake", ingredientId: "ing-cream", usageType: "gram", amountGram: 330, baseAmountGram: 330, usedCount: 1, totalCount: 1, fractionDenominator: 1, createdAt: now, updatedAt: now },
-    { id: "rec-strawberry", productId: "prd-shortcake", ingredientId: "ing-strawberry", usageType: "gram", amountGram: 240, baseAmountGram: 240, usedCount: 1, totalCount: 1, fractionDenominator: 1, createdAt: now, updatedAt: now },
+    { id: "rec-flour", productId: "prd-shortcake", ingredientId: "ing-flour", itemType: "ingredient", intermediateProductId: "", usageType: "gram", amountGram: 120, baseAmountGram: 120, usedCount: 1, totalCount: 1, fractionDenominator: 1, createdAt: now, updatedAt: now },
+    { id: "rec-sugar", productId: "prd-shortcake", ingredientId: "ing-sugar", itemType: "ingredient", intermediateProductId: "", usageType: "gram", amountGram: 140, baseAmountGram: 140, usedCount: 1, totalCount: 1, fractionDenominator: 1, createdAt: now, updatedAt: now },
+    { id: "rec-egg", productId: "prd-shortcake", ingredientId: "ing-egg", itemType: "ingredient", intermediateProductId: "", usageType: "gram", amountGram: 280, baseAmountGram: 280, usedCount: 1, totalCount: 1, fractionDenominator: 1, createdAt: now, updatedAt: now },
+    { id: "rec-butter", productId: "prd-shortcake", ingredientId: "ing-butter", itemType: "ingredient", intermediateProductId: "", usageType: "gram", amountGram: 45, baseAmountGram: 45, usedCount: 1, totalCount: 1, fractionDenominator: 1, createdAt: now, updatedAt: now },
+    { id: "rec-cream", productId: "prd-shortcake", ingredientId: "ing-cream", itemType: "ingredient", intermediateProductId: "", usageType: "gram", amountGram: 330, baseAmountGram: 330, usedCount: 1, totalCount: 1, fractionDenominator: 1, createdAt: now, updatedAt: now },
+    { id: "rec-strawberry", productId: "prd-shortcake", ingredientId: "ing-strawberry", itemType: "ingredient", intermediateProductId: "", usageType: "gram", amountGram: 240, baseAmountGram: 240, usedCount: 1, totalCount: 1, fractionDenominator: 1, createdAt: now, updatedAt: now },
   ],
   priceHistories: [
     {

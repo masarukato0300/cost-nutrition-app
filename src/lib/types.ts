@@ -1,6 +1,7 @@
 export type TaxType = "税込" | "税抜";
 export type DisplayUnit = "1個あたり" | "100gあたり" | "1袋あたり" | "1本あたり";
 export type RecipeUsageType = "gram" | "count" | "fraction";
+export type RecipeItemType = "ingredient" | "intermediate";
 
 export type Nutrition = {
   calories: number;
@@ -37,6 +38,7 @@ export type Ingredient = {
 export type Product = {
   id: string;
   name: string;
+  isIntermediateMaterial: boolean;
   sellingPrice: number;
   taxType: TaxType;
   targetCostRate: number;
@@ -54,6 +56,8 @@ export type RecipeItem = {
   id: string;
   productId: string;
   ingredientId: string;
+  itemType: RecipeItemType;
+  intermediateProductId: string;
   usageType: RecipeUsageType;
   amountGram: number;
   baseAmountGram: number;
