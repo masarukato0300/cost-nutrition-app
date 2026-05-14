@@ -1451,9 +1451,9 @@ export function CostNutritionApp() {
             </div>
           </section>
 
-          <section className="mt-3 rounded-md border border-neutral-200 bg-white p-4">
-            <h3 className="font-black text-neutral-900">価格・内容量</h3>
-            <div className="mt-3 grid gap-3 md:grid-cols-5">
+          <section className="mt-4 rounded-md border border-neutral-200 bg-white p-5">
+            <h3 className="border-b border-neutral-100 pb-2 text-lg font-black text-neutral-900">価格・内容量</h3>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
               <NumberInput label="内容量" value={ingredientForm.packageAmountGram} onChange={(value) => setIngredientForm({ ...ingredientForm, packageAmountGram: value })} />
               <TextInput label="単位" value={ingredientForm.packageUnit} onChange={(value) => setIngredientForm({ ...ingredientForm, packageUnit: value })} />
               <NumberInput label="1単位あたりg" value={ingredientForm.gramPerUnit} onChange={(value) => setIngredientForm({ ...ingredientForm, gramPerUnit: value })} />
@@ -1463,9 +1463,9 @@ export function CostNutritionApp() {
             <p className="mt-2 text-xs font-bold text-neutral-500">kgは保存時にgへ変換されます。税抜が標準です。</p>
           </section>
 
-          <section className="mt-3 rounded-md border border-neutral-200 bg-white p-4">
-            <h3 className="font-black text-neutral-900">栄養成分 100gあたり</h3>
-            <div className="mt-3 grid gap-3 md:grid-cols-5">
+          <section className="mt-5 rounded-md border border-neutral-200 bg-white p-5">
+            <h3 className="border-b border-neutral-100 pb-2 text-lg font-black text-neutral-900">栄養成分 100gあたり</h3>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
               <NumberInput label="エネルギー kcal" value={ingredientForm.caloriesPer100g ?? 0} onChange={(value) => setIngredientForm({ ...ingredientForm, caloriesPer100g: value })} />
               <NumberInput label="たんぱく質 g" value={ingredientForm.proteinPer100g ?? 0} onChange={(value) => setIngredientForm({ ...ingredientForm, proteinPer100g: value })} />
               <NumberInput label="脂質 g" value={ingredientForm.fatPer100g ?? 0} onChange={(value) => setIngredientForm({ ...ingredientForm, fatPer100g: value })} />
