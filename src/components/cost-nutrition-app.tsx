@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   calculatePriceImpact,
   calculateProductCost,
@@ -485,6 +485,8 @@ const emptyProduct = (): Product => ({
 });
 
 export function CostNutritionApp() {
+  const ingredientCameraInputRef = useRef<HTMLInputElement | null>(null);
+  const ingredientPhotoInputRef = useRef<HTMLInputElement | null>(null);
   const [activePage, setActivePage] = useState<PageKey>("top");
   const [stores, setStores] = useState<StoreAccount[]>([{ id: defaultStoreId, pin: "0000", createdAt: now(), updatedAt: now() }]);
   const [currentStoreId, setCurrentStoreId] = useState(defaultStoreId);
@@ -509,7 +511,6 @@ export function CostNutritionApp() {
   const [storeModalMode, setStoreModalMode] = useState<StoreModalMode>("switch");
   const [ingredientOcrText, setIngredientOcrText] = useState("原材料名: 全卵\n製品名: 赤玉 Lサイズ 10個\n仕入先: 山手鶏卵\n内容量: 10個\n仕入価格: 420円");
   const [ingredientOcrImageName, setIngredientOcrImageName] = useState("");
-  const [ingredientOcrImage, setIngredientOcrImage] = useState<File | null>(null);
   const [ingredientOcrStatus, setIngredientOcrStatus] = useState("");
   const [isIngredientOcrReading, setIsIngredientOcrReading] = useState(false);
   const [ingredientOcrCandidate, setIngredientOcrCandidate] = useState<Ingredient | null>(null);
@@ -613,15 +614,12 @@ export function CostNutritionApp() {
     setIngredientOcrCandidate(candidate);
   }
 
-  async function readIngredientImageWithOcr() {
-    if (!ingredientOcrImage) {
-      alert("撮影画像を選択してください。");
-      return;
-    }
+  async function readIngredientFileWithOcr(file: File) {
+    setIngredientOcrImageName(file.name);
     setIsIngredientOcrReading(true);
     setIngredientOcrStatus("画像を圧縮中...");
     try {
-      const preprocessedImage = await preprocessImageForOcr(ingredientOcrImage);
+      const preprocessedImage = await preprocessImageForOcr(file);
       setIngredientOcrStatus("OpenAI Visionで読み取り中... 撮影1回につき1リクエストです。");
       const response = await fetch("/api/ingredient-vision-ocr", {
         method: "POST",
@@ -672,6 +670,11 @@ export function CostNutritionApp() {
     } finally {
       setIsIngredientOcrReading(false);
     }
+  }
+
+  function handleIngredientOcrFile(file: File | null) {
+    if (!file) return;
+    void readIngredientFileWithOcr(file);
   }
 
   function applyIngredientOcrCandidate() {
@@ -1195,25 +1198,49 @@ export function CostNutritionApp() {
         <Panel title="原材料登録">
           <section className="mb-4 rounded-md border border-teal-200 bg-teal-50 p-3">
             <h3 className="font-black text-teal-900">カメラ / OCRから読み込み</h3>
-            <div className="mt-3 grid gap-3 lg:grid-cols-[280px_1fr_160px]">
-              <label className="grid gap-1 font-bold text-neutral-600">
-                <span>撮影画像</span>
+            <div className="mt-3 grid gap-3 lg:grid-cols-[260px_1fr_160px]">
+              <div className="grid place-items-center gap-2 rounded-md border border-red-100 bg-white p-3">
                 <input
-                  className="rounded-md border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                  ref={ingredientCameraInputRef}
+                  className="hidden"
                   type="file"
                   accept="image/*"
                   capture="environment"
                   onChange={(event) => {
                     const file = event.target.files?.[0] ?? null;
-                    setIngredientOcrImage(file);
-                    setIngredientOcrImageName(file?.name ?? "");
-                    setIngredientOcrStatus("");
+                    event.currentTarget.value = "";
+                    handleIngredientOcrFile(file);
                   }}
                 />
+                <input
+                  ref={ingredientPhotoInputRef}
+                  className="hidden"
+                  type="file"
+                  accept="image/*"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] ?? null;
+                    event.currentTarget.value = "";
+                    handleIngredientOcrFile(file);
+                  }}
+                />
+                <button
+                  className="grid h-28 w-28 place-items-center rounded-full bg-red-600 px-4 text-center text-lg font-black leading-tight text-white shadow-lg disabled:bg-neutral-300"
+                  disabled={isIngredientOcrReading}
+                  onClick={() => ingredientCameraInputRef.current?.click()}
+                >
+                  カメラ<br />起動
+                </button>
+                <button
+                  className="rounded-md border border-neutral-300 bg-white px-5 py-2 font-bold text-neutral-800 disabled:bg-neutral-100"
+                  disabled={isIngredientOcrReading}
+                  onClick={() => ingredientPhotoInputRef.current?.click()}
+                >
+                  写真
+                </button>
                 <span className="text-xs font-bold text-neutral-500">
-                  {ingredientOcrImageName ? `選択中: ${ingredientOcrImageName}` : "iPadではここからカメラ撮影できます。"}
+                  {ingredientOcrImageName ? `選択中: ${ingredientOcrImageName}` : "撮影・選択後に自動でAI読み取りします。"}
                 </span>
-              </label>
+              </div>
               <label className="grid gap-1 font-bold text-neutral-600">
                 <span>OCR読み取り結果</span>
                 <textarea
@@ -1223,13 +1250,9 @@ export function CostNutritionApp() {
                 />
               </label>
               <div className="grid gap-2 self-end">
-                <button
-                  className="rounded-md bg-teal-700 px-4 py-2 font-bold text-white disabled:bg-neutral-300"
-                  disabled={isIngredientOcrReading}
-                  onClick={readIngredientImageWithOcr}
-                >
-                  {isIngredientOcrReading ? "AI読み取り中" : "AIで画像読み取り"}
-                </button>
+                <div className="rounded-md border border-teal-200 bg-white px-3 py-2 text-center text-sm font-black text-teal-800">
+                  {isIngredientOcrReading ? "AI読み取り中" : "自動読み取り"}
+                </div>
                 <button className="rounded-md border border-neutral-300 bg-white px-4 py-2 font-bold text-neutral-700" onClick={analyzeIngredientOcr}>
                   読み込み確認
                 </button>
