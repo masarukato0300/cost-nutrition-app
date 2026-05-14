@@ -25,6 +25,7 @@ const currentStoreStorageKey = "cost-nutrition-label-mvp-current-store-v1";
 const allergenOptions = ["卵", "乳", "小麦", "えび", "かに", "くるみ", "そば", "落花生"];
 const pages = [
   { key: "top", label: "TOP" },
+  { key: "help", label: "使い方" },
   { key: "ingredient", label: "原材料登録" },
   { key: "product", label: "商品登録" },
   { key: "recipe", label: "レシピ登録" },
@@ -350,6 +351,7 @@ function searchStandardNutritionFoods(query: string) {
 function topPageDescription(pageKey: PageKey) {
   const descriptions: Record<PageKey, string> = {
     top: "各機能への入口",
+    help: "初めて使う方向けの操作ガイド",
     ingredient: "原材料、製品名、価格、栄養成分を登録",
     product: "商品名、売価、出来上がり個数を登録",
     recipe: "製品名から材料を選び、使用量を入力",
@@ -1256,6 +1258,12 @@ export function CostNutritionApp() {
         </Panel>
       )}
 
+      {activePage === "help" && (
+        <Panel title="使い方">
+          <HelpGuide onNavigate={setActivePage} />
+        </Panel>
+      )}
+
       {isStoreModalOpen && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-3">
           <section className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-md border border-neutral-200 bg-white p-4 shadow-xl">
@@ -1995,6 +2003,110 @@ function Metric({
       <strong className={`${compact ? "text-sm leading-tight md:text-base" : "text-xl"}`}>{value}</strong>
     </div>
   );
+}
+
+function HelpGuide({ onNavigate }: { onNavigate: (page: PageKey) => void }) {
+  const steps = [
+    { title: "1. 原材料を登録", body: "カメラ起動、写真、または手入力で材料名・製品名・価格・栄養成分を登録します。", page: "ingredient" as PageKey },
+    { title: "2. 商品を登録", body: "販売価格、出来上がり個数、表示単位を登録します。中間材料として使う商品もここで管理できます。", page: "product" as PageKey },
+    { title: "3. レシピを作る", body: "製品名パレットから材料をドラッグし、使用量を表の中で入力します。", page: "recipe" as PageKey },
+    { title: "4. 原価と栄養を確認", body: "原価率、栄養成分表示、ラベル用テキスト、価格変更の影響を確認します。", page: "cost" as PageKey },
+  ];
+  const buttonGuides = [
+    ["TOP", "各画面へ移動する入口です。迷ったらここへ戻ります。"],
+    ["原材料登録", "原材料名、製品名、仕入価格、内容量、栄養成分、アレルゲンを登録します。"],
+    ["カメラ起動", "iPadのカメラで伝票やラベルを撮影し、自動でAI読み取りを始めます。"],
+    ["写真", "写真ライブラリから画像を選び、自動でAI読み取りを始めます。"],
+    ["栄養を反映", "食品成分表データベースから近い食品を選び、栄養成分を入力欄へ入れます。"],
+    ["原材料を保存", "入力した原材料をマスターへ保存します。保存後、登録履歴として次回候補にも使われます。"],
+    ["商品登録", "商品名、販売価格、出来上がり個数、焼成後重量などを登録します。"],
+    ["中間材料", "仕込んだクリームやキャラメルのように、別レシピで材料として使うものにチェックします。"],
+    ["レシピ登録", "商品を選び、製品名パレットから材料や中間材料をドラッグしてレシピを作ります。"],
+    ["ゴミ箱", "パレットの材料をドラッグして削除できます。削除前に確認が出ます。"],
+    ["原価計算", "売価、材料原価、包材込み原価、原価率を確認します。売価もここで編集できます。"],
+    ["栄養成分計算", "レシピから1個あたり、100gあたりの栄養成分を計算します。"],
+    ["影響分析", "原材料価格を変更した時、どの商品にどれだけ影響するか確認します。"],
+    ["ラベル表示", "商品名、栄養成分、アレルゲン、原材料表示名を確認用テキストにします。"],
+    ["原材料マスター", "登録済み原材料を一覧で確認し、タップで編集、削除ボタンで削除できます。"],
+  ];
+
+  return (
+    <div className="grid gap-4">
+      <section className="rounded-md border border-teal-200 bg-teal-50 p-4">
+        <h3 className="text-lg font-black text-teal-950">最初に覚える流れ</h3>
+        <div className="mt-4 grid gap-3 lg:grid-cols-4">
+          {steps.map((step, index) => (
+            <div key={step.title} className="relative rounded-md border border-teal-200 bg-white p-3">
+              <strong className="block text-teal-900">{step.title}</strong>
+              <p className="mt-2 text-sm font-bold text-neutral-600">{step.body}</p>
+              <button className="mt-3 rounded-md bg-teal-700 px-3 py-2 text-sm font-bold text-white" onClick={() => onNavigate(step.page)}>
+                開く
+              </button>
+              {index < steps.length - 1 && (
+                <span className="absolute -right-3 top-1/2 hidden h-6 w-6 -translate-y-1/2 rounded-full bg-teal-700 text-center font-black text-white lg:block">
+                  →
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-md border border-neutral-200 bg-white p-4">
+        <h3 className="text-lg font-black text-neutral-900">図解: OCR登録</h3>
+        <div className="mt-3 grid gap-2 md:grid-cols-[1fr_40px_1fr_40px_1fr]">
+          <HelpBox title="カメラ起動 / 写真" body="伝票、ラベル、価格表を撮影または選択" />
+          <HelpArrow />
+          <HelpBox title="AI読み取り" body="原材料名、製品名、内容量、単価を候補化" />
+          <HelpArrow />
+          <HelpBox title="確認POPUP" body="合っていれば反映、重複ならスキップも可能" />
+        </div>
+      </section>
+
+      <section className="rounded-md border border-neutral-200 bg-white p-4">
+        <h3 className="text-lg font-black text-neutral-900">図解: レシピ登録</h3>
+        <div className="mt-3 grid gap-2 md:grid-cols-[1fr_40px_1fr_40px_1fr]">
+          <HelpBox title="商品を選ぶ" body="苺ショート、焼菓子、中間材料などを選択" />
+          <HelpArrow />
+          <HelpBox title="ドラッグ" body="製品名パレットから材料をレシピへ移動" />
+          <HelpArrow />
+          <HelpBox title="使用量を入力" body="g、何個中何個、何分の1で入力" />
+        </div>
+      </section>
+
+      <section className="rounded-md border border-neutral-200 bg-white p-4">
+        <h3 className="text-lg font-black text-neutral-900">各ボタンの説明</h3>
+        <div className="mt-3 grid gap-2 md:grid-cols-2">
+          {buttonGuides.map(([label, body]) => (
+            <div key={label} className="rounded-md border border-neutral-200 bg-neutral-50 p-3">
+              <strong className="block text-neutral-900">{label}</strong>
+              <p className="mt-1 text-sm font-bold text-neutral-600">{body}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-md border border-amber-200 bg-amber-50 p-4">
+        <h3 className="font-black text-amber-950">正式表示に使う前の注意</h3>
+        <p className="mt-2 text-sm font-bold text-amber-900">
+          栄養成分は計算上の目安です。食品表示として使う場合は、原材料規格書、メーカー資料、専門家確認などで最終確認してください。
+        </p>
+      </section>
+    </div>
+  );
+}
+
+function HelpBox({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="rounded-md border border-neutral-200 bg-neutral-50 p-3 text-center">
+      <strong className="block text-neutral-900">{title}</strong>
+      <p className="mt-2 text-sm font-bold text-neutral-600">{body}</p>
+    </div>
+  );
+}
+
+function HelpArrow() {
+  return <div className="grid place-items-center text-2xl font-black text-teal-700">→</div>;
 }
 
 function TextInput({
