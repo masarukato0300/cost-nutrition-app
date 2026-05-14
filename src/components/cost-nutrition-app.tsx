@@ -685,15 +685,19 @@ export function CostNutritionApp() {
     setIngredientOcrCandidate(null);
     setIngredientOcrStatus(
       nextIndex < ingredientOcrCandidates.length
-        ? `${ingredientOcrCandidateIndex + 1}件目をフォームへ反映しました。保存後、「次の候補を確認」を押してください。`
+        ? `${ingredientOcrCandidateIndex + 1}件目をフォームへ反映しました。保存すると次の商品を自動表示します。`
         : "最後の候補をフォームへ反映しました。内容を確認して保存してください。",
     );
   }
 
-  function showNextIngredientOcrCandidate() {
-    const nextCandidate = ingredientOcrCandidates[ingredientOcrCandidateIndex];
+  function showNextIngredientOcrCandidateSoon(nextIndex: number) {
+    const nextCandidate = ingredientOcrCandidates[nextIndex];
     if (!nextCandidate) return;
-    setIngredientOcrCandidate(nextCandidate);
+    window.setTimeout(() => {
+      setIngredientOcrCandidateIndex(nextIndex);
+      setIngredientOcrCandidate(nextCandidate);
+      setIngredientOcrStatus(`${nextIndex + 1}件目を確認してください。`);
+    }, 250);
   }
 
   function skipIngredientOcrCandidate() {
@@ -702,9 +706,10 @@ export function CostNutritionApp() {
     setIngredientOcrCandidate(null);
     setIngredientOcrStatus(
       nextIndex < ingredientOcrCandidates.length
-        ? `${ingredientOcrCandidateIndex + 1}件目をスキップしました。次の候補を確認できます。`
+        ? `${ingredientOcrCandidateIndex + 1}件目をスキップしました。次の候補を表示します。`
         : "最後の候補をスキップしました。",
     );
+    showNextIngredientOcrCandidateSoon(nextIndex);
   }
 
   const selectedProduct = data.products.find((product) => product.id === selectedProductId) ?? data.products[0];
@@ -730,6 +735,10 @@ export function CostNutritionApp() {
   const possibleDuplicateIngredients = useMemo(
     () => findDuplicateIngredients(ingredientForm, data.ingredients).slice(0, 3),
     [data.ingredients, ingredientForm],
+  );
+  const possibleOcrDuplicateIngredients = useMemo(
+    () => ingredientOcrCandidate ? findDuplicateIngredients(ingredientOcrCandidate, data.ingredients).slice(0, 3) : [],
+    [data.ingredients, ingredientOcrCandidate],
   );
   const standardNutritionMatches = useMemo(
     () => searchStandardNutritionFoods(nutritionSearchText || `${ingredientForm.name} ${ingredientForm.packageName}`),
@@ -797,6 +806,10 @@ export function CostNutritionApp() {
     });
     setIngredientForm(emptyIngredient());
     if (!recipeIngredientId) setRecipeIngredientId(ingredient.id);
+    if (ingredientOcrCandidateIndex < ingredientOcrCandidates.length) {
+      setIngredientOcrStatus("保存しました。次の商品を表示します。");
+      showNextIngredientOcrCandidateSoon(ingredientOcrCandidateIndex);
+    }
   }
 
   function skipIngredientForm() {
@@ -1179,15 +1192,23 @@ export function CostNutritionApp() {
               <dt className="font-bold text-neutral-500">内容量</dt><dd>{number(ingredientOcrCandidate.packageAmountGram)}{ingredientOcrCandidate.packageUnit}</dd>
               <dt className="font-bold text-neutral-500">仕入価格</dt><dd>{yen(ingredientOcrCandidate.price)}</dd>
             </dl>
+            {possibleOcrDuplicateIngredients.length > 0 && (
+              <div className="mt-4 animate-pulse rounded-md border-2 border-red-500 bg-red-50 p-3 text-sm font-black text-red-800">
+                <p className="text-base">重複してる可能性があります</p>
+                <p className="mt-1 text-xs">
+                  登録済み: {possibleOcrDuplicateIngredients.map((ingredient) => ingredientOptionLabel(ingredient)).join(" / ")}
+                </p>
+              </div>
+            )}
             <div className="mt-4 flex flex-wrap justify-end gap-2">
               <button className="rounded-md border border-neutral-300 bg-white px-4 py-2 font-bold text-neutral-700" onClick={() => setIngredientOcrCandidate(null)}>
                 戻る
               </button>
-              <button className="rounded-md border border-amber-300 bg-white px-4 py-2 font-bold text-amber-800" onClick={skipIngredientOcrCandidate}>
-                この候補をスキップ
+              <button className="rounded-md border-2 border-amber-500 bg-white px-5 py-3 font-black text-amber-800" onClick={skipIngredientOcrCandidate}>
+                スキップする
               </button>
-              <button className="rounded-md bg-teal-700 px-4 py-2 font-bold text-white" onClick={applyIngredientOcrCandidate}>
-                フォームへ反映
+              <button className="rounded-md bg-teal-700 px-5 py-3 font-black text-white" onClick={applyIngredientOcrCandidate}>
+                反映させる
               </button>
             </div>
           </section>
@@ -1256,11 +1277,6 @@ export function CostNutritionApp() {
                 <button className="rounded-md border border-neutral-300 bg-white px-4 py-2 font-bold text-neutral-700" onClick={analyzeIngredientOcr}>
                   読み込み確認
                 </button>
-                {ingredientOcrCandidateIndex < ingredientOcrCandidates.length && !ingredientOcrCandidate && (
-                  <button className="rounded-md border border-teal-700 bg-white px-4 py-2 font-bold text-teal-800" onClick={showNextIngredientOcrCandidate}>
-                    次の候補を確認
-                  </button>
-                )}
               </div>
             </div>
             <p className="mt-2 text-xs font-bold text-teal-900">
