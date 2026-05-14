@@ -1114,6 +1114,25 @@ export function CostNutritionApp() {
     if (selectedProductId === id) setSelectedProductId(data.products.find((product) => product.id !== id)?.id ?? "");
   }
 
+  function editIngredientFromMaster(ingredient: Ingredient) {
+    setIngredientForm(ingredient);
+    setActivePage("ingredient");
+  }
+
+  function deleteIngredientFromMaster(ingredient: Ingredient) {
+    const recipeUseCount = data.recipeItems.filter((item) => item.ingredientId === ingredient.id).length;
+    const message = recipeUseCount > 0
+      ? `${ingredientOptionLabel(ingredient)} を削除しますか？\n\nこの原材料は ${recipeUseCount} 件のレシピで使われています。削除すると、そのレシピ行も外れます。`
+      : `${ingredientOptionLabel(ingredient)} を削除しますか？`;
+    if (!confirm(message)) return;
+    commit({
+      ...data,
+      ingredients: data.ingredients.filter((item) => item.id !== ingredient.id),
+      recipeItems: data.recipeItems.filter((item) => item.ingredientId !== ingredient.id),
+    });
+    if (ingredientForm.id === ingredient.id) setIngredientForm(emptyIngredient());
+  }
+
   function dropPaletteItemToTrash(event: React.DragEvent<HTMLDivElement>) {
     event.preventDefault();
     const raw = event.dataTransfer.getData("application/json");
@@ -1891,15 +1910,20 @@ export function CostNutritionApp() {
         <Panel title="原材料マスター">
           <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
             {data.ingredients.map((ingredient) => (
-              <button key={ingredient.id} className="rounded-md border border-neutral-200 bg-white p-3 text-left" onClick={() => {
-                setIngredientForm(ingredient);
-                setActivePage("ingredient");
-              }}>
-              <strong>{ingredient.packageName || ingredient.name}</strong>
-                {ingredient.packageName && ingredient.packageName !== ingredient.name && <p className="text-xs font-bold text-neutral-500">{ingredient.name}</p>}
-                <p className="text-neutral-600">{ingredient.category || "未分類"} / {number(ingredient.packageAmountGram)}{ingredientUnitLabel(ingredient)} / {yen(ingredient.price)} / {yen(pricePerGram(ingredient))} per {ingredientUnitLabel(ingredient)}</p>
-                <p className="text-xs text-neutral-500">栄養: {hasNutrition(ingredient) ? "登録済み" : "未登録"} / アレルゲン: {ingredient.allergens.join("、") || "なし"}</p>
-              </button>
+              <div key={ingredient.id} className="rounded-md border border-neutral-200 bg-white p-3 text-left">
+                <button className="w-full text-left" onClick={() => editIngredientFromMaster(ingredient)}>
+                  <strong>{ingredient.packageName || ingredient.name}</strong>
+                  {ingredient.packageName && ingredient.packageName !== ingredient.name && <p className="text-xs font-bold text-neutral-500">{ingredient.name}</p>}
+                  <p className="text-neutral-600">{ingredient.category || "未分類"} / {number(ingredient.packageAmountGram)}{ingredientUnitLabel(ingredient)} / {yen(ingredient.price)} / {yen(pricePerGram(ingredient))} per {ingredientUnitLabel(ingredient)}</p>
+                  <p className="text-xs text-neutral-500">栄養: {hasNutrition(ingredient) ? "登録済み" : "未登録"} / アレルゲン: {ingredient.allergens.join("、") || "なし"}</p>
+                </button>
+                <button
+                  className="mt-3 w-full rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-black text-red-700"
+                  onClick={() => deleteIngredientFromMaster(ingredient)}
+                >
+                  削除
+                </button>
+              </div>
             ))}
           </div>
         </Panel>
