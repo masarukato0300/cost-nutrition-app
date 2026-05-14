@@ -14,6 +14,8 @@ import {
   recipeItemAmountGram,
 } from "@/lib/calculations";
 import { sampleData } from "@/lib/sample-data";
+import { standardNutritionFoods } from "@/lib/standard-nutrition";
+import type { StandardNutritionFood } from "@/lib/standard-nutrition";
 import type { AppData, Ingredient, Product, RecipeItem, RecipeUsageType } from "@/lib/types";
 
 const defaultStoreId = "デモ店舗";
@@ -231,6 +233,32 @@ function findDuplicateIngredients(target: Ingredient, ingredients: Ingredient[])
       names.some((name) => name === targetName || (targetName.length >= 3 && name.includes(targetName)) || (name.length >= 3 && targetName.includes(name))),
     );
   });
+}
+
+function standardNutritionScore(food: StandardNutritionFood, query: string) {
+  const normalizedQuery = normalizeText(query);
+  if (!normalizedQuery) return 0;
+  const normalizedName = normalizeText(food.name);
+  if (normalizedName.includes(normalizedQuery)) return normalizedQuery.length + 20;
+  if (normalizedQuery.includes(normalizedName)) return normalizedName.length + 10;
+  return ingredientSearchTerms({
+    ...emptyIngredient(),
+    name: query,
+    packageName: query,
+  }).reduce((score, term) => (
+    normalizedName.includes(term) ? score + term.length : score
+  ), 0);
+}
+
+function searchStandardNutritionFoods(query: string) {
+  const normalizedQuery = normalizeText(query);
+  if (!normalizedQuery) return [];
+  return standardNutritionFoods
+    .map((food) => ({ food, score: standardNutritionScore(food, query) }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score || a.food.name.length - b.food.name.length)
+    .slice(0, 20)
+    .map((item) => item.food);
 }
 
 function topPageDescription(pageKey: PageKey) {
@@ -463,6 +491,8 @@ export function CostNutritionApp() {
   const [ingredientOcrCandidate, setIngredientOcrCandidate] = useState<Ingredient | null>(null);
   const [ingredientOcrCandidates, setIngredientOcrCandidates] = useState<Ingredient[]>([]);
   const [ingredientOcrCandidateIndex, setIngredientOcrCandidateIndex] = useState(0);
+  const [nutritionSearchText, setNutritionSearchText] = useState("");
+  const [selectedStandardNutritionId, setSelectedStandardNutritionId] = useState("");
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -674,6 +704,11 @@ export function CostNutritionApp() {
     () => findDuplicateIngredients(ingredientForm, data.ingredients).slice(0, 3),
     [data.ingredients, ingredientForm],
   );
+  const standardNutritionMatches = useMemo(
+    () => searchStandardNutritionFoods(nutritionSearchText || `${ingredientForm.name} ${ingredientForm.packageName}`),
+    [ingredientForm.name, ingredientForm.packageName, nutritionSearchText],
+  );
+  const selectedStandardNutrition = standardNutritionFoods.find((food) => food.id === selectedStandardNutritionId) ?? standardNutritionMatches[0];
 
   const dashboard = useMemo(() => {
     const productCosts = data.products.map((product) => calculateProductCost(product, data.ingredients, data.recipeItems));
@@ -709,6 +744,22 @@ export function CostNutritionApp() {
         ingredient = copyNutrition(ingredient, nutritionCandidate);
       }
     }
+    if (isNutritionEmpty(ingredient) && selectedStandardNutrition) {
+      const shouldCopyFromDb = confirm(
+        `栄養成分が未入力です。\n食品成分表の「${selectedStandardNutrition.name}」を反映して登録しますか？\n\n反映後も原材料登録画面で修正できます。`,
+      );
+      if (shouldCopyFromDb) {
+        ingredient = {
+          ...ingredient,
+          caloriesPer100g: selectedStandardNutrition.caloriesPer100g,
+          proteinPer100g: selectedStandardNutrition.proteinPer100g,
+          fatPer100g: selectedStandardNutrition.fatPer100g,
+          carbsPer100g: selectedStandardNutrition.carbsPer100g,
+          saltPer100g: selectedStandardNutrition.saltPer100g,
+          memo: [ingredient.memo, `栄養成分参照: 日本食品標準成分表 ${selectedStandardNutrition.foodNumber} ${selectedStandardNutrition.name}`].filter(Boolean).join("\n"),
+        };
+      }
+    }
     commit({
       ...data,
       ingredients: isEdit
@@ -726,6 +777,19 @@ export function CostNutritionApp() {
     } else {
       setIngredientOcrStatus("この候補をスキップしました。");
     }
+  }
+
+  function applyStandardNutrition(food = selectedStandardNutrition) {
+    if (!food) return;
+    setIngredientForm({
+      ...ingredientForm,
+      caloriesPer100g: food.caloriesPer100g,
+      proteinPer100g: food.proteinPer100g,
+      fatPer100g: food.fatPer100g,
+      carbsPer100g: food.carbsPer100g,
+      saltPer100g: food.saltPer100g,
+      memo: [ingredientForm.memo, `栄養成分参照: 日本食品標準成分表 ${food.foodNumber} ${food.name}`].filter(Boolean).join("\n"),
+    });
   }
 
   function saveProduct() {
@@ -1176,6 +1240,45 @@ export function CostNutritionApp() {
             <NumberInput label="食塩相当量 g/100g" value={ingredientForm.saltPer100g ?? 0} onChange={(value) => setIngredientForm({ ...ingredientForm, saltPer100g: value })} />
             <TextInput label="原材料表示名" value={ingredientForm.labelName} onChange={(value) => setIngredientForm({ ...ingredientForm, labelName: value })} />
           </div>
+          <section className="mt-3 rounded-md border border-sky-200 bg-sky-50 p-3">
+            <h3 className="font-black text-sky-950">栄養成分データベースから反映</h3>
+            <div className="mt-2 grid gap-2 md:grid-cols-[1fr_1fr_160px]">
+              <TextInput
+                label="食品名検索"
+                value={nutritionSearchText}
+                onChange={(value) => {
+                  setNutritionSearchText(value);
+                  setSelectedStandardNutritionId("");
+                }}
+              />
+              <SelectInput
+                label="候補"
+                value={selectedStandardNutrition?.id ?? ""}
+                options={standardNutritionMatches.map((food) => food.id)}
+                optionLabels={Object.fromEntries(standardNutritionMatches.map((food) => [food.id, `${food.name}（${food.foodNumber}）`]))}
+                onChange={setSelectedStandardNutritionId}
+              />
+              <button
+                className="self-end rounded-md bg-sky-700 px-4 py-2 font-bold text-white disabled:bg-neutral-300"
+                disabled={!selectedStandardNutrition}
+                onClick={() => applyStandardNutrition()}
+              >
+                栄養を反映
+              </button>
+            </div>
+            {selectedStandardNutrition && (
+              <p className="mt-2 text-xs font-bold text-sky-950">
+                {selectedStandardNutrition.name}: {number(selectedStandardNutrition.caloriesPer100g, 0)}kcal /
+                P {number(selectedStandardNutrition.proteinPer100g)}g /
+                F {number(selectedStandardNutrition.fatPer100g)}g /
+                C {number(selectedStandardNutrition.carbsPer100g)}g /
+                食塩 {number(selectedStandardNutrition.saltPer100g, 2)}g
+              </p>
+            )}
+            <p className="mt-1 text-xs font-bold text-sky-900">
+              文科省食品成分表Excelから取り込んだ100gあたり値です。正式表示では原材料仕様書などで最終確認してください。
+            </p>
+          </section>
           <div className="mt-3 flex flex-wrap gap-2">
             {allergenOptions.map((allergen) => (
               <label key={allergen} className="flex items-center gap-2 rounded-md border border-neutral-200 bg-white px-3 py-2">
