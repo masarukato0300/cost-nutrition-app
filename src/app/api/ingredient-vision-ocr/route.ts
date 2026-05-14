@@ -32,7 +32,7 @@ const schema = {
             supplier: { type: "string", description: "仕入先、メーカー、供給元。不明なら空文字" },
             packageAmount: { type: ["number", "null"], description: "内容量の数値部分。不明ならnull" },
             packageUnit: { type: "string", description: "内容量の単位。例: g, kg, ml, L, 個, 枚, 本。不明なら空文字" },
-            price: { type: ["number", "null"], description: "仕入価格または新価格。税込税抜は問わず数値のみ。不明ならnull" },
+            price: { type: ["number", "null"], description: "単価、新価格、改定後価格、売単価を最優先した仕入価格。合計金額、小計、請求金額、税込合計は選ばない。不明ならnull" },
             memo: { type: "string", description: "この候補の読み取り根拠、注意点、曖昧な点" },
             confidence: { type: "string", enum: ["high", "medium", "low"], description: "読み取り信頼度" },
           },
@@ -71,7 +71,7 @@ export async function POST(request: Request) {
         {
           role: "system",
           content:
-            "あなたは洋菓子店・飲食店向けの原材料ラベル、納品書、価格表、納品書、価格改定通知を読むOCR補助です。まず画像内の文字をできるだけ読み取り、その中から原材料登録に必要な情報を抽出してください。複数の原材料・商品行が写っている場合は、先頭だけでなく読み取れる候補を順番にすべてingredientsへ入れてください。",
+            "あなたは洋菓子店・飲食店向けの原材料ラベル、納品書、価格表、価格改定通知を読むOCR補助です。まず画像内の文字をできるだけ読み取り、その中から原材料登録に必要な情報を抽出してください。複数の原材料・商品行が写っている場合は、先頭だけでなく読み取れる候補を順番にすべてingredientsへ入れてください。価格は単価、新価格、改定後価格、売単価、単価(税込)の列を最優先し、数量×単価の合計金額、小計、請求金額、伝票合計はpriceに入れないでください。",
         },
         {
           role: "user",
@@ -79,7 +79,7 @@ export async function POST(request: Request) {
             {
               type: "text",
               text:
-                "この画像から原材料登録用の情報を抽出してください。rawTextには見える文字を行ごとに転記してください。ingredientsには、価格表や納品書の各行、複数ラベル、複数商品をできるだけ分けて入れてください。nameには食品としての原材料名、packageNameには袋や伝票に書かれた製品名・商品名、priceには仕入価格・税込価格・新価格らしい数値を入れてください。価格が複数ある場合は、登録に使う可能性が高い最終価格または新価格を選び、迷った理由をmemoに書いてください。返答は指定JSON schemaのみ。",
+                "この画像から原材料登録用の情報を抽出してください。rawTextには見える文字を行ごとに転記してください。ingredientsには、価格表や納品書の各行、複数ラベル、複数商品をできるだけ分けて入れてください。nameには食品としての原材料名、packageNameには袋や伝票に書かれた製品名・商品名を入れてください。priceは必ず単価、新価格、改定後価格、売単価、単価(税込)の列や近くの数値を優先してください。合計、金額、小計、請求金額、伝票合計、総額、数量×単価の結果はpriceに使わないでください。価格が複数ある場合は、新価格または改定後価格を選び、迷った理由をmemoに書いてください。返答は指定JSON schemaのみ。",
             },
             {
               type: "image_url",

@@ -290,6 +290,26 @@ function extractPriceNumbers(line: string) {
     .filter((value) => Number.isFinite(value) && value >= 10);
 }
 
+function normalizePackageAmount(amount: number, unit: string) {
+  const normalizedUnit = unit.trim().replace("Ｋ", "K").replace("ｋ", "k").replace("Ｇ", "G").replace("ｇ", "g").replace("Ｌ", "L").replace("ｌ", "l");
+  const lowerUnit = normalizedUnit.toLowerCase();
+  if (lowerUnit === "kg" || normalizedUnit === "キロ") return { amount: amount * 1000, unit: "g", gramPerUnit: 1 };
+  if (lowerUnit === "l" || normalizedUnit === "リットル") return { amount: amount * 1000, unit: "g", gramPerUnit: 1 };
+  if (lowerUnit === "ml" || normalizedUnit === "ｍｌ") return { amount, unit: "g", gramPerUnit: 1 };
+  if (lowerUnit === "g") return { amount, unit: "g", gramPerUnit: 1 };
+  return { amount, unit: normalizedUnit || "g", gramPerUnit: 1 };
+}
+
+function extractPreferredPrice(text: string, fallbackPrice: number) {
+  const lines = text.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const preferredLine = lines.find((line) => /単価|新価格|改定後|売単価|価格改定後|新単価/.test(line) && !/合計|小計|請求|総額|伝票合計/.test(line));
+  const preferredPrices = preferredLine ? extractPriceNumbers(preferredLine) : [];
+  if (preferredPrices.length > 0) return preferredPrices[preferredPrices.length - 1];
+  const filteredLines = lines.filter((line) => !/合計|小計|請求|総額|伝票合計|税込合計|金額合計/.test(line));
+  const prices = extractPriceNumbers(filteredLines.join("\n"));
+  return prices.length > 0 ? prices[prices.length - 1] : fallbackPrice;
+}
+
 function matchIngredientFromLine(line: string, ingredients: Ingredient[]) {
   const normalizedLine = normalizeText(line);
   return ingredients
@@ -347,14 +367,17 @@ function findOcrValue(text: string, patterns: RegExp[]) {
 
 function parseIngredientOcrText(text: string, base: Ingredient): Ingredient {
   const lines = text.split(/\n+/).map((line) => line.trim()).filter(Boolean);
-  const allPrices = extractPriceNumbers(text);
-  const price = allPrices.length > 0 ? allPrices[allPrices.length - 1] : base.price;
+  const price = extractPreferredPrice(text, base.price);
   const name = findOcrValue(text, [/^原材料名\s*[:：]?/, /^材料名\s*[:：]?/, /^品名\s*[:：]?/]) || lines[0] || base.name;
   const packageName = findOcrValue(text, [/^製品名\s*[:：]?/, /^商品名\s*[:：]?/]) || base.packageName || name;
   const supplier = findOcrValue(text, [/^仕入先\s*[:：]?/, /^メーカー\s*[:：]?/, /^供給元\s*[:：]?/]) || base.supplier;
   const amountText = findOcrValue(text, [/^内容量\s*[:：]?/, /^容量\s*[:：]?/, /^入数\s*[:：]?/]);
   const amountMatch = amountText.match(/\d[\d,]*(?:\.\d+)?/);
   const unitMatch = amountText.match(/[a-zA-Zぁ-んァ-ヶ一-龠枚個本袋箱mLmlLkgｇg]+$/);
+  const normalizedAmount = normalizePackageAmount(
+    amountMatch ? Number(amountMatch[0].replace(/,/g, "")) : base.packageAmountGram,
+    unitMatch?.[0] || base.packageUnit,
+  );
   const category = base.category && base.category !== "未分類" ? base.category : inferIngredientCategory(`${name} ${packageName}`);
   return {
     ...base,
@@ -362,8 +385,9 @@ function parseIngredientOcrText(text: string, base: Ingredient): Ingredient {
     category,
     packageName,
     supplier,
-    packageAmountGram: amountMatch ? Number(amountMatch[0].replace(/,/g, "")) : base.packageAmountGram,
-    packageUnit: unitMatch?.[0] || base.packageUnit,
+    packageAmountGram: normalizedAmount.amount,
+    packageUnit: normalizedAmount.unit,
+    gramPerUnit: normalizedAmount.gramPerUnit,
     price,
   };
 }
@@ -411,7 +435,7 @@ function ingredientFromVisionResult(result: IngredientVisionOcrResult, base: Ing
     result.packageName ? `製品名: ${result.packageName}` : "",
     result.supplier ? `仕入先: ${result.supplier}` : "",
     result.packageAmount ? `内容量: ${result.packageAmount}${result.packageUnit}` : "",
-    result.price ? `仕入価格: ${result.price}円` : "",
+    result.price ? `単価: ${result.price}円` : "",
     result.rawText ? `読み取り文字:\n${result.rawText}` : "",
   ].filter(Boolean).join("\n");
   return {
@@ -622,7 +646,7 @@ export function CostNutritionApp() {
           item.packageName ? `製品名: ${item.packageName}` : "",
           item.supplier ? `仕入先: ${item.supplier}` : "",
           item.packageAmount ? `内容量: ${item.packageAmount}${item.packageUnit}` : "",
-          item.price ? `仕入価格: ${item.price}円` : "",
+          item.price ? `単価: ${item.price}円` : "",
           item.memo ? `メモ: ${item.memo}` : "",
         ].filter(Boolean).join("\n")).join("\n\n"),
         rawText ? `\n--- 読み取れた文字 ---\n${rawText}` : "",
@@ -725,12 +749,14 @@ export function CostNutritionApp() {
     if (!ingredientForm.name.trim()) return;
     const isEdit = Boolean(ingredientForm.id);
     const inferredCategory = inferIngredientCategory(`${ingredientForm.name} ${ingredientForm.packageName}`);
+    const normalizedAmount = normalizePackageAmount(ingredientForm.packageAmountGram, ingredientForm.packageUnit || "g");
     let ingredient: Ingredient = {
       ...ingredientForm,
       category: ingredientForm.category && ingredientForm.category !== "未分類" ? ingredientForm.category : inferredCategory,
       labelName: ingredientForm.labelName || ingredientForm.name,
-      packageUnit: ingredientForm.packageUnit || "g",
-      gramPerUnit: ingredientForm.gramPerUnit || 0,
+      packageAmountGram: normalizedAmount.amount,
+      packageUnit: normalizedAmount.unit,
+      gramPerUnit: normalizedAmount.gramPerUnit || ingredientForm.gramPerUnit || 1,
       id: ingredientForm.id || createId("ing"),
       createdAt: ingredientForm.createdAt || now(),
       updatedAt: now(),
