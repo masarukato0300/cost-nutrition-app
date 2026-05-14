@@ -152,12 +152,13 @@ function normalizeRecipeItem(item: RecipeItem): RecipeItem {
   };
 }
 
-function inferIngredientCategory(name: string) {
-  if (/粉/.test(name)) return "粉類";
-  if (/砂糖|糖/.test(name)) return "糖類";
-  if (/卵/.test(name)) return "卵";
-  if (/バター|クリーム|乳/.test(name)) return "乳製品";
-  if (/苺|いちご|フルーツ|果/.test(name)) return "果物";
+function inferIngredientCategory(text: string) {
+  if (/包材|包装|箱|袋|シール|台紙|カップ|トレー|紙|フィルム/.test(text)) return "包材";
+  if (/粉|小麦/.test(text)) return "粉類";
+  if (/砂糖|糖|グラニュー|上白/.test(text)) return "糖類";
+  if (/卵|玉子|液卵/.test(text)) return "卵";
+  if (/バター|クリーム|乳|チーズ|牛乳/.test(text)) return "乳製品";
+  if (/苺|いちご|フルーツ|果|ベリー/.test(text)) return "果物";
   return "未分類";
 }
 
@@ -177,16 +178,36 @@ function isNutritionEmpty(ingredient: Ingredient) {
   ].every((value) => !value);
 }
 
+function ingredientSearchTerms(ingredient: Ingredient) {
+  const text = normalizeText(`${ingredient.name} ${ingredient.packageName} ${ingredient.labelName}`);
+  const terms = [ingredient.name, ingredient.packageName, ingredient.labelName]
+    .map((value) => normalizeText(value || ""))
+    .filter(Boolean);
+  if (/グラニュー|上白|砂糖|糖/.test(text)) terms.push("砂糖", "糖");
+  if (/生クリーム|クリーム|乳脂肪/.test(text)) terms.push("生クリーム", "クリーム", "乳");
+  if (/バター/.test(text)) terms.push("バター", "乳");
+  if (/全卵|卵|玉子|液卵/.test(text)) terms.push("卵", "全卵");
+  if (/薄力粉|小麦粉|粉/.test(text)) terms.push("薄力粉", "小麦粉", "粉");
+  if (/苺|いちご|ストロベリー/.test(text)) terms.push("苺", "いちご");
+  return Array.from(new Set(terms.filter((term) => term.length >= 1)));
+}
+
 function findNutritionCandidate(target: Ingredient, ingredients: Ingredient[]) {
-  return ingredients.find((ingredient) =>
-    ingredient.id !== target.id
-    && hasNutrition(ingredient)
-    && (
-      ingredient.name.includes(target.name)
-      || target.name.includes(ingredient.name)
-      || Boolean(target.category && target.category !== "未分類" && ingredient.category === target.category)
-    ),
-  );
+  const targetTerms = ingredientSearchTerms(target);
+  return ingredients
+    .filter((ingredient) => ingredient.id !== target.id && hasNutrition(ingredient))
+    .map((ingredient) => {
+      const terms = ingredientSearchTerms(ingredient);
+      const termScore = targetTerms.reduce((score, targetTerm) => (
+        score + terms.reduce((innerScore, term) => (
+          targetTerm.includes(term) || term.includes(targetTerm) ? innerScore + Math.min(targetTerm.length, term.length) : innerScore
+        ), 0)
+      ), 0);
+      const categoryScore = target.category && target.category !== "未分類" && ingredient.category === target.category ? 2 : 0;
+      return { ingredient, score: termScore + categoryScore };
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)[0]?.ingredient;
 }
 
 function copyNutrition(target: Ingredient, source: Ingredient): Ingredient {
@@ -198,6 +219,18 @@ function copyNutrition(target: Ingredient, source: Ingredient): Ingredient {
     carbsPer100g: source.carbsPer100g,
     saltPer100g: source.saltPer100g,
   };
+}
+
+function findDuplicateIngredients(target: Ingredient, ingredients: Ingredient[]) {
+  const targetNames = [target.name, target.packageName, target.labelName].map((value) => normalizeText(value || "")).filter(Boolean);
+  if (targetNames.length === 0) return [];
+  return ingredients.filter((ingredient) => {
+    if (ingredient.id && ingredient.id === target.id) return false;
+    const names = [ingredient.name, ingredient.packageName, ingredient.labelName].map((value) => normalizeText(value || "")).filter(Boolean);
+    return targetNames.some((targetName) =>
+      names.some((name) => name === targetName || (targetName.length >= 3 && name.includes(targetName)) || (name.length >= 3 && targetName.includes(name))),
+    );
+  });
 }
 
 function topPageDescription(pageKey: PageKey) {
@@ -294,9 +327,11 @@ function parseIngredientOcrText(text: string, base: Ingredient): Ingredient {
   const amountText = findOcrValue(text, [/^内容量\s*[:：]?/, /^容量\s*[:：]?/, /^入数\s*[:：]?/]);
   const amountMatch = amountText.match(/\d[\d,]*(?:\.\d+)?/);
   const unitMatch = amountText.match(/[a-zA-Zぁ-んァ-ヶ一-龠枚個本袋箱mLmlLkgｇg]+$/);
+  const category = base.category && base.category !== "未分類" ? base.category : inferIngredientCategory(`${name} ${packageName}`);
   return {
     ...base,
     name,
+    category,
     packageName,
     supplier,
     packageAmountGram: amountMatch ? Number(amountMatch[0].replace(/,/g, "")) : base.packageAmountGram,
@@ -604,6 +639,17 @@ export function CostNutritionApp() {
     setIngredientOcrCandidate(nextCandidate);
   }
 
+  function skipIngredientOcrCandidate() {
+    const nextIndex = ingredientOcrCandidateIndex + 1;
+    setIngredientOcrCandidateIndex(nextIndex);
+    setIngredientOcrCandidate(null);
+    setIngredientOcrStatus(
+      nextIndex < ingredientOcrCandidates.length
+        ? `${ingredientOcrCandidateIndex + 1}件目をスキップしました。次の候補を確認できます。`
+        : "最後の候補をスキップしました。",
+    );
+  }
+
   const selectedProduct = data.products.find((product) => product.id === selectedProductId) ?? data.products[0];
   const selectedRecipeIngredient = data.ingredients.find((ingredient) => ingredient.id === recipeIngredientId);
   const costSummary = selectedProduct
@@ -617,9 +663,17 @@ export function CostNutritionApp() {
     () => ["すべて", ...Array.from(new Set(data.ingredients.map((ingredient) => ingredient.category || "未分類")))],
     [data.ingredients],
   );
+  const editableIngredientCategories = useMemo(
+    () => ingredientCategories.filter((category) => category !== "すべて"),
+    [ingredientCategories],
+  );
   const filteredIngredients = activeIngredientCategory === "すべて"
     ? data.ingredients
     : data.ingredients.filter((ingredient) => (ingredient.category || "未分類") === activeIngredientCategory);
+  const possibleDuplicateIngredients = useMemo(
+    () => findDuplicateIngredients(ingredientForm, data.ingredients).slice(0, 3),
+    [data.ingredients, ingredientForm],
+  );
 
   const dashboard = useMemo(() => {
     const productCosts = data.products.map((product) => calculateProductCost(product, data.ingredients, data.recipeItems));
@@ -635,8 +689,10 @@ export function CostNutritionApp() {
   function saveIngredient() {
     if (!ingredientForm.name.trim()) return;
     const isEdit = Boolean(ingredientForm.id);
+    const inferredCategory = inferIngredientCategory(`${ingredientForm.name} ${ingredientForm.packageName}`);
     let ingredient: Ingredient = {
       ...ingredientForm,
+      category: ingredientForm.category && ingredientForm.category !== "未分類" ? ingredientForm.category : inferredCategory,
       labelName: ingredientForm.labelName || ingredientForm.name,
       packageUnit: ingredientForm.packageUnit || "g",
       gramPerUnit: ingredientForm.gramPerUnit || 0,
@@ -661,6 +717,15 @@ export function CostNutritionApp() {
     });
     setIngredientForm(emptyIngredient());
     if (!recipeIngredientId) setRecipeIngredientId(ingredient.id);
+  }
+
+  function skipIngredientForm() {
+    setIngredientForm(emptyIngredient());
+    if (ingredientOcrCandidateIndex < ingredientOcrCandidates.length) {
+      setIngredientOcrStatus("この候補をスキップしました。次の候補を確認できます。");
+    } else {
+      setIngredientOcrStatus("この候補をスキップしました。");
+    }
   }
 
   function saveProduct() {
@@ -1025,6 +1090,9 @@ export function CostNutritionApp() {
               <button className="rounded-md border border-neutral-300 bg-white px-4 py-2 font-bold text-neutral-700" onClick={() => setIngredientOcrCandidate(null)}>
                 戻る
               </button>
+              <button className="rounded-md border border-amber-300 bg-white px-4 py-2 font-bold text-amber-800" onClick={skipIngredientOcrCandidate}>
+                この候補をスキップ
+              </button>
               <button className="rounded-md bg-teal-700 px-4 py-2 font-bold text-white" onClick={applyIngredientOcrCandidate}>
                 フォームへ反映
               </button>
@@ -1088,7 +1156,12 @@ export function CostNutritionApp() {
           </section>
           <div className="grid gap-3 md:grid-cols-3">
             <TextInput label="原材料名" value={ingredientForm.name} onChange={(value) => setIngredientForm({ ...ingredientForm, name: value })} />
-            <TextInput label="カテゴリ" value={ingredientForm.category} onChange={(value) => setIngredientForm({ ...ingredientForm, category: value })} />
+            <CategoryInput
+              label="カテゴリ"
+              value={ingredientForm.category}
+              categories={editableIngredientCategories}
+              onChange={(value) => setIngredientForm({ ...ingredientForm, category: value })}
+            />
             <TextInput label="仕入先" value={ingredientForm.supplier} onChange={(value) => setIngredientForm({ ...ingredientForm, supplier: value })} />
             <TextInput label="製品名" value={ingredientForm.packageName} onChange={(value) => setIngredientForm({ ...ingredientForm, packageName: value })} />
             <NumberInput label="内容量" value={ingredientForm.packageAmountGram} onChange={(value) => setIngredientForm({ ...ingredientForm, packageAmountGram: value })} />
@@ -1122,9 +1195,24 @@ export function CostNutritionApp() {
               </label>
             ))}
           </div>
-          <button className="mt-3 rounded-md bg-teal-700 px-4 py-2 font-bold text-white" onClick={saveIngredient}>
-            原材料を保存
-          </button>
+          {possibleDuplicateIngredients.length > 0 && (
+            <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900">
+              <p>重複の可能性があります。</p>
+              <p className="mt-1 text-xs">
+                {possibleDuplicateIngredients.map((ingredient) => ingredientOptionLabel(ingredient)).join(" / ")}
+              </p>
+            </div>
+          )}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button className="rounded-md bg-teal-700 px-4 py-2 font-bold text-white" onClick={saveIngredient}>
+              原材料を保存
+            </button>
+            {possibleDuplicateIngredients.length > 0 && (
+              <button className="rounded-md border border-amber-300 bg-white px-4 py-2 font-bold text-amber-800" onClick={skipIngredientForm}>
+                重複の恐れがあるのでスキップ
+              </button>
+            )}
+          </div>
         </Panel>
       )}
 
@@ -1506,6 +1594,46 @@ function TextInput({
           if (event.key === "Enter") onEnter?.();
         }}
       />
+    </label>
+  );
+}
+
+function CategoryInput({
+  label,
+  value,
+  categories,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  categories: string[];
+  onChange: (value: string) => void;
+}) {
+  const normalizedCategories = Array.from(new Set([...categories, "未分類"].filter(Boolean)));
+  const isExisting = normalizedCategories.includes(value);
+  return (
+    <label className="grid gap-1 font-bold text-neutral-600">
+      <span>{label}</span>
+      <div className="grid grid-cols-[120px_1fr] gap-2">
+        <select
+          className="rounded-md border border-neutral-300 px-2 py-2 text-neutral-900"
+          value={isExisting ? value : "__custom"}
+          onChange={(event) => {
+            if (event.target.value !== "__custom") onChange(event.target.value);
+          }}
+        >
+          {normalizedCategories.map((category) => (
+            <option key={category} value={category}>{category}</option>
+          ))}
+          <option value="__custom">新規入力</option>
+        </select>
+        <input
+          className="rounded-md border border-neutral-300 px-3 py-2 text-neutral-900"
+          placeholder="パレットにないカテゴリ"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      </div>
     </label>
   );
 }
