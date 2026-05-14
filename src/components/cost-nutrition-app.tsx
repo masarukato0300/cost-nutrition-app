@@ -596,7 +596,6 @@ export function CostNutritionApp() {
   const [switchStorePin, setSwitchStorePin] = useState("");
   const [isStoreModalOpen, setIsStoreModalOpen] = useState(false);
   const [storeModalMode, setStoreModalMode] = useState<StoreModalMode>("switch");
-  const [ingredientOcrText, setIngredientOcrText] = useState("原材料名: 全卵\n製品名: 赤玉 Lサイズ 10個\n仕入先: 山手鶏卵\n内容量: 10個\n仕入価格: 420円");
   const [ingredientOcrImageName, setIngredientOcrImageName] = useState("");
   const [ingredientOcrStatus, setIngredientOcrStatus] = useState("");
   const [isIngredientOcrReading, setIsIngredientOcrReading] = useState(false);
@@ -694,13 +693,6 @@ export function CostNutritionApp() {
     saveStores(nextStores);
   }
 
-  function analyzeIngredientOcr() {
-    const candidate = parseIngredientOcrText(ingredientOcrText, ingredientForm);
-    setIngredientOcrCandidates([candidate]);
-    setIngredientOcrCandidateIndex(0);
-    setIngredientOcrCandidate(candidate);
-  }
-
   async function readIngredientFileWithOcr(file: File) {
     setIngredientOcrImageName(file.name);
     setIsIngredientOcrReading(true);
@@ -721,25 +713,10 @@ export function CostNutritionApp() {
 
       const result = json.result as IngredientVisionOcrResponse | IngredientVisionOcrResult;
       const rawText = "ingredients" in result ? result.rawText : result.rawText || "";
-      const resultMemo = "ingredients" in result ? result.memo : result.memo;
       const results = "ingredients" in result ? result.ingredients : [result];
       const validResults = results.filter((item) => item.name || item.packageName || item.price);
-      const text = [
-        validResults.map((item, index) => [
-          `--- 候補 ${index + 1} ---`,
-          item.name ? `原材料名: ${item.name}` : "",
-          item.packageName ? `製品名: ${item.packageName}` : "",
-          item.supplier ? `仕入先: ${item.supplier}` : "",
-          item.packageAmount ? `内容量: ${item.packageAmount}${item.packageUnit}` : "",
-          item.price ? `単価: ${item.price}円` : "",
-          item.memo ? `メモ: ${item.memo}` : "",
-        ].filter(Boolean).join("\n")).join("\n\n"),
-        rawText ? `\n--- 読み取れた文字 ---\n${rawText}` : "",
-        resultMemo ? `全体メモ: ${resultMemo}` : "",
-      ].filter(Boolean).join("\n");
 
       if (validResults.length === 0) {
-        setIngredientOcrText(text);
         setIngredientOcrCandidate(null);
         setIngredientOcrCandidates([]);
         setIngredientOcrCandidateIndex(0);
@@ -751,7 +728,6 @@ export function CostNutritionApp() {
         const learnedAlias = findIngredientAlias(candidate, data.ingredientAliases);
         return learnedAlias ? applyIngredientAlias(candidate, learnedAlias) : candidate;
       });
-      setIngredientOcrText(text);
       setIngredientOcrCandidates(candidates);
       setIngredientOcrCandidateIndex(0);
       setIngredientOcrCandidate(candidates[0]);
@@ -1404,7 +1380,7 @@ export function CostNutritionApp() {
         <Panel title="原材料登録">
           <section className="mb-4 rounded-md border border-teal-200 bg-teal-50 p-3">
             <h3 className="font-black text-teal-900">カメラ / OCRから読み込み</h3>
-            <div className="mt-3 grid gap-3 lg:grid-cols-[260px_1fr_160px]">
+            <div className="mt-3 grid gap-3 md:grid-cols-[260px_1fr]">
               <div className="grid place-items-center gap-2 rounded-md border border-red-100 bg-white p-3">
                 <input
                   ref={ingredientCameraInputRef}
@@ -1447,49 +1423,56 @@ export function CostNutritionApp() {
                   {ingredientOcrImageName ? `選択中: ${ingredientOcrImageName}` : "撮影・選択後に自動でAI読み取りします。"}
                 </span>
               </div>
-              <label className="grid gap-1 font-bold text-neutral-600">
-                <span>OCR読み取り結果</span>
-                <textarea
-                  className="h-32 rounded-md border border-neutral-300 bg-white p-3 font-mono text-xs text-neutral-900"
-                  value={ingredientOcrText}
-                  onChange={(event) => setIngredientOcrText(event.target.value)}
-                />
-              </label>
-              <div className="grid gap-2 self-end">
-                <div className="rounded-md border border-teal-200 bg-white px-3 py-2 text-center text-sm font-black text-teal-800">
-                  {isIngredientOcrReading ? "AI読み取り中" : "自動読み取り"}
-                </div>
-                <button className="rounded-md border border-neutral-300 bg-white px-4 py-2 font-bold text-neutral-700" onClick={analyzeIngredientOcr}>
-                  読み込み確認
-                </button>
+              <div className="grid content-center gap-2 rounded-md border border-teal-200 bg-white p-4">
+                <p className="text-lg font-black text-teal-900">
+                  {isIngredientOcrReading ? "AI読み取り中" : "撮影すると自動で読み取ります"}
+                </p>
+                <p className="text-sm font-bold text-neutral-600">
+                  読み取り後は確認POPUPで原材料名、製品名、内容量、価格を確認してからフォームへ反映します。
+                </p>
               </div>
             </div>
             <p className="mt-2 text-xs font-bold text-teal-900">
               {ingredientOcrStatus || "画像を圧縮し、gpt-4oで1回だけ読み取ります。確認POPUPで内容を確認してからフォームへ反映します。"}
             </p>
           </section>
-          <div className="grid gap-3 md:grid-cols-3">
-            <TextInput label="原材料名" value={ingredientForm.name} onChange={(value) => setIngredientForm({ ...ingredientForm, name: value })} />
-            <CategoryInput
-              label="カテゴリ"
-              value={ingredientForm.category}
-              categories={editableIngredientCategories}
-              onChange={(value) => setIngredientForm({ ...ingredientForm, category: value })}
-            />
-            <TextInput label="仕入先" value={ingredientForm.supplier} onChange={(value) => setIngredientForm({ ...ingredientForm, supplier: value })} />
-            <TextInput label="製品名" value={ingredientForm.packageName} onChange={(value) => setIngredientForm({ ...ingredientForm, packageName: value })} />
-            <NumberInput label="内容量" value={ingredientForm.packageAmountGram} onChange={(value) => setIngredientForm({ ...ingredientForm, packageAmountGram: value })} />
-            <TextInput label="単位" value={ingredientForm.packageUnit} onChange={(value) => setIngredientForm({ ...ingredientForm, packageUnit: value })} />
-            <NumberInput label="1単位あたりg" value={ingredientForm.gramPerUnit} onChange={(value) => setIngredientForm({ ...ingredientForm, gramPerUnit: value })} />
-            <NumberInput label="仕入価格" value={ingredientForm.price} onChange={(value) => setIngredientForm({ ...ingredientForm, price: value })} />
-            <SelectInput label="税込/税抜" value={ingredientForm.taxType} options={["税込", "税抜"]} onChange={(value) => setIngredientForm({ ...ingredientForm, taxType: value as Ingredient["taxType"] })} />
-            <NumberInput label="エネルギー kcal/100g" value={ingredientForm.caloriesPer100g ?? 0} onChange={(value) => setIngredientForm({ ...ingredientForm, caloriesPer100g: value })} />
-            <NumberInput label="たんぱく質 g/100g" value={ingredientForm.proteinPer100g ?? 0} onChange={(value) => setIngredientForm({ ...ingredientForm, proteinPer100g: value })} />
-            <NumberInput label="脂質 g/100g" value={ingredientForm.fatPer100g ?? 0} onChange={(value) => setIngredientForm({ ...ingredientForm, fatPer100g: value })} />
-            <NumberInput label="炭水化物 g/100g" value={ingredientForm.carbsPer100g ?? 0} onChange={(value) => setIngredientForm({ ...ingredientForm, carbsPer100g: value })} />
-            <NumberInput label="食塩相当量 g/100g" value={ingredientForm.saltPer100g ?? 0} onChange={(value) => setIngredientForm({ ...ingredientForm, saltPer100g: value })} />
-            <TextInput label="原材料表示名" value={ingredientForm.labelName} onChange={(value) => setIngredientForm({ ...ingredientForm, labelName: value })} />
-          </div>
+          <section className="rounded-md border border-neutral-200 bg-white p-4">
+            <h3 className="font-black text-neutral-900">基本情報</h3>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <TextInput label="原材料名" value={ingredientForm.name} onChange={(value) => setIngredientForm({ ...ingredientForm, name: value })} />
+              <TextInput label="製品名" value={ingredientForm.packageName} onChange={(value) => setIngredientForm({ ...ingredientForm, packageName: value })} />
+              <CategoryInput
+                label="カテゴリ"
+                value={ingredientForm.category}
+                categories={editableIngredientCategories}
+                onChange={(value) => setIngredientForm({ ...ingredientForm, category: value })}
+              />
+              <TextInput label="仕入先" value={ingredientForm.supplier} onChange={(value) => setIngredientForm({ ...ingredientForm, supplier: value })} />
+            </div>
+          </section>
+
+          <section className="mt-3 rounded-md border border-neutral-200 bg-white p-4">
+            <h3 className="font-black text-neutral-900">価格・内容量</h3>
+            <div className="mt-3 grid gap-3 md:grid-cols-5">
+              <NumberInput label="内容量" value={ingredientForm.packageAmountGram} onChange={(value) => setIngredientForm({ ...ingredientForm, packageAmountGram: value })} />
+              <TextInput label="単位" value={ingredientForm.packageUnit} onChange={(value) => setIngredientForm({ ...ingredientForm, packageUnit: value })} />
+              <NumberInput label="1単位あたりg" value={ingredientForm.gramPerUnit} onChange={(value) => setIngredientForm({ ...ingredientForm, gramPerUnit: value })} />
+              <NumberInput label="仕入価格" value={ingredientForm.price} onChange={(value) => setIngredientForm({ ...ingredientForm, price: value })} />
+              <SelectInput label="税込/税抜" value={ingredientForm.taxType} options={["税抜", "税込"]} onChange={(value) => setIngredientForm({ ...ingredientForm, taxType: value as Ingredient["taxType"] })} />
+            </div>
+            <p className="mt-2 text-xs font-bold text-neutral-500">kgは保存時にgへ変換されます。税抜が標準です。</p>
+          </section>
+
+          <section className="mt-3 rounded-md border border-neutral-200 bg-white p-4">
+            <h3 className="font-black text-neutral-900">栄養成分 100gあたり</h3>
+            <div className="mt-3 grid gap-3 md:grid-cols-5">
+              <NumberInput label="エネルギー kcal" value={ingredientForm.caloriesPer100g ?? 0} onChange={(value) => setIngredientForm({ ...ingredientForm, caloriesPer100g: value })} />
+              <NumberInput label="たんぱく質 g" value={ingredientForm.proteinPer100g ?? 0} onChange={(value) => setIngredientForm({ ...ingredientForm, proteinPer100g: value })} />
+              <NumberInput label="脂質 g" value={ingredientForm.fatPer100g ?? 0} onChange={(value) => setIngredientForm({ ...ingredientForm, fatPer100g: value })} />
+              <NumberInput label="炭水化物 g" value={ingredientForm.carbsPer100g ?? 0} onChange={(value) => setIngredientForm({ ...ingredientForm, carbsPer100g: value })} />
+              <NumberInput label="食塩相当量 g" value={ingredientForm.saltPer100g ?? 0} onChange={(value) => setIngredientForm({ ...ingredientForm, saltPer100g: value })} />
+            </div>
+          </section>
           {learnedIngredientAlias && (
             <section className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1544,25 +1527,32 @@ export function CostNutritionApp() {
               文科省食品成分表Excelから取り込んだ100gあたり値です。正式表示では原材料仕様書などで最終確認してください。
             </p>
           </section>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {allergenOptions.map((allergen) => (
-              <label key={allergen} className="flex items-center gap-2 rounded-md border border-neutral-200 bg-white px-3 py-2">
-                <input
-                  type="checkbox"
-                  checked={ingredientForm.allergens.includes(allergen)}
-                  onChange={(event) =>
-                    setIngredientForm({
-                      ...ingredientForm,
-                      allergens: event.target.checked
-                        ? [...ingredientForm.allergens, allergen]
-                        : ingredientForm.allergens.filter((item) => item !== allergen),
-                    })
-                  }
-                />
-                {allergen}
-              </label>
-            ))}
-          </div>
+          <section className="mt-3 rounded-md border border-neutral-200 bg-white p-4">
+            <h3 className="font-black text-neutral-900">表示・アレルゲン</h3>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <TextInput label="原材料表示名" value={ingredientForm.labelName} onChange={(value) => setIngredientForm({ ...ingredientForm, labelName: value })} />
+              <TextInput label="その他アレルゲン" value={ingredientForm.otherAllergen} onChange={(value) => setIngredientForm({ ...ingredientForm, otherAllergen: value })} />
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {allergenOptions.map((allergen) => (
+                <label key={allergen} className="flex items-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 font-bold text-neutral-700">
+                  <input
+                    type="checkbox"
+                    checked={ingredientForm.allergens.includes(allergen)}
+                    onChange={(event) =>
+                      setIngredientForm({
+                        ...ingredientForm,
+                        allergens: event.target.checked
+                          ? [...ingredientForm.allergens, allergen]
+                          : ingredientForm.allergens.filter((item) => item !== allergen),
+                      })
+                    }
+                  />
+                  {allergen}
+                </label>
+              ))}
+            </div>
+          </section>
           {possibleDuplicateIngredients.length > 0 && (
             <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900">
               <p>重複の可能性があります。</p>
