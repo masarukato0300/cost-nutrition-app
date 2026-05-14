@@ -178,4 +178,5 @@ export const sampleData: AppData = {
       memo: "サンプル価格改定",
     },
   ],
+  ingredientAliases: [],
 };

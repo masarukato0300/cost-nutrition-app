@@ -16,7 +16,7 @@ import {
 import { sampleData } from "@/lib/sample-data";
 import { standardNutritionFoods } from "@/lib/standard-nutrition";
 import type { StandardNutritionFood } from "@/lib/standard-nutrition";
-import type { AppData, Ingredient, Product, RecipeItem, RecipeUsageType } from "@/lib/types";
+import type { AppData, Ingredient, IngredientAlias, Product, RecipeItem, RecipeUsageType } from "@/lib/types";
 
 const defaultStoreId = "デモ店舗";
 const legacyStorageKey = "cost-nutrition-label-mvp-v1";
@@ -129,6 +129,7 @@ function normalizeData(parsed: AppData): AppData {
       gramPerUnit: ingredient.gramPerUnit ?? 1,
     })),
     recipeItems: parsed.recipeItems.map(normalizeRecipeItem),
+    ingredientAliases: parsed.ingredientAliases || [],
   };
 }
 
@@ -233,6 +234,86 @@ function findDuplicateIngredients(target: Ingredient, ingredients: Ingredient[])
       names.some((name) => name === targetName || (targetName.length >= 3 && name.includes(targetName)) || (name.length >= 3 && targetName.includes(name))),
     );
   });
+}
+
+function aliasSourceTexts(ingredient: Ingredient) {
+  return Array.from(new Set([
+    ingredient.name,
+    ingredient.packageName,
+    ingredient.labelName,
+    `${ingredient.supplier} ${ingredient.packageName}`,
+    `${ingredient.name} ${ingredient.packageName}`,
+  ].map((value) => value.trim()).filter(Boolean)));
+}
+
+function ingredientAliasFromIngredient(ingredient: Ingredient, sourceText: string, existing?: IngredientAlias): IngredientAlias {
+  const timestamp = now();
+  return {
+    id: existing?.id || createId("alias"),
+    sourceText,
+    normalizedSourceText: normalizeText(sourceText),
+    name: ingredient.name,
+    packageName: ingredient.packageName,
+    supplier: ingredient.supplier,
+    category: ingredient.category,
+    labelName: ingredient.labelName || ingredient.name,
+    caloriesPer100g: ingredient.caloriesPer100g,
+    proteinPer100g: ingredient.proteinPer100g,
+    fatPer100g: ingredient.fatPer100g,
+    carbsPer100g: ingredient.carbsPer100g,
+    saltPer100g: ingredient.saltPer100g,
+    useCount: (existing?.useCount || 0) + 1,
+    createdAt: existing?.createdAt || timestamp,
+    updatedAt: timestamp,
+  };
+}
+
+function learnIngredientAliases(aliases: IngredientAlias[], ingredient: Ingredient) {
+  return aliasSourceTexts(ingredient).reduce((nextAliases, sourceText) => {
+    const normalizedSourceText = normalizeText(sourceText);
+    const existing = nextAliases.find((alias) => alias.normalizedSourceText === normalizedSourceText);
+    const learned = ingredientAliasFromIngredient(ingredient, sourceText, existing);
+    return existing
+      ? nextAliases.map((alias) => (alias.id === existing.id ? learned : alias))
+      : [...nextAliases, learned];
+  }, aliases);
+}
+
+function findIngredientAlias(target: Ingredient, aliases: IngredientAlias[]) {
+  const targetTerms = [target.name, target.packageName, target.labelName]
+    .map((value) => normalizeText(value || ""))
+    .filter(Boolean);
+  if (targetTerms.length === 0) return null;
+  return aliases
+    .map((alias) => {
+      const aliasText = alias.normalizedSourceText;
+      const score = targetTerms.reduce((sum, term) => {
+        if (aliasText === term) return sum + 100;
+        if (aliasText.includes(term)) return sum + term.length + 20;
+        if (term.includes(aliasText)) return sum + aliasText.length + 10;
+        return sum;
+      }, alias.useCount);
+      return { alias, score };
+    })
+    .filter((item) => item.score >= 10)
+    .sort((a, b) => b.score - a.score)[0]?.alias ?? null;
+}
+
+function applyIngredientAlias(target: Ingredient, alias: IngredientAlias) {
+  return {
+    ...target,
+    name: alias.name || target.name,
+    packageName: alias.packageName || target.packageName,
+    supplier: alias.supplier || target.supplier,
+    category: alias.category || target.category,
+    labelName: alias.labelName || target.labelName,
+    caloriesPer100g: alias.caloriesPer100g ?? target.caloriesPer100g,
+    proteinPer100g: alias.proteinPer100g ?? target.proteinPer100g,
+    fatPer100g: alias.fatPer100g ?? target.fatPer100g,
+    carbsPer100g: alias.carbsPer100g ?? target.carbsPer100g,
+    saltPer100g: alias.saltPer100g ?? target.saltPer100g,
+    memo: [target.memo, `登録履歴から反映: ${alias.sourceText}`].filter(Boolean).join("\n"),
+  };
 }
 
 function standardNutritionScore(food: StandardNutritionFood, query: string) {
@@ -659,7 +740,11 @@ export function CostNutritionApp() {
         setIngredientOcrStatus(rawText ? "文字は一部読めましたが、登録項目に分けられませんでした。読み取り結果を手直しして「読み込み確認」を押してください。" : "登録に必要な情報を抽出できませんでした。明るい場所で、紙を画面いっぱいに入れて撮り直してください。");
         return;
       }
-      const candidates = validResults.map((item) => ingredientFromVisionResult({ ...item, rawText }, ingredientForm));
+      const candidates = validResults.map((item) => {
+        const candidate = ingredientFromVisionResult({ ...item, rawText }, ingredientForm);
+        const learnedAlias = findIngredientAlias(candidate, data.ingredientAliases);
+        return learnedAlias ? applyIngredientAlias(candidate, learnedAlias) : candidate;
+      });
       setIngredientOcrText(text);
       setIngredientOcrCandidates(candidates);
       setIngredientOcrCandidateIndex(0);
@@ -740,6 +825,10 @@ export function CostNutritionApp() {
     () => ingredientOcrCandidate ? findDuplicateIngredients(ingredientOcrCandidate, data.ingredients).slice(0, 3) : [],
     [data.ingredients, ingredientOcrCandidate],
   );
+  const learnedIngredientAlias = useMemo(
+    () => findIngredientAlias(ingredientForm, data.ingredientAliases),
+    [data.ingredientAliases, ingredientForm],
+  );
   const standardNutritionMatches = useMemo(
     () => searchStandardNutritionFoods(nutritionSearchText || `${ingredientForm.name} ${ingredientForm.packageName}`),
     [ingredientForm.name, ingredientForm.packageName, nutritionSearchText],
@@ -798,11 +887,13 @@ export function CostNutritionApp() {
         };
       }
     }
+    const nextAliases = learnIngredientAliases(data.ingredientAliases, ingredient);
     commit({
       ...data,
       ingredients: isEdit
         ? data.ingredients.map((item) => (item.id === ingredient.id ? ingredient : item))
         : [...data.ingredients, ingredient],
+      ingredientAliases: nextAliases,
     });
     setIngredientForm(emptyIngredient());
     if (!recipeIngredientId) setRecipeIngredientId(ingredient.id);
@@ -832,6 +923,11 @@ export function CostNutritionApp() {
       saltPer100g: food.saltPer100g,
       memo: [ingredientForm.memo, `栄養成分参照: 日本食品標準成分表 ${food.foodNumber} ${food.name}`].filter(Boolean).join("\n"),
     });
+  }
+
+  function applyLearnedIngredientAlias() {
+    if (!learnedIngredientAlias) return;
+    setIngredientForm(applyIngredientAlias(ingredientForm, learnedIngredientAlias));
   }
 
   function saveProduct() {
@@ -1305,6 +1401,21 @@ export function CostNutritionApp() {
             <NumberInput label="食塩相当量 g/100g" value={ingredientForm.saltPer100g ?? 0} onChange={(value) => setIngredientForm({ ...ingredientForm, saltPer100g: value })} />
             <TextInput label="原材料表示名" value={ingredientForm.labelName} onChange={(value) => setIngredientForm({ ...ingredientForm, labelName: value })} />
           </div>
+          {learnedIngredientAlias && (
+            <section className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="font-black text-emerald-950">登録履歴から候補があります</h3>
+                  <p className="text-xs font-bold text-emerald-900">
+                    {learnedIngredientAlias.sourceText} → {learnedIngredientAlias.packageName || learnedIngredientAlias.name}
+                  </p>
+                </div>
+                <button className="rounded-md bg-emerald-700 px-4 py-2 font-bold text-white" onClick={applyLearnedIngredientAlias}>
+                  登録履歴を反映
+                </button>
+              </div>
+            </section>
+          )}
           <section className="mt-3 rounded-md border border-sky-200 bg-sky-50 p-3">
             <h3 className="font-black text-sky-950">栄養成分データベースから反映</h3>
             <div className="mt-2 grid gap-2 md:grid-cols-[1fr_1fr_160px]">

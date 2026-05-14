@@ -73,11 +73,31 @@ export type PriceHistory = {
   memo: string;
 };
 
+export type IngredientAlias = {
+  id: string;
+  sourceText: string;
+  normalizedSourceText: string;
+  name: string;
+  packageName: string;
+  supplier: string;
+  category: string;
+  labelName: string;
+  caloriesPer100g: number | null;
+  proteinPer100g: number | null;
+  fatPer100g: number | null;
+  carbsPer100g: number | null;
+  saltPer100g: number | null;
+  useCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type AppData = {
   ingredients: Ingredient[];
   products: Product[];
   recipeItems: RecipeItem[];
   priceHistories: PriceHistory[];
+  ingredientAliases: IngredientAlias[];
 };
 
 export type ProductCostSummary = {
