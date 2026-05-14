@@ -1539,10 +1539,9 @@ export function CostNutritionApp() {
 
           <section className="mt-4 rounded-md border border-neutral-200 bg-white p-5">
             <h3 className="border-b border-neutral-100 pb-2 text-lg font-black text-neutral-900">価格・内容量</h3>
-            <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <NumberInput label="内容量" value={ingredientForm.packageAmountGram} onChange={(value) => setIngredientForm({ ...ingredientForm, packageAmountGram: value })} />
               <TextInput label="単位" value={ingredientForm.packageUnit} onChange={(value) => setIngredientForm({ ...ingredientForm, packageUnit: value })} />
-              <NumberInput label="1単位あたりg" value={ingredientForm.gramPerUnit} onChange={(value) => setIngredientForm({ ...ingredientForm, gramPerUnit: value })} />
               <NumberInput label="仕入価格" value={ingredientForm.price} onChange={(value) => setIngredientForm({ ...ingredientForm, price: value })} />
               <SelectInput label="税込/税抜" value={ingredientForm.taxType} options={["税抜", "税込"]} onChange={(value) => setIngredientForm({ ...ingredientForm, taxType: value as Ingredient["taxType"] })} />
             </div>
