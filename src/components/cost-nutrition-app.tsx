@@ -16,13 +16,20 @@ import {
 import { sampleData } from "@/lib/sample-data";
 import { standardNutritionFoods } from "@/lib/standard-nutrition";
 import type { StandardNutritionFood } from "@/lib/standard-nutrition";
-import type { AppData, Ingredient, IngredientAlias, Product, RecipeItem, RecipeUsageType } from "@/lib/types";
+import type { AppData, Ingredient, IngredientAlias, MaterialType, Product, ProductStatus, RecipeItem, RecipeUsageType } from "@/lib/types";
 
 const defaultStoreId = "デモ店舗";
 const legacyStorageKey = "cost-nutrition-label-mvp-v1";
 const storesStorageKey = "cost-nutrition-label-mvp-stores-v1";
 const currentStoreStorageKey = "cost-nutrition-label-mvp-current-store-v1";
 const allergenOptions = ["卵", "乳", "小麦", "えび", "かに", "くるみ", "そば", "落花生"];
+const materialTypeLabels: Record<MaterialType, string> = {
+  PURCHASED_INGREDIENT: "仕入原材料",
+  INTERMEDIATE: "中間材料",
+  PRODUCT: "販売商品",
+  PACKAGING: "包材",
+};
+const materialTypeOptions: MaterialType[] = ["PURCHASED_INGREDIENT", "PACKAGING"];
 const pages = [
   { key: "top", label: "TOP" },
   { key: "help", label: "使い方" },
@@ -188,9 +195,12 @@ function normalizeData(parsed: AppData): AppData {
     products: parsed.products.map((product) => ({
       ...product,
       isIntermediateMaterial: Boolean(product.isIntermediateMaterial),
+      category: product.category || (product.isIntermediateMaterial ? "仕込み材料" : "未分類"),
+      status: product.status || "販売中",
     })),
     ingredients: parsed.ingredients.map((ingredient) => ({
       ...ingredient,
+      type: ingredient.type || inferMaterialType(ingredient),
       category: ingredient.category || inferIngredientCategory(ingredient.name),
       packageUnit: ingredient.packageUnit || "g",
       gramPerUnit: ingredient.gramPerUnit ?? 1,
@@ -221,6 +231,8 @@ function normalizeRecipeItem(item: RecipeItem): RecipeItem {
     usedCount: item.usedCount || 1,
     totalCount: item.totalCount || 1,
     fractionDenominator: item.fractionDenominator || 1,
+    lossRate: item.lossRate || 0,
+    memo: item.memo || "",
   };
 }
 
@@ -232,6 +244,13 @@ function inferIngredientCategory(text: string) {
   if (/バター|クリーム|乳|チーズ|牛乳/.test(text)) return "乳製品";
   if (/苺|いちご|フルーツ|果|ベリー/.test(text)) return "果物";
   return "未分類";
+}
+
+function inferMaterialType(ingredient: Pick<Ingredient, "type" | "category" | "name">): MaterialType {
+  if (ingredient.type) return ingredient.type;
+  return /包材|包装|箱|袋|シール|台紙|カップ|トレー|紙|フィルム|保冷剤|リボン|脱酸素剤/.test(`${ingredient.category} ${ingredient.name}`)
+    ? "PACKAGING"
+    : "PURCHASED_INGREDIENT";
 }
 
 function ingredientOptionLabel(ingredient: Ingredient) {
@@ -602,6 +621,7 @@ function ingredientFromVisionResult(result: IngredientVisionOcrResult, base: Ing
 const emptyIngredient = (): Ingredient => ({
   id: "",
   name: "",
+  type: "PURCHASED_INGREDIENT",
   category: "未分類",
   supplier: "",
   packageName: "",
@@ -627,6 +647,7 @@ const emptyProduct = (): Product => ({
   id: "",
   name: "",
   isIntermediateMaterial: false,
+  category: "未分類",
   sellingPrice: 0,
   taxType: "税込",
   targetCostRate: 32,
@@ -635,6 +656,7 @@ const emptyProduct = (): Product => ({
   beforeBakeWeightGram: 0,
   afterBakeWeightGram: null,
   weightPerPieceGram: 0,
+  status: "販売中",
   memo: "",
   createdAt: now(),
   updatedAt: now(),
@@ -896,12 +918,15 @@ export function CostNutritionApp() {
 
   const dashboard = useMemo(() => {
     const productCosts = data.products.map((product) => calculateProductCost(product, data.ingredients, data.recipeItems, data.products));
+    const sellableProductCosts = productCosts.filter((item) => !item.product.isIntermediateMaterial);
     return {
       productCount: data.products.length,
       highCostCount: productCosts.filter((item) => item.costRate >= 35).length,
       dangerousCostCount: productCosts.filter((item) => item.costRate >= 40).length,
       affectedCount: impactRows.length,
       missingNutritionCount: data.ingredients.filter((ingredient) => !hasNutrition(ingredient)).length,
+      highCostTop: sellableProductCosts.slice().sort((a, b) => b.costRate - a.costRate).slice(0, 10),
+      priceReviewTop: sellableProductCosts.filter((item) => item.costRate >= item.product.targetCostRate || item.costRate >= 35).sort((a, b) => b.costRate - a.costRate).slice(0, 10),
     };
   }, [data, impactRows.length]);
 
@@ -913,6 +938,7 @@ export function CostNutritionApp() {
     let ingredient: Ingredient = {
       ...ingredientForm,
       category: ingredientForm.category && ingredientForm.category !== "未分類" ? ingredientForm.category : inferredCategory,
+      type: ingredientForm.type || inferMaterialType(ingredientForm),
       labelName: ingredientForm.labelName || ingredientForm.name,
       packageAmountGram: normalizedAmount.amount,
       packageUnit: normalizedAmount.unit,
@@ -995,6 +1021,8 @@ export function CostNutritionApp() {
     const product: Product = {
       ...productForm,
       isIntermediateMaterial: productForm.isIntermediateMaterial,
+      category: productForm.category || (productForm.isIntermediateMaterial ? "仕込み材料" : "未分類"),
+      status: productForm.status || "販売中",
       id: productForm.id || createId("prd"),
       createdAt: productForm.createdAt || now(),
       updatedAt: now(),
@@ -1030,6 +1058,7 @@ export function CostNutritionApp() {
       ...emptyProduct(),
       name,
       isIntermediateMaterial: recipeProductIsIntermediate,
+      category: recipeProductIsIntermediate ? "仕込み材料" : productForm.category || "未分類",
       id: createId("prd"),
       sellingPrice: productForm.sellingPrice || 0,
       taxType: productForm.taxType,
@@ -1040,6 +1069,7 @@ export function CostNutritionApp() {
       afterBakeWeightGram: productForm.afterBakeWeightGram,
       weightPerPieceGram: productForm.weightPerPieceGram || 0,
       memo: productForm.memo,
+      status: productForm.status || "販売中",
       createdAt: now(),
       updatedAt: now(),
     };
@@ -1065,6 +1095,8 @@ export function CostNutritionApp() {
       usedCount: 1,
       totalCount: 1,
       fractionDenominator: 1,
+      lossRate: 0,
+      memo: "",
       createdAt: now(),
       updatedAt: now(),
     };
@@ -1086,6 +1118,8 @@ export function CostNutritionApp() {
       usedCount: 1,
       totalCount: 1,
       fractionDenominator: 1,
+      lossRate: 0,
+      memo: "",
       createdAt: now(),
       updatedAt: now(),
     };
@@ -1109,7 +1143,7 @@ export function CostNutritionApp() {
       recipeItems: data.recipeItems.map((item) => {
         if (item.id !== recipeItemId) return item;
         const nextItem = normalizeRecipeItem({ ...item, ...patch, updatedAt: now() });
-        return { ...nextItem, amountGram: recipeItemAmountGram(nextItem) };
+        return nextItem;
       }),
     });
   }
@@ -1206,6 +1240,9 @@ export function CostNutritionApp() {
           oldPrice: ingredient.price,
           newPrice: impactNewPrice,
           changedAt: now(),
+          supplier: ingredient.supplier,
+          reason: "価格改定",
+          sourceType: "manual" as const,
           memo: "手入力による価格変更",
         },
       ],
@@ -1243,6 +1280,9 @@ export function CostNutritionApp() {
             oldPrice: ingredient?.price ?? candidate.oldPrice,
             newPrice: candidate.newPrice,
             changedAt,
+            supplier: ingredient?.supplier ?? "",
+            reason: "価格改定",
+            sourceType: "ocr" as const,
             memo: `OCR反映: ${candidate.line}`,
           };
         }),
@@ -1332,6 +1372,31 @@ export function CostNutritionApp() {
               </button>
               );
             })}
+          </div>
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            <section className="rounded-md border border-red-100 bg-red-50 p-3">
+              <h3 className="font-black text-red-950">値上げ検討商品TOP10</h3>
+              <div className="mt-2 grid gap-2">
+                {dashboard.priceReviewTop.map((summary) => (
+                  <div key={summary.product.id} className="flex justify-between gap-3 rounded-md bg-white px-3 py-2 text-sm font-bold">
+                    <span>{summary.product.name}</span>
+                    <span>{percent(summary.costRate)} / 推奨 {yen(summary.costPerPiece / (summary.product.targetCostRate / 100))}</span>
+                  </div>
+                ))}
+                {dashboard.priceReviewTop.length === 0 && <p className="text-sm font-bold text-red-800">現在、強い値上げ候補はありません。</p>}
+              </div>
+            </section>
+            <section className="rounded-md border border-amber-100 bg-amber-50 p-3">
+              <h3 className="font-black text-amber-950">原価率が高い商品TOP10</h3>
+              <div className="mt-2 grid gap-2">
+                {dashboard.highCostTop.map((summary) => (
+                  <div key={summary.product.id} className="flex justify-between gap-3 rounded-md bg-white px-3 py-2 text-sm font-bold">
+                    <span>{summary.product.name}</span>
+                    <span>{yen(summary.costPerPiece)} / {percent(summary.costRate)}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
           </div>
         </Panel>
       )}
@@ -1527,6 +1592,13 @@ export function CostNutritionApp() {
             <div className="mt-3 grid gap-3 md:grid-cols-2">
               <TextInput label="原材料名" value={ingredientForm.name} onChange={(value) => setIngredientForm({ ...ingredientForm, name: value })} />
               <TextInput label="製品名" value={ingredientForm.packageName} onChange={(value) => setIngredientForm({ ...ingredientForm, packageName: value })} />
+              <SelectInput
+                label="材料タイプ"
+                value={ingredientForm.type}
+                options={materialTypeOptions}
+                optionLabels={materialTypeLabels}
+                onChange={(value) => setIngredientForm({ ...ingredientForm, type: value as MaterialType, category: value === "PACKAGING" ? "包材" : ingredientForm.category })}
+              />
               <CategoryInput
                 label="カテゴリ"
                 value={ingredientForm.category}
@@ -1663,14 +1735,16 @@ export function CostNutritionApp() {
         <Panel title="商品登録">
           <div className="grid gap-3 md:grid-cols-3">
             <TextInput label="商品名" value={productForm.name} onChange={(value) => setProductForm({ ...productForm, name: value })} />
+            <TextInput label="商品カテゴリ" value={productForm.category} onChange={(value) => setProductForm({ ...productForm, category: value })} />
             <NumberInput label="販売価格" value={productForm.sellingPrice} onChange={(value) => setProductForm({ ...productForm, sellingPrice: value })} />
             <SelectInput label="税込/税抜" value={productForm.taxType} options={["税込", "税抜"]} onChange={(value) => setProductForm({ ...productForm, taxType: value as Product["taxType"] })} />
             <NumberInput label="目標原価率%" value={productForm.targetCostRate} onChange={(value) => setProductForm({ ...productForm, targetCostRate: value })} />
-            <SelectInput label="表示単位" value={productForm.displayUnit} options={["1個あたり", "100gあたり", "1袋あたり", "1本あたり"]} onChange={(value) => setProductForm({ ...productForm, displayUnit: value as Product["displayUnit"] })} />
+            <SelectInput label="表示単位" value={productForm.displayUnit} options={["1個あたり", "100gあたり", "1袋あたり", "1本あたり", "1台あたり"]} onChange={(value) => setProductForm({ ...productForm, displayUnit: value as Product["displayUnit"] })} />
             <NumberInput label="出来上がり個数" value={productForm.yieldCount} onChange={(value) => setProductForm({ ...productForm, yieldCount: value })} />
             <NumberInput label="焼成前総重量g" value={productForm.beforeBakeWeightGram} onChange={(value) => setProductForm({ ...productForm, beforeBakeWeightGram: value })} />
             <NumberInput label="焼成後総重量g" value={productForm.afterBakeWeightGram ?? 0} onChange={(value) => setProductForm({ ...productForm, afterBakeWeightGram: value || null })} />
             <NumberInput label="1個あたり重量g" value={productForm.weightPerPieceGram} onChange={(value) => setProductForm({ ...productForm, weightPerPieceGram: value })} />
+            <SelectInput label="販売状態" value={productForm.status} options={["販売中", "休止中"]} onChange={(value) => setProductForm({ ...productForm, status: value as ProductStatus })} />
           </div>
           <button className="mt-3 rounded-md bg-teal-700 px-4 py-2 font-bold text-white" onClick={saveProduct}>
             商品を保存
@@ -1892,14 +1966,31 @@ export function CostNutritionApp() {
             {impactRows.map((row) => (
               <div key={row.product.id} className="rounded-md border border-neutral-200 bg-white p-3">
                 <div className="flex justify-between gap-3">
-                  <strong>{row.product.name}</strong>
+                  <strong>{row.product.name}{row.product.isIntermediateMaterial ? "（中間材料）" : ""}</strong>
                   <span>{yen(row.oldCost)} → {yen(row.newCost)}</span>
                 </div>
                 <p className="text-neutral-600">上昇額 {yen(row.increase)} / 原価率 {percent(row.oldCostRate)} → {percent(row.newCostRate)} / +{number(row.costRateIncreasePoint)}pt</p>
-                <p className="font-bold text-teal-800">推奨販売価格 {yen(row.recommendedPrice)}</p>
+                <p className="font-bold text-teal-800">推奨販売価格 {yen(row.recommendedPrice)} {row.needsPriceReview ? " / 値上げ検討" : ""}</p>
+                <div className="mt-2 flex flex-wrap gap-2 text-xs font-bold">
+                  {row.priceCandidates.map((candidate) => (
+                    <span key={candidate.unit} className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-amber-900">
+                      {candidate.unit}円単位: {yen(candidate.price)}（{percent(candidate.costRate)}）
+                    </span>
+                  ))}
+                </div>
               </div>
             ))}
           </div>
+          <section className="mt-4 rounded-md border border-neutral-200 bg-white p-3">
+            <h3 className="font-black">価格改定履歴</h3>
+            <div className="mt-2 grid gap-2">
+              {data.priceHistories.filter((history) => history.ingredientId === impactIngredientId).slice().reverse().map((history) => (
+                <div key={history.id} className="rounded-md bg-neutral-50 p-2 text-sm font-bold text-neutral-700">
+                  {new Date(history.changedAt).toLocaleDateString("ja-JP")} / {history.supplier || "仕入先未登録"} / {yen(history.oldPrice)} → {yen(history.newPrice)} / {history.sourceType || "manual"}
+                </div>
+              ))}
+            </div>
+          </section>
         </Panel>
       )}
 
@@ -2323,12 +2414,13 @@ function RecipeTable({
 }) {
   return (
     <div className="mt-4 overflow-x-auto rounded-md border border-neutral-200">
-      <table className="w-full min-w-[860px] border-collapse bg-white text-left">
+      <table className="w-full min-w-[980px] border-collapse bg-white text-left">
         <thead className="bg-neutral-100">
           <tr>
             <th className="p-3">製品名 / 原材料名</th>
             <th className="p-3">入力方法</th>
             <th className="p-3 text-right">使用量</th>
+            <th className="p-3 text-right">ロス率</th>
             <th className="p-3 text-right">栄養換算g</th>
             <th className="p-3 text-right">単価</th>
             <th className="p-3 text-right">原価</th>
@@ -2376,6 +2468,13 @@ function RecipeTable({
                     <RecipeAmountEditor item={normalizedItem} onAmountChange={onAmountChange} onItemChange={onItemChange} />
                   ) : (
                     usageDescription(normalizedItem)
+                  )}
+                </td>
+                <td className="p-3 text-right">
+                  {onItemChange ? (
+                    <SmallNumberInput label="%" value={normalizedItem.lossRate} onChange={(value) => onItemChange(item.id, { lossRate: value })} />
+                  ) : (
+                    `${number(normalizedItem.lossRate)}%`
                   )}
                 </td>
                 <td className="p-3 text-right">{number(nutritionGram)}g</td>

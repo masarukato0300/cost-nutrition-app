@@ -1,7 +1,10 @@
 export type TaxType = "税込" | "税抜";
-export type DisplayUnit = "1個あたり" | "100gあたり" | "1袋あたり" | "1本あたり";
+export type DisplayUnit = "1個あたり" | "100gあたり" | "1袋あたり" | "1本あたり" | "1台あたり";
+export type MaterialType = "PURCHASED_INGREDIENT" | "INTERMEDIATE" | "PRODUCT" | "PACKAGING";
 export type RecipeUsageType = "gram" | "count" | "fraction";
 export type RecipeItemType = "ingredient" | "intermediate";
+export type ProductStatus = "販売中" | "休止中";
+export type PriceHistorySourceType = "manual" | "ocr" | "csv";
 
 export type Nutrition = {
   calories: number;
@@ -14,6 +17,7 @@ export type Nutrition = {
 export type Ingredient = {
   id: string;
   name: string;
+  type: MaterialType;
   category: string;
   supplier: string;
   packageName: string;
@@ -39,6 +43,7 @@ export type Product = {
   id: string;
   name: string;
   isIntermediateMaterial: boolean;
+  category: string;
   sellingPrice: number;
   taxType: TaxType;
   targetCostRate: number;
@@ -47,6 +52,7 @@ export type Product = {
   beforeBakeWeightGram: number;
   afterBakeWeightGram: number | null;
   weightPerPieceGram: number;
+  status: ProductStatus;
   memo: string;
   createdAt: string;
   updatedAt: string;
@@ -64,6 +70,8 @@ export type RecipeItem = {
   usedCount: number;
   totalCount: number;
   fractionDenominator: number;
+  lossRate: number;
+  memo: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -74,6 +82,9 @@ export type PriceHistory = {
   oldPrice: number;
   newPrice: number;
   changedAt: string;
+  supplier: string;
+  reason: string;
+  sourceType: PriceHistorySourceType;
   memo: string;
 };
 
@@ -136,4 +147,6 @@ export type PriceImpactRow = {
   newCostRate: number;
   costRateIncreasePoint: number;
   recommendedPrice: number;
+  priceCandidates: Array<{ unit: number; price: number; costRate: number }>;
+  needsPriceReview: boolean;
 };

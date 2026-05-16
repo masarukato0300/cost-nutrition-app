@@ -43,18 +43,20 @@ export function ingredientCost(ingredient: Ingredient, amount: number): number {
 }
 
 export function recipeItemAmountGram(item: RecipeItem): number {
+  const lossMultiplier = 1 + Math.max(item.lossRate || 0, 0) / 100;
   if (item.usageType === "count") {
     if (!item.totalCount) return 0;
-    return (item.baseAmountGram * item.usedCount) / item.totalCount;
+    return ((item.baseAmountGram * item.usedCount) / item.totalCount) * lossMultiplier;
   }
   if (item.usageType === "fraction") {
     if (!item.fractionDenominator) return 0;
-    return item.baseAmountGram / item.fractionDenominator;
+    return (item.baseAmountGram / item.fractionDenominator) * lossMultiplier;
   }
-  return item.amountGram;
+  return item.amountGram * lossMultiplier;
 }
 
 export function isPackagingIngredient(ingredient: Ingredient): boolean {
+  if (ingredient.type === "PACKAGING") return true;
   return /包材|包装|箱|袋|シール|台紙|カップ|トレー/.test(`${ingredient.category} ${ingredient.name}`);
 }
 
@@ -160,6 +162,22 @@ function calculateProductCostInternal(
     costRate,
     totalRecipeWeightGram: totalRecipeWeightWithProducts(recipeItems, product.id, ingredients, products, visited),
   };
+}
+
+export function recommendedPrice(costPerPiece: number, targetCostRate: number): number {
+  return targetCostRate ? costPerPiece / (targetCostRate / 100) : 0;
+}
+
+export function roundedPriceCandidates(costPerPiece: number, targetCostRate: number) {
+  const basePrice = recommendedPrice(costPerPiece, targetCostRate);
+  return [10, 50, 100].map((unit) => {
+    const price = Math.ceil(basePrice / unit) * unit;
+    return {
+      unit,
+      price,
+      costRate: price ? (costPerPiece / price) * 100 : 0,
+    };
+  });
 }
 
 export function calculateProductCost(
@@ -269,16 +287,13 @@ export function calculatePriceImpact(
   const ingredient = data.ingredients.find((item) => item.id === ingredientId);
   if (!ingredient) return [];
 
-  const affectedProductIds = new Set(
-    data.recipeItems.filter((item) => item.ingredientId === ingredientId).map((item) => item.productId),
-  );
   const newIngredients = data.ingredients.map((item) => (item.id === ingredientId ? { ...item, price: newPrice } : item));
 
   return data.products
-    .filter((product) => affectedProductIds.has(product.id))
     .map((product) => {
-      const oldCost = calculateProductCost(product, data.ingredients, data.recipeItems);
-      const newCost = calculateProductCost(product, newIngredients, data.recipeItems);
+      const oldCost = calculateProductCost(product, data.ingredients, data.recipeItems, data.products);
+      const newCost = calculateProductCost(product, newIngredients, data.recipeItems, data.products);
+      const price = recommendedPrice(newCost.costPerPiece, product.targetCostRate);
       return {
         product,
         oldCost: oldCost.costPerPiece,
@@ -287,9 +302,12 @@ export function calculatePriceImpact(
         oldCostRate: oldCost.costRate,
         newCostRate: newCost.costRate,
         costRateIncreasePoint: newCost.costRate - oldCost.costRate,
-        recommendedPrice: product.targetCostRate ? newCost.costPerPiece / (product.targetCostRate / 100) : 0,
+        recommendedPrice: price,
+        priceCandidates: roundedPriceCandidates(newCost.costPerPiece, product.targetCostRate),
+        needsPriceReview: newCost.costRate >= product.targetCostRate || newCost.costRate >= 35,
       };
     })
+    .filter((row) => Math.abs(row.increase) > 0.0001)
     .sort((a, b) => b.increase - a.increase);
 }
 
