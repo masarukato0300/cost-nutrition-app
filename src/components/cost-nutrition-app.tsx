@@ -54,7 +54,7 @@ const pages = [
   { key: "monthly", label: "月間理論原価" },
   { key: "event", label: "イベント原価" },
   { key: "labor", label: "人件費原価" },
-  { key: "set", label: "セット商品" },
+  { key: "set", label: "詰合せ商品" },
   { key: "impact", label: "影響分析" },
   { key: "label", label: "ラベル表示" },
   { key: "csv", label: "CSV出力" },
@@ -65,119 +65,140 @@ type PageNavKey = (typeof pages)[number]["key"];
 type PageKey = PageNavKey | "ocr";
 const pageTones: Record<PageNavKey, { navActive: string; navIdle: string; topCard: string; mark: string }> = {
   top: {
-    navActive: "border-emerald-500 bg-emerald-50 text-emerald-900 shadow-sm",
-    navIdle: "border-emerald-100 bg-white text-neutral-700 hover:border-emerald-300 hover:bg-emerald-50",
+    navActive: "border-emerald-700 bg-emerald-600 text-white shadow-sm",
+    navIdle: "border-emerald-500 bg-emerald-50 text-emerald-900 hover:bg-emerald-100",
     topCard: "border-emerald-100 bg-emerald-50/70 hover:border-emerald-400",
     mark: "bg-emerald-500",
   },
   help: {
-    navActive: "border-sky-500 bg-sky-50 text-sky-900 shadow-sm",
-    navIdle: "border-sky-100 bg-white text-neutral-700 hover:border-sky-300 hover:bg-sky-50",
+    navActive: "border-sky-700 bg-sky-600 text-white shadow-sm",
+    navIdle: "border-sky-500 bg-sky-50 text-sky-900 hover:bg-sky-100",
     topCard: "border-sky-100 bg-sky-50/70 hover:border-sky-400",
     mark: "bg-sky-500",
   },
   ingredient: {
-    navActive: "border-rose-500 bg-rose-50 text-rose-900 shadow-sm",
-    navIdle: "border-rose-100 bg-white text-neutral-700 hover:border-rose-300 hover:bg-rose-50",
+    navActive: "border-red-700 bg-red-600 text-white shadow-sm",
+    navIdle: "border-red-500 bg-red-50 text-red-900 hover:bg-red-100",
     topCard: "border-rose-100 bg-rose-50/70 hover:border-rose-400",
     mark: "bg-rose-500",
   },
   product: {
-    navActive: "border-amber-500 bg-amber-50 text-amber-900 shadow-sm",
-    navIdle: "border-amber-100 bg-white text-neutral-700 hover:border-amber-300 hover:bg-amber-50",
+    navActive: "border-amber-700 bg-amber-500 text-white shadow-sm",
+    navIdle: "border-amber-500 bg-amber-50 text-amber-900 hover:bg-amber-100",
     topCard: "border-amber-100 bg-amber-50/70 hover:border-amber-400",
     mark: "bg-amber-500",
   },
   recipe: {
-    navActive: "border-teal-500 bg-teal-50 text-teal-900 shadow-sm",
-    navIdle: "border-teal-100 bg-white text-neutral-700 hover:border-teal-300 hover:bg-teal-50",
+    navActive: "border-teal-700 bg-teal-600 text-white shadow-sm",
+    navIdle: "border-teal-500 bg-teal-50 text-teal-900 hover:bg-teal-100",
     topCard: "border-teal-100 bg-teal-50/70 hover:border-teal-400",
     mark: "bg-teal-500",
   },
   cost: {
-    navActive: "border-orange-500 bg-orange-50 text-orange-900 shadow-sm",
-    navIdle: "border-orange-100 bg-white text-neutral-700 hover:border-orange-300 hover:bg-orange-50",
+    navActive: "border-orange-700 bg-orange-600 text-white shadow-sm",
+    navIdle: "border-orange-500 bg-orange-50 text-orange-900 hover:bg-orange-100",
     topCard: "border-orange-100 bg-orange-50/70 hover:border-orange-400",
     mark: "bg-orange-500",
   },
   nutrition: {
-    navActive: "border-lime-500 bg-lime-50 text-lime-900 shadow-sm",
-    navIdle: "border-lime-100 bg-white text-neutral-700 hover:border-lime-300 hover:bg-lime-50",
+    navActive: "border-lime-700 bg-lime-600 text-white shadow-sm",
+    navIdle: "border-lime-500 bg-lime-50 text-lime-900 hover:bg-lime-100",
     topCard: "border-lime-100 bg-lime-50/70 hover:border-lime-400",
     mark: "bg-lime-500",
   },
   allergen: {
-    navActive: "border-fuchsia-500 bg-fuchsia-50 text-fuchsia-900 shadow-sm",
-    navIdle: "border-fuchsia-100 bg-white text-neutral-700 hover:border-fuchsia-300 hover:bg-fuchsia-50",
+    navActive: "border-fuchsia-700 bg-fuchsia-600 text-white shadow-sm",
+    navIdle: "border-fuchsia-500 bg-fuchsia-50 text-fuchsia-900 hover:bg-fuchsia-100",
     topCard: "border-fuchsia-100 bg-fuchsia-50/70 hover:border-fuchsia-400",
     mark: "bg-fuchsia-500",
   },
   production: {
-    navActive: "border-emerald-500 bg-emerald-50 text-emerald-900 shadow-sm",
-    navIdle: "border-emerald-100 bg-white text-neutral-700 hover:border-emerald-300 hover:bg-emerald-50",
+    navActive: "border-green-700 bg-green-600 text-white shadow-sm",
+    navIdle: "border-green-500 bg-green-50 text-green-900 hover:bg-green-100",
     topCard: "border-emerald-100 bg-emerald-50/70 hover:border-emerald-400",
     mark: "bg-emerald-500",
   },
   order: {
-    navActive: "border-yellow-500 bg-yellow-50 text-yellow-900 shadow-sm",
-    navIdle: "border-yellow-100 bg-white text-neutral-700 hover:border-yellow-300 hover:bg-yellow-50",
+    navActive: "border-yellow-700 bg-yellow-500 text-white shadow-sm",
+    navIdle: "border-yellow-500 bg-yellow-50 text-yellow-900 hover:bg-yellow-100",
     topCard: "border-yellow-100 bg-yellow-50/70 hover:border-yellow-400",
     mark: "bg-yellow-500",
   },
   waste: {
-    navActive: "border-pink-500 bg-pink-50 text-pink-900 shadow-sm",
-    navIdle: "border-pink-100 bg-white text-neutral-700 hover:border-pink-300 hover:bg-pink-50",
+    navActive: "border-pink-700 bg-pink-600 text-white shadow-sm",
+    navIdle: "border-pink-500 bg-pink-50 text-pink-900 hover:bg-pink-100",
     topCard: "border-pink-100 bg-pink-50/70 hover:border-pink-400",
     mark: "bg-pink-500",
   },
   monthly: {
-    navActive: "border-blue-500 bg-blue-50 text-blue-900 shadow-sm",
-    navIdle: "border-blue-100 bg-white text-neutral-700 hover:border-blue-300 hover:bg-blue-50",
+    navActive: "border-blue-700 bg-blue-600 text-white shadow-sm",
+    navIdle: "border-blue-500 bg-blue-50 text-blue-900 hover:bg-blue-100",
     topCard: "border-blue-100 bg-blue-50/70 hover:border-blue-400",
     mark: "bg-blue-500",
   },
   event: {
-    navActive: "border-rose-500 bg-rose-50 text-rose-900 shadow-sm",
-    navIdle: "border-rose-100 bg-white text-neutral-700 hover:border-rose-300 hover:bg-rose-50",
+    navActive: "border-rose-700 bg-rose-600 text-white shadow-sm",
+    navIdle: "border-rose-500 bg-rose-50 text-rose-900 hover:bg-rose-100",
     topCard: "border-rose-100 bg-rose-50/70 hover:border-rose-400",
     mark: "bg-rose-500",
   },
   labor: {
-    navActive: "border-stone-500 bg-stone-50 text-stone-900 shadow-sm",
-    navIdle: "border-stone-100 bg-white text-neutral-700 hover:border-stone-300 hover:bg-stone-50",
+    navActive: "border-zinc-800 bg-zinc-700 text-white shadow-sm",
+    navIdle: "border-zinc-500 bg-zinc-50 text-zinc-900 hover:bg-zinc-100",
     topCard: "border-stone-100 bg-stone-50/70 hover:border-stone-400",
     mark: "bg-stone-500",
   },
   set: {
-    navActive: "border-purple-500 bg-purple-50 text-purple-900 shadow-sm",
-    navIdle: "border-purple-100 bg-white text-neutral-700 hover:border-purple-300 hover:bg-purple-50",
+    navActive: "border-purple-700 bg-purple-600 text-white shadow-sm",
+    navIdle: "border-purple-500 bg-purple-50 text-purple-900 hover:bg-purple-100",
     topCard: "border-purple-100 bg-purple-50/70 hover:border-purple-400",
     mark: "bg-purple-500",
   },
   impact: {
-    navActive: "border-red-500 bg-red-50 text-red-900 shadow-sm",
-    navIdle: "border-red-100 bg-white text-neutral-700 hover:border-red-300 hover:bg-red-50",
+    navActive: "border-red-800 bg-red-700 text-white shadow-sm",
+    navIdle: "border-red-500 bg-red-50 text-red-900 hover:bg-red-100",
     topCard: "border-red-100 bg-red-50/70 hover:border-red-400",
     mark: "bg-red-500",
   },
   label: {
-    navActive: "border-violet-500 bg-violet-50 text-violet-900 shadow-sm",
-    navIdle: "border-violet-100 bg-white text-neutral-700 hover:border-violet-300 hover:bg-violet-50",
+    navActive: "border-violet-700 bg-violet-600 text-white shadow-sm",
+    navIdle: "border-violet-500 bg-violet-50 text-violet-900 hover:bg-violet-100",
     topCard: "border-violet-100 bg-violet-50/70 hover:border-violet-400",
     mark: "bg-violet-500",
   },
   csv: {
-    navActive: "border-indigo-500 bg-indigo-50 text-indigo-900 shadow-sm",
-    navIdle: "border-indigo-100 bg-white text-neutral-700 hover:border-indigo-300 hover:bg-indigo-50",
+    navActive: "border-indigo-700 bg-indigo-600 text-white shadow-sm",
+    navIdle: "border-indigo-500 bg-indigo-50 text-indigo-900 hover:bg-indigo-100",
     topCard: "border-indigo-100 bg-indigo-50/70 hover:border-indigo-400",
     mark: "bg-indigo-500",
   },
   master: {
-    navActive: "border-cyan-500 bg-cyan-50 text-cyan-900 shadow-sm",
-    navIdle: "border-cyan-100 bg-white text-neutral-700 hover:border-cyan-300 hover:bg-cyan-50",
+    navActive: "border-cyan-700 bg-cyan-600 text-white shadow-sm",
+    navIdle: "border-cyan-500 bg-cyan-50 text-cyan-900 hover:bg-cyan-100",
     topCard: "border-cyan-100 bg-cyan-50/70 hover:border-cyan-400",
     mark: "bg-cyan-500",
   },
+};
+const pageIcons: Record<PageNavKey, string> = {
+  top: "⌂",
+  help: "?",
+  ingredient: "+",
+  product: "□",
+  recipe: "↘",
+  cost: "¥",
+  nutrition: "N",
+  allergen: "!",
+  production: "×",
+  order: "≡",
+  waste: "-",
+  monthly: "Σ",
+  event: "*",
+  labor: "h",
+  set: "▣",
+  impact: "↑",
+  label: "T",
+  csv: "CSV",
+  master: "M",
 };
 type StoreAccount = {
   id: string;
@@ -1831,7 +1852,7 @@ export function CostNutritionApp() {
   function saveSetProductItem() {
     if (!setProductItemForm.setProductId || !setProductItemForm.childProductId || setProductItemForm.quantity <= 0) return;
     if (setProductItemForm.setProductId === setProductItemForm.childProductId) {
-      alert("セット商品自身は中身に追加できません。");
+      alert("詰合せ商品自身は中身に追加できません。");
       return;
     }
     const record: SetProductItem = {
@@ -1856,7 +1877,7 @@ export function CostNutritionApp() {
   }
 
   function deleteSetProductItem(recordId: string) {
-    if (!confirm("このセット内容を削除しますか？")) return;
+    if (!confirm("この詰合せ内容を削除しますか？")) return;
     commit({ ...data, setProductItems: data.setProductItems.filter((record) => record.id !== recordId) });
   }
 
@@ -1871,7 +1892,7 @@ export function CostNutritionApp() {
 
   function exportSetProductCsv() {
     downloadCsv("set-products.csv", [
-      ["セット商品", "販売価格", "子商品", "数量", "子商品原価/個", "子商品原価計", "包材原価", "セット原価", "原価率", "推奨販売価格"],
+      ["詰合せ商品", "販売価格", "中に入れる商品", "数量", "商品原価/個", "商品原価計", "包材原価", "詰合せ原価", "原価率", "推奨販売価格"],
       ...setProductSummaries.flatMap((summary) => (
         summary.childRows.map((row) => [
           summary.setProduct.name,
@@ -1934,12 +1955,17 @@ export function CostNutritionApp() {
           return (
             <button
               key={page.key}
-              className={`min-h-11 rounded-md border px-2 py-2 font-bold transition-colors ${
+              className={`flex min-h-12 items-center gap-2 rounded-md border-2 px-2 py-2 text-left font-black transition-colors ${
                 activePage === page.key ? tone.navActive : tone.navIdle
               }`}
               onClick={() => setActivePage(page.key)}
             >
-              {page.label}
+              <span className={`flex h-7 min-w-7 items-center justify-center rounded-md border text-xs font-black ${
+                activePage === page.key ? "border-white/70 bg-white/20 text-white" : "border-current bg-white/70"
+              }`}>
+                {pageIcons[page.key]}
+              </span>
+              <span className="leading-tight">{page.label}</span>
             </button>
           );
         })}
@@ -3006,16 +3032,16 @@ export function CostNutritionApp() {
       )}
 
       {activePage === "set" && (
-        <Panel title="セット商品・ギフト原価計算">
+        <Panel title="詰合せ商品・ギフト原価計算">
           <section className="mb-3 rounded-md border border-purple-200 bg-purple-50 p-3 text-sm font-bold text-purple-900">
-            焼き菓子ギフトのように、単品商品を組み合わせたセット商品の原価を計算します。箱・リボンなどの包材は、セット商品のレシピに登録した包材原価を使います。
+            焼き菓子ギフトのように、単品商品を組み合わせた詰合せ商品の原価を計算します。箱・リボンなどの包材は、詰合せ商品のレシピに登録した包材原価を使います。
           </section>
           <div className="grid gap-3 lg:grid-cols-[360px_1fr]">
             <section className="rounded-md border border-neutral-200 bg-white p-3">
-              <h3 className="font-black">セット内容を登録</h3>
+              <h3 className="font-black">詰合せ内容を登録</h3>
               <div className="mt-3 grid gap-3">
                 <SelectInput
-                  label="セット商品"
+                  label="詰合せ商品"
                   value={selectedSetProduct?.id ?? ""}
                   options={data.products.filter((product) => !product.isIntermediateMaterial).map((product) => product.id)}
                   optionLabels={Object.fromEntries(data.products.filter((product) => !product.isIntermediateMaterial).map((product) => [product.id, product.name]))}
@@ -3024,7 +3050,7 @@ export function CostNutritionApp() {
                     setSetProductItemForm(emptySetProductItem(value, data.products.find((product) => !product.isIntermediateMaterial && product.id !== value)?.id ?? ""));
                   }}
                 />
-                <NumberInput label="セット販売価格" value={selectedSetProduct?.sellingPrice ?? 0} onChange={updateSelectedSetProductSellingPrice} />
+                <NumberInput label="詰合せ販売価格" value={selectedSetProduct?.sellingPrice ?? 0} onChange={updateSelectedSetProductSellingPrice} />
                 <SelectInput
                   label="中に入れる商品"
                   value={setProductItemForm.childProductId}
@@ -3035,13 +3061,13 @@ export function CostNutritionApp() {
                 <NumberInput label="数量" value={setProductItemForm.quantity} onChange={(value) => setSetProductItemForm({ ...setProductItemForm, setProductId: selectedSetProduct?.id ?? setProductItemForm.setProductId, quantity: value })} />
                 <TextInput label="メモ" value={setProductItemForm.memo} onChange={(value) => setSetProductItemForm({ ...setProductItemForm, memo: value })} />
                 <button className="rounded-md bg-purple-700 px-4 py-2 font-bold text-white" onClick={saveSetProductItem}>
-                  セット内容を保存
+                  詰合せ内容を保存
                 </button>
               </div>
             </section>
             <section className="rounded-md border border-neutral-200 bg-white p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="font-black">{selectedSetProduct?.name || "セット商品未選択"}</h3>
+                <h3 className="font-black">{selectedSetProduct?.name || "詰合せ商品未選択"}</h3>
                 <button className="rounded-md bg-purple-700 px-3 py-2 text-sm font-bold text-white" onClick={exportSetProductCsv}>
                   CSV出力
                 </button>
@@ -3050,15 +3076,15 @@ export function CostNutritionApp() {
                 <div className="mt-3 grid gap-3 md:grid-cols-3">
                   <Metric label="中身の商品原価" value={yen(selectedSetSummary.childProductsCost)} />
                   <Metric label="包材原価" value={yen(selectedSetSummary.packagingCost)} />
-                  <Metric label="セット原価" value={yen(selectedSetSummary.totalCost)} />
+                  <Metric label="詰合せ原価" value={yen(selectedSetSummary.totalCost)} />
                   <Metric label="販売価格" value={yen(selectedSetSummary.sellingPrice)} />
-                  <Metric label="セット原価率" value={percent(selectedSetSummary.costRate)} tone={selectedSetSummary.costRate >= 40 ? "danger" : selectedSetSummary.costRate >= 35 ? "warn" : "normal"} />
+                  <Metric label="詰合せ原価率" value={percent(selectedSetSummary.costRate)} tone={selectedSetSummary.costRate >= 40 ? "danger" : selectedSetSummary.costRate >= 35 ? "warn" : "normal"} />
                   <Metric label="推奨販売価格" value={yen(selectedSetSummary.recommendedPrice)} />
                 </div>
               )}
               <SetProductTable summary={selectedSetSummary} onEdit={editSetProductItem} onDelete={deleteSetProductItem} />
               <section className="mt-4 rounded-md border border-neutral-200 bg-neutral-50 p-3">
-                <h4 className="font-black">登録済みセット商品</h4>
+                <h4 className="font-black">登録済み詰合せ商品</h4>
                 <SetProductSummaryTable rows={setProductSummaries} />
               </section>
             </section>
@@ -3892,7 +3918,7 @@ function SetProductTable({
           ))}
           {(summary?.childRows.length ?? 0) === 0 && (
             <tr>
-              <td className="p-3 text-neutral-500" colSpan={6}>セット内容を登録すると表示されます。</td>
+              <td className="p-3 text-neutral-500" colSpan={6}>詰合せ内容を登録すると表示されます。</td>
             </tr>
           )}
         </tbody>
@@ -3907,9 +3933,9 @@ function SetProductSummaryTable({ rows }: { rows: SetProductCostSummary[] }) {
       <table className="w-full min-w-[760px] border-collapse bg-white text-left">
         <thead className="bg-neutral-100">
           <tr>
-            <th className="p-3">セット商品</th>
+            <th className="p-3">詰合せ商品</th>
             <th className="p-3 text-right">品目数</th>
-            <th className="p-3 text-right">セット原価</th>
+            <th className="p-3 text-right">詰合せ原価</th>
             <th className="p-3 text-right">販売価格</th>
             <th className="p-3 text-right">原価率</th>
             <th className="p-3 text-right">推奨販売価格</th>
@@ -3930,7 +3956,7 @@ function SetProductSummaryTable({ rows }: { rows: SetProductCostSummary[] }) {
           ))}
           {rows.length === 0 && (
             <tr>
-              <td className="p-3 text-neutral-500" colSpan={6}>セット商品を登録すると表示されます。</td>
+              <td className="p-3 text-neutral-500" colSpan={6}>詰合せ商品を登録すると表示されます。</td>
             </tr>
           )}
         </tbody>
