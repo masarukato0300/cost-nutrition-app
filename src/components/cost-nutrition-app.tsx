@@ -72,6 +72,14 @@ const pages = [
 type PageNavKey = (typeof pages)[number]["key"];
 type PageKey = PageNavKey | "ocr";
 type WasteCategoryKey = (typeof wasteCategories)[number]["key"];
+const mainNavPageKeys: PageNavKey[] = ["top", "help", "ingredient", "product", "recipe"];
+const navGroups = [
+  { key: "costs", label: "原価・値上げ", description: "原価計算、値上げ、イベント、人件費", pages: ["cost", "impact", "event", "labor", "set"] },
+  { key: "display", label: "表示・ラベル", description: "栄養成分、アレルゲン、ラベル", pages: ["nutrition", "allergen", "label"] },
+  { key: "operation", label: "現場管理", description: "仕込み、発注、廃棄、月間原価", pages: ["production", "order", "waste", "monthly"] },
+  { key: "data", label: "データ管理", description: "原材料一覧、CSV出力", pages: ["master", "csv"] },
+] as const satisfies Array<{ key: string; label: string; description: string; pages: PageNavKey[] }>;
+type NavGroupKey = (typeof navGroups)[number]["key"];
 const pageTones: Record<PageNavKey, { navActive: string; navIdle: string; topCard: string; mark: string }> = {
   top: {
     navActive: "border-emerald-700 bg-emerald-600 text-white shadow-sm",
@@ -355,6 +363,10 @@ function ingredientOptionLabel(ingredient: Ingredient) {
 
 function pageTone(pageKey: PageNavKey) {
   return pageTones[pageKey];
+}
+
+function pageLabel(pageKey: PageNavKey) {
+  return pages.find((page) => page.key === pageKey)?.label ?? pageKey;
 }
 
 function NavPictogram({ pageKey }: { pageKey: PageNavKey }) {
@@ -915,6 +927,7 @@ export function CostNutritionApp() {
   const ingredientCameraInputRef = useRef<HTMLInputElement | null>(null);
   const ingredientPhotoInputRef = useRef<HTMLInputElement | null>(null);
   const [activePage, setActivePage] = useState<PageKey>("top");
+  const [openNavGroup, setOpenNavGroup] = useState<NavGroupKey | null>(null);
   const [stores, setStores] = useState<StoreAccount[]>([{ id: defaultStoreId, pin: "0000", createdAt: now(), updatedAt: now() }]);
   const [currentStoreId, setCurrentStoreId] = useState(defaultStoreId);
   const [data, setData] = useState<AppData>(sampleData);
@@ -2047,6 +2060,10 @@ export function CostNutritionApp() {
 
   const recipeRows = data.recipeItems.filter((item) => item.productId === selectedProduct?.id);
   const currentTone = activePage === "ocr" ? pageTones.ingredient : pageTone(activePage);
+  const activeNavGroup = activePage === "ocr" ? null : navGroups.find((group) => group.pages.includes(activePage as PageNavKey)) ?? null;
+  const visibleNavGroup = openNavGroup
+    ? navGroups.find((group) => group.key === openNavGroup) ?? activeNavGroup
+    : activeNavGroup;
 
   return (
     <main className="mx-auto flex w-full max-w-7xl flex-col gap-4 p-3 text-sm text-neutral-900 md:p-5">
@@ -2069,26 +2086,78 @@ export function CostNutritionApp() {
         </div>
       </header>
 
-      <nav className="sticky top-0 z-10 grid grid-cols-2 gap-2 rounded-md border border-white/80 bg-white/95 p-2 shadow-sm backdrop-blur md:grid-cols-4 lg:grid-cols-6">
-        {pages.map((page) => {
-          const tone = pageTone(page.key);
-          return (
-            <button
-              key={page.key}
-              className={`flex min-h-12 items-center gap-2 rounded-md border-2 px-2 py-2 text-left font-black transition-colors ${
-                activePage === page.key ? tone.navActive : tone.navIdle
-              }`}
-              onClick={() => setActivePage(page.key)}
-            >
-              <span className={`flex h-9 min-w-9 items-center justify-center rounded-md border ${
-                activePage === page.key ? "border-white/70 bg-white/20 text-white" : "border-current bg-white/70"
-              }`}>
-                <NavPictogram pageKey={page.key} />
-              </span>
-              <span className="leading-tight">{page.label}</span>
-            </button>
-          );
-        })}
+      <nav className="sticky top-0 z-10 rounded-md border border-white/80 bg-white/95 p-2 shadow-sm backdrop-blur">
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+          {mainNavPageKeys.map((pageKey) => {
+            const tone = pageTone(pageKey);
+            const isActive = activePage === pageKey;
+            return (
+              <button
+                key={pageKey}
+                className={`flex min-h-12 items-center gap-2 rounded-md border-2 px-2 py-2 text-left font-black transition-colors ${
+                  isActive ? tone.navActive : tone.navIdle
+                }`}
+                onClick={() => {
+                  setOpenNavGroup(null);
+                  setActivePage(pageKey);
+                }}
+              >
+                <span className={`flex h-9 min-w-9 items-center justify-center rounded-md border ${
+                  isActive ? "border-white/70 bg-white/20 text-white" : "border-current bg-white/70"
+                }`}>
+                  <NavPictogram pageKey={pageKey} />
+                </span>
+                <span className="leading-tight">{pageLabel(pageKey)}</span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-4">
+          {navGroups.map((group) => {
+            const firstPage = group.pages[0];
+            const tone = pageTone(firstPage);
+            const isActive = activeNavGroup?.key === group.key || openNavGroup === group.key;
+            return (
+              <button
+                key={group.key}
+                className={`rounded-md border-2 px-3 py-2 text-left transition-colors ${
+                  isActive ? tone.navActive : tone.navIdle
+                }`}
+                onClick={() => setOpenNavGroup(openNavGroup === group.key ? null : group.key)}
+              >
+                <span className="block text-sm font-black">{group.label}</span>
+                <span className={`mt-1 block text-[11px] font-bold ${isActive ? "text-white/85" : "text-neutral-600"}`}>{group.description}</span>
+              </button>
+            );
+          })}
+        </div>
+        {visibleNavGroup && (
+          <div className="mt-2 grid grid-cols-2 gap-2 rounded-md border border-neutral-100 bg-neutral-50 p-2 md:grid-cols-3 lg:grid-cols-5">
+            {visibleNavGroup.pages.map((pageKey) => {
+              const tone = pageTone(pageKey);
+              const isActive = activePage === pageKey;
+              return (
+                <button
+                  key={pageKey}
+                  className={`flex min-h-11 items-center gap-2 rounded-md border px-2 py-2 text-left text-sm font-black transition-colors ${
+                    isActive ? tone.navActive : tone.navIdle
+                  }`}
+                  onClick={() => {
+                    setOpenNavGroup(null);
+                    setActivePage(pageKey);
+                  }}
+                >
+                  <span className={`flex h-8 min-w-8 items-center justify-center rounded-md border ${
+                    isActive ? "border-white/70 bg-white/20 text-white" : "border-current bg-white/70"
+                  }`}>
+                    <NavPictogram pageKey={pageKey} />
+                  </span>
+                  <span className="leading-tight">{pageLabel(pageKey)}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </nav>
 
       <section className="grid grid-cols-4 gap-1 md:gap-2">
@@ -2100,21 +2169,51 @@ export function CostNutritionApp() {
 
       {activePage === "top" && (
         <Panel title="TOP">
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-            {pages.filter((page) => page.key !== "top").map((page) => {
-              const tone = pageTone(page.key);
+          <section className="rounded-md border border-teal-100 bg-teal-50 p-3">
+            <h3 className="font-black text-teal-950">まず使うページ</h3>
+            <div className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+              {(["ingredient", "product", "recipe", "cost"] as PageNavKey[]).map((pageKey) => {
+                const tone = pageTone(pageKey);
+                return (
+                  <button
+                    key={pageKey}
+                    className={`min-h-24 rounded-md border p-4 text-left shadow-sm transition-colors ${tone.topCard}`}
+                    onClick={() => setActivePage(pageKey)}
+                  >
+                    <span className="flex items-center gap-2 text-lg font-black text-neutral-900">
+                      <span className={`grid h-10 w-10 place-items-center rounded-md ${tone.mark} text-white`}>
+                        <NavPictogram pageKey={pageKey} />
+                      </span>
+                      {pageLabel(pageKey)}
+                    </span>
+                    <span className="mt-2 block text-xs font-bold text-neutral-500">{topPageDescription(pageKey)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {navGroups.map((group) => {
+              const tone = pageTone(group.pages[0]);
               return (
-              <button
-                key={page.key}
-                className={`min-h-24 rounded-md border p-4 text-left shadow-sm transition-colors ${tone.topCard}`}
-                onClick={() => setActivePage(page.key)}
-              >
-                <span className="flex items-center gap-2 text-lg font-black text-neutral-900">
-                  <span className={`h-2.5 w-2.5 rounded-full ${tone.mark}`} />
-                  {page.label}
-                </span>
-                <span className="mt-2 block text-xs font-bold text-neutral-500">{topPageDescription(page.key)}</span>
-              </button>
+                <section key={group.key} className={`rounded-md border p-4 shadow-sm ${tone.topCard}`}>
+                  <h3 className="text-lg font-black text-neutral-950">{group.label}</h3>
+                  <p className="mt-1 text-xs font-bold text-neutral-500">{group.description}</p>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {group.pages.map((pageKey) => (
+                      <button
+                        key={pageKey}
+                        className="flex min-h-12 items-center gap-2 rounded-md border border-white bg-white px-3 py-2 text-left text-sm font-black text-neutral-900 shadow-sm"
+                        onClick={() => setActivePage(pageKey)}
+                      >
+                        <span className={`grid h-8 w-8 place-items-center rounded-md ${pageTone(pageKey).mark} text-white`}>
+                          <NavPictogram pageKey={pageKey} />
+                        </span>
+                        <span>{pageLabel(pageKey)}</span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
               );
             })}
           </div>
