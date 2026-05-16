@@ -2060,7 +2060,7 @@ export function CostNutritionApp() {
 
   const recipeRows = data.recipeItems.filter((item) => item.productId === selectedProduct?.id);
   const currentTone = activePage === "ocr" ? pageTones.ingredient : pageTone(activePage);
-  const activeNavGroup = activePage === "ocr" ? null : navGroups.find((group) => group.pages.includes(activePage as PageNavKey)) ?? null;
+  const activeNavGroup = activePage === "ocr" ? null : navGroups.find((group) => (group.pages as readonly PageNavKey[]).includes(activePage)) ?? null;
   const visibleNavGroup = openNavGroup
     ? navGroups.find((group) => group.key === openNavGroup) ?? activeNavGroup
     : activeNavGroup;
