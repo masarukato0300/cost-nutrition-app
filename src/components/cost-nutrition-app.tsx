@@ -38,8 +38,10 @@ const pages = [
   { key: "recipe", label: "レシピ登録" },
   { key: "cost", label: "原価計算" },
   { key: "nutrition", label: "栄養成分計算" },
+  { key: "allergen", label: "アレルゲン一覧" },
   { key: "impact", label: "影響分析" },
   { key: "label", label: "ラベル表示" },
+  { key: "csv", label: "CSV出力" },
   { key: "master", label: "原材料マスター" },
 ] as const;
 
@@ -88,6 +90,12 @@ const pageTones: Record<PageNavKey, { navActive: string; navIdle: string; topCar
     topCard: "border-lime-100 bg-lime-50/70 hover:border-lime-400",
     mark: "bg-lime-500",
   },
+  allergen: {
+    navActive: "border-fuchsia-500 bg-fuchsia-50 text-fuchsia-900 shadow-sm",
+    navIdle: "border-fuchsia-100 bg-white text-neutral-700 hover:border-fuchsia-300 hover:bg-fuchsia-50",
+    topCard: "border-fuchsia-100 bg-fuchsia-50/70 hover:border-fuchsia-400",
+    mark: "bg-fuchsia-500",
+  },
   impact: {
     navActive: "border-red-500 bg-red-50 text-red-900 shadow-sm",
     navIdle: "border-red-100 bg-white text-neutral-700 hover:border-red-300 hover:bg-red-50",
@@ -99,6 +107,12 @@ const pageTones: Record<PageNavKey, { navActive: string; navIdle: string; topCar
     navIdle: "border-violet-100 bg-white text-neutral-700 hover:border-violet-300 hover:bg-violet-50",
     topCard: "border-violet-100 bg-violet-50/70 hover:border-violet-400",
     mark: "bg-violet-500",
+  },
+  csv: {
+    navActive: "border-indigo-500 bg-indigo-50 text-indigo-900 shadow-sm",
+    navIdle: "border-indigo-100 bg-white text-neutral-700 hover:border-indigo-300 hover:bg-indigo-50",
+    topCard: "border-indigo-100 bg-indigo-50/70 hover:border-indigo-400",
+    mark: "bg-indigo-500",
   },
   master: {
     navActive: "border-cyan-500 bg-cyan-50 text-cyan-900 shadow-sm",
@@ -443,9 +457,11 @@ function topPageDescription(pageKey: PageKey) {
     recipe: "製品名から材料を選び、使用量を入力",
     cost: "材料原価と包材込み原価を確認",
     nutrition: "レシピから栄養成分表示を計算",
+    allergen: "商品ごとのアレルゲンを一覧確認",
     impact: "価格変更時の影響商品を確認",
     ocr: "OCR読み取り結果から価格更新候補を作成",
     label: "確認用ラベルテキストを作成",
+    csv: "原材料や商品原価をCSVで出力",
     master: "登録済み原材料を一覧確認",
   };
   return descriptions[pageKey];
@@ -456,6 +472,25 @@ function normalizeText(value: string) {
     .toLowerCase()
     .replace(/[Ａ-Ｚａ-ｚ０-９]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xfee0))
     .replace(/\s/g, "");
+}
+
+function csvCell(value: string | number | null | undefined) {
+  const text = String(value ?? "");
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function toCsv(rows: Array<Array<string | number | null | undefined>>) {
+  return rows.map((row) => row.map(csvCell).join(",")).join("\n");
+}
+
+function downloadCsv(fileName: string, rows: Array<Array<string | number | null | undefined>>) {
+  const blob = new Blob([`\uFEFF${toCsv(rows)}`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function extractPriceNumbers(line: string) {
@@ -1293,6 +1328,67 @@ export function CostNutritionApp() {
     setActivePage("impact");
   }
 
+  function exportIngredientsCsv() {
+    downloadCsv("ingredients.csv", [
+      ["材料タイプ", "原材料名", "製品名", "カテゴリ", "仕入先", "内容量", "単位", "仕入価格", "税込/税抜", "単価", "アレルゲン", "表示名"],
+      ...data.ingredients.map((ingredient) => [
+        materialTypeLabels[ingredient.type],
+        ingredient.name,
+        ingredient.packageName,
+        ingredient.category,
+        ingredient.supplier,
+        ingredient.packageAmountGram,
+        ingredientUnitLabel(ingredient),
+        ingredient.price,
+        ingredient.taxType,
+        pricePerGram(ingredient),
+        [...ingredient.allergens, ingredient.otherAllergen].filter(Boolean).join("、"),
+        ingredient.labelName,
+      ]),
+    ]);
+  }
+
+  function exportProductCostsCsv() {
+    downloadCsv("product-costs.csv", [
+      ["商品名", "カテゴリ", "販売価格", "目標原価率", "材料原価/個", "包材原価/個", "合計原価/個", "原価率", "推奨販売価格", "アレルゲン"],
+      ...data.products.filter((product) => !product.isIntermediateMaterial).map((product) => {
+        const summary = calculateProductCost(product, data.ingredients, data.recipeItems, data.products);
+        return [
+          product.name,
+          product.category,
+          product.sellingPrice,
+          product.targetCostRate,
+          summary.materialCostPerPiece,
+          summary.packagingCostPerPiece,
+          summary.costPerPiece,
+          summary.costRate,
+          product.targetCostRate ? summary.costPerPiece / (product.targetCostRate / 100) : 0,
+          collectAllergens(product.id, data.ingredients, data.recipeItems, data.products).join("、"),
+        ];
+      }),
+    ]);
+  }
+
+  function exportPriceHistoriesCsv() {
+    downloadCsv("price-histories.csv", [
+      ["変更日", "原材料名", "製品名", "仕入先", "旧価格", "新価格", "変更理由", "反映方法", "メモ"],
+      ...data.priceHistories.map((history) => {
+        const ingredient = data.ingredients.find((item) => item.id === history.ingredientId);
+        return [
+          new Date(history.changedAt).toLocaleDateString("ja-JP"),
+          ingredient?.name ?? "",
+          ingredient?.packageName ?? "",
+          history.supplier,
+          history.oldPrice,
+          history.newPrice,
+          history.reason,
+          history.sourceType,
+          history.memo,
+        ];
+      }),
+    ]);
+  }
+
   function resetSample() {
     if (!confirm("サンプルデータに戻しますか？")) return;
     commit(sampleData);
@@ -1952,6 +2048,46 @@ export function CostNutritionApp() {
         </Panel>
       )}
 
+      {activePage === "allergen" && (
+        <Panel title="アレルゲン一覧">
+          <section className="mb-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900">
+            この一覧は登録された原材料とレシピから自動集計した確認用です。正式な表示前には、原材料規格書などで最終確認してください。
+          </section>
+          <div className="overflow-x-auto rounded-md border border-neutral-200">
+            <table className="w-full min-w-[760px] border-collapse bg-white text-left">
+              <thead className="bg-neutral-100">
+                <tr>
+                  <th className="p-3">商品名</th>
+                  <th className="p-3">カテゴリ</th>
+                  <th className="p-3">アレルゲン</th>
+                  <th className="p-3">原材料表示名のたたき台</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.products.filter((product) => !product.isIntermediateMaterial).map((product) => {
+                  const allergens = collectAllergens(product.id, data.ingredients, data.recipeItems, data.products);
+                  const labelNames = collectLabelNames(product.id, data.ingredients, data.recipeItems, data.products);
+                  return (
+                    <tr key={product.id} className="border-t border-neutral-200">
+                      <td className="p-3 font-black">{product.name}</td>
+                      <td className="p-3">{product.category || "未分類"}</td>
+                      <td className="p-3">
+                        <div className="flex flex-wrap gap-1">
+                          {allergens.length > 0 ? allergens.map((allergen) => (
+                            <span key={allergen} className="rounded-md bg-fuchsia-50 px-2 py-1 text-xs font-bold text-fuchsia-800">{allergen}</span>
+                          )) : <span className="text-neutral-500">なし</span>}
+                        </div>
+                      </td>
+                      <td className="p-3 text-sm text-neutral-700">{labelNames.join("、") || "-"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+      )}
+
       {activePage === "impact" && (
         <Panel title="影響分析">
           <div className="grid gap-3 md:grid-cols-3">
@@ -2068,6 +2204,28 @@ export function CostNutritionApp() {
           <SelectInput label="商品" value={selectedProduct?.id ?? ""} options={data.products.map((product) => product.id)} optionLabels={Object.fromEntries(data.products.map((product) => [product.id, product.name]))} onChange={setSelectedProductId} />
           <LabelPreview text={labelText} />
           <textarea className="mt-3 h-40 w-full rounded-md border border-neutral-300 bg-white p-3 font-mono text-xs" readOnly value={labelText} />
+        </Panel>
+      )}
+
+      {activePage === "csv" && (
+        <Panel title="CSV出力">
+          <section className="rounded-md border border-indigo-200 bg-indigo-50 p-3 text-sm font-bold text-indigo-900">
+            まずはCSV出力から対応しています。ダウンロードしたCSVはExcelやスプレッドシートで開けます。
+          </section>
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <button className="rounded-md border border-indigo-200 bg-white p-4 text-left shadow-sm hover:bg-indigo-50" onClick={exportIngredientsCsv}>
+              <strong className="block text-lg text-indigo-950">原材料一覧CSV</strong>
+              <span className="mt-2 block text-xs font-bold text-neutral-500">材料タイプ、仕入先、価格、アレルゲンを出力</span>
+            </button>
+            <button className="rounded-md border border-teal-200 bg-white p-4 text-left shadow-sm hover:bg-teal-50" onClick={exportProductCostsCsv}>
+              <strong className="block text-lg text-teal-950">商品原価CSV</strong>
+              <span className="mt-2 block text-xs font-bold text-neutral-500">材料原価、包材原価、原価率、推奨価格を出力</span>
+            </button>
+            <button className="rounded-md border border-amber-200 bg-white p-4 text-left shadow-sm hover:bg-amber-50" onClick={exportPriceHistoriesCsv}>
+              <strong className="block text-lg text-amber-950">価格改定履歴CSV</strong>
+              <span className="mt-2 block text-xs font-bold text-neutral-500">旧価格、新価格、仕入先、反映方法を出力</span>
+            </button>
+          </div>
         </Panel>
       )}
 
