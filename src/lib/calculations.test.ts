@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { calculateEventSimulation, calculateMonthlyTheoryCost, calculatePriceImpact, calculateProductCost, calculateProductLaborCost, calculateProductNutrition, calculateProductionRequirements, calculateSetProductCost, calculateWasteRecordAmounts, calculateWasteSummary, pricePerGram } from "./calculations";
+import { calculateEventSimulation, calculateMonthlyTheoryCost, calculatePriceImpact, calculateProductCost, calculateProductLaborCost, calculateProductNutrition, calculateProductionRequirements, calculateSetProductCost, calculateWasteMonthlySummary, calculateWasteRecordAmounts, calculateWasteSummary, pricePerGram } from "./calculations";
 import { sampleData } from "./sample-data";
 
 const shortcake = sampleData.products.find((product) => product.id === "prd-shortcake");
@@ -65,6 +65,26 @@ const wasteSummary = calculateWasteSummary({
 });
 assert.equal(Math.round(wasteSummary.totalSalesEquivalentAmount), 1560);
 assert.equal(wasteSummary.topRows[0]?.itemName, "苺のショートケーキ");
+const wasteMonthlySummary = calculateWasteMonthlySummary({
+  ...sampleData,
+  wasteRecords: [{
+    id: "waste-test",
+    date: "2026-05-16",
+    itemType: "PRODUCT",
+    itemId: "prd-shortcake",
+    quantity: 3,
+    costAmount: wasteAmounts.costAmount,
+    salesEquivalentAmount: wasteAmounts.salesEquivalentAmount,
+    reason: "売れ残り",
+    memo: "",
+    createdAt: "2026-05-16T00:00:00.000Z",
+    updatedAt: "2026-05-16T00:00:00.000Z",
+  }],
+}, "2026-05");
+assert.equal(Math.round(wasteMonthlySummary.totalSalesEquivalentAmount), 1560);
+assert.equal(wasteMonthlySummary.categoryRows[0]?.categoryName, "プティガトー");
+assert.equal(wasteMonthlySummary.reasonRows[0]?.reason, "売れ残り");
+assert.equal(wasteMonthlySummary.itemRows[0]?.itemName, "苺のショートケーキ");
 
 const monthlyTheory = calculateMonthlyTheoryCost(sampleData, "2026-05");
 assert(monthlyTheory.totalSalesAmount > 0);

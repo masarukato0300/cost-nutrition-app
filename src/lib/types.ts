@@ -200,6 +200,33 @@ export type WasteSummary = {
   }>;
 };
 
+export type WasteMonthlySummary = {
+  month: string;
+  totalCostAmount: number;
+  totalSalesEquivalentAmount: number;
+  recordCount: number;
+  categoryRows: Array<{
+    categoryName: string;
+    quantity: number;
+    costAmount: number;
+    salesEquivalentAmount: number;
+  }>;
+  reasonRows: Array<{
+    reason: WasteReason;
+    quantity: number;
+    costAmount: number;
+    salesEquivalentAmount: number;
+  }>;
+  itemRows: Array<{
+    itemName: string;
+    itemType: WasteItemType;
+    categoryName: string;
+    quantity: number;
+    costAmount: number;
+    salesEquivalentAmount: number;
+  }>;
+};
+
 export type SalesRecord = {
   id: string;
   month: string;

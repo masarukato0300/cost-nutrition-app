@@ -8,6 +8,7 @@ import {
   calculateProductCost,
   calculateProductNutrition,
   calculateWasteRecordAmounts,
+  calculateWasteMonthlySummary,
   calculateWasteSummary,
   calculateMonthlyTheoryCost,
   collectAllergens,
@@ -24,7 +25,7 @@ import {
 import { sampleData } from "@/lib/sample-data";
 import { standardNutritionFoods } from "@/lib/standard-nutrition";
 import type { StandardNutritionFood } from "@/lib/standard-nutrition";
-import type { ActualCostRecord, AppData, EventPlan, EventSimulationRow, Ingredient, IngredientAlias, LaborCost, MaterialType, MonthlyTheoryRow, Product, ProductLaborCostSummary, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow, SalesRecord, SetProductCostSummary, SetProductItem, WasteItemType, WasteReason, WasteRecord } from "@/lib/types";
+import type { ActualCostRecord, AppData, EventPlan, EventSimulationRow, Ingredient, IngredientAlias, LaborCost, MaterialType, MonthlyTheoryRow, Product, ProductLaborCostSummary, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow, SalesRecord, SetProductCostSummary, SetProductItem, WasteItemType, WasteMonthlySummary, WasteReason, WasteRecord } from "@/lib/types";
 
 const defaultStoreId = "デモ店舗";
 const legacyStorageKey = "cost-nutrition-label-mvp-v1";
@@ -946,6 +947,7 @@ export function CostNutritionApp() {
   const [activeWasteCategory, setActiveWasteCategory] = useState<WasteCategoryKey>("baked");
   const [wasteDate, setWasteDate] = useState(todayDate());
   const [wasteReason, setWasteReason] = useState<WasteReason>("売れ残り");
+  const [wasteSummaryMonth, setWasteSummaryMonth] = useState(currentMonth());
   const [monthlyTargetMonth, setMonthlyTargetMonth] = useState("2026-05");
   const [actualCostForm, setActualCostForm] = useState<ActualCostRecord>(() => ({ ...emptyActualCostRecord(), month: "2026-05" }));
   const [eventPlanForm, setEventPlanForm] = useState<EventPlan>(() => emptyEventPlan());
@@ -1207,6 +1209,10 @@ export function CostNutritionApp() {
   const productionPackagingRequirements = productionRequirements.filter((row) => row.isPackaging);
   const productionTotalCost = productionRequirements.reduce((sum, row) => sum + row.cost, 0);
   const wasteSummary = useMemo(() => calculateWasteSummary(data), [data]);
+  const wasteMonthlySummary = useMemo(
+    () => calculateWasteMonthlySummary(data, wasteSummaryMonth),
+    [data, wasteSummaryMonth],
+  );
   const activeWasteRows = useMemo(
     () => wasteCategoryRows(data, activeWasteCategory),
     [activeWasteCategory, data],
@@ -1767,6 +1773,36 @@ export function CostNutritionApp() {
         record.salesEquivalentAmount,
         record.reason,
         record.memo,
+      ]),
+    ]);
+  }
+
+  function exportWasteMonthlyCsv() {
+    downloadCsv(`waste-monthly-${wasteSummaryMonth}.csv`, [
+      ["月", "区分", "名称", "数量", "廃棄原価", "販売価格換算"],
+      ...wasteMonthlySummary.categoryRows.map((row) => [
+        wasteSummaryMonth,
+        "カテゴリ",
+        row.categoryName,
+        row.quantity,
+        row.costAmount,
+        row.salesEquivalentAmount,
+      ]),
+      ...wasteMonthlySummary.reasonRows.map((row) => [
+        wasteSummaryMonth,
+        "理由",
+        row.reason,
+        row.quantity,
+        row.costAmount,
+        row.salesEquivalentAmount,
+      ]),
+      ...wasteMonthlySummary.itemRows.map((row) => [
+        wasteSummaryMonth,
+        "品目",
+        row.itemName,
+        row.quantity,
+        row.costAmount,
+        row.salesEquivalentAmount,
       ]),
     ]);
   }
@@ -2874,6 +2910,20 @@ export function CostNutritionApp() {
                 <Metric label="販売価格換算" value={yen(wasteSummary.totalSalesEquivalentAmount)} tone={wasteSummary.totalSalesEquivalentAmount > 0 ? "warn" : "normal"} />
                 <Metric label="記録件数" value={`${data.wasteRecords.length}件`} />
               </div>
+              <section className="mt-4 rounded-md border border-pink-200 bg-pink-50 p-3">
+                <div className="flex flex-wrap items-end justify-between gap-2">
+                  <TextInput label="月別集計" value={wasteSummaryMonth} onChange={setWasteSummaryMonth} />
+                  <button className="rounded-md bg-pink-700 px-3 py-2 text-sm font-bold text-white" onClick={exportWasteMonthlyCsv}>
+                    月別CSV
+                  </button>
+                </div>
+                <div className="mt-3 grid gap-3 md:grid-cols-3">
+                  <Metric label="月間廃棄原価" value={yen(wasteMonthlySummary.totalCostAmount)} tone={wasteMonthlySummary.totalCostAmount > 0 ? "warn" : "normal"} />
+                  <Metric label="月間販売換算" value={yen(wasteMonthlySummary.totalSalesEquivalentAmount)} tone={wasteMonthlySummary.totalSalesEquivalentAmount > 0 ? "warn" : "normal"} />
+                  <Metric label="月間記録件数" value={`${wasteMonthlySummary.recordCount}件`} />
+                </div>
+                <WasteMonthlySummaryView summary={wasteMonthlySummary} />
+              </section>
               <div className="mt-4 overflow-x-auto rounded-md border border-neutral-200">
                 <table className="w-full min-w-[860px] border-collapse bg-white text-left">
                   <thead className="bg-neutral-100">
@@ -3900,6 +3950,69 @@ function RequirementTable({ rows, compact = false }: { rows: RequirementRow[]; c
           )}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function WasteMonthlySummaryView({ summary }: { summary: WasteMonthlySummary }) {
+  return (
+    <div className="mt-3 grid gap-3">
+      <section className="rounded-md border border-white/80 bg-white p-3">
+        <h4 className="font-black">カテゴリ別</h4>
+        <div className="mt-2 grid gap-2">
+          {summary.categoryRows.map((row) => (
+            <div key={row.categoryName} className="grid grid-cols-[1fr_90px_110px] gap-2 rounded-md bg-neutral-50 px-3 py-2 text-sm font-bold">
+              <span>{row.categoryName}</span>
+              <span className="text-right">{number(row.quantity, 1)}</span>
+              <span className="text-right">{yen(row.costAmount)}</span>
+            </div>
+          ))}
+          {summary.categoryRows.length === 0 && <p className="text-sm font-bold text-neutral-500">この月の記録はありません。</p>}
+        </div>
+      </section>
+      <section className="rounded-md border border-white/80 bg-white p-3">
+        <h4 className="font-black">理由別</h4>
+        <div className="mt-2 grid gap-2">
+          {summary.reasonRows.map((row) => (
+            <div key={row.reason} className="grid grid-cols-[1fr_90px_110px] gap-2 rounded-md bg-neutral-50 px-3 py-2 text-sm font-bold">
+              <span>{row.reason}</span>
+              <span className="text-right">{number(row.quantity, 1)}</span>
+              <span className="text-right">{yen(row.costAmount)}</span>
+            </div>
+          ))}
+          {summary.reasonRows.length === 0 && <p className="text-sm font-bold text-neutral-500">この月の記録はありません。</p>}
+        </div>
+      </section>
+      <section className="rounded-md border border-white/80 bg-white p-3">
+        <h4 className="font-black">品目別TOP20</h4>
+        <div className="mt-2 max-h-72 overflow-auto rounded-md border border-neutral-100">
+          <table className="w-full min-w-[520px] border-collapse text-left text-sm">
+            <thead className="bg-neutral-100">
+              <tr>
+                <th className="p-2">品目</th>
+                <th className="p-2">カテゴリ</th>
+                <th className="p-2 text-right">数量</th>
+                <th className="p-2 text-right">廃棄原価</th>
+              </tr>
+            </thead>
+            <tbody>
+              {summary.itemRows.map((row) => (
+                <tr key={`${row.itemType}-${row.itemName}-${row.categoryName}`} className="border-t border-neutral-100 bg-white">
+                  <td className="p-2 font-bold">{row.itemName}</td>
+                  <td className="p-2">{row.categoryName}</td>
+                  <td className="p-2 text-right">{number(row.quantity, 1)}</td>
+                  <td className="p-2 text-right">{yen(row.costAmount)}</td>
+                </tr>
+              ))}
+              {summary.itemRows.length === 0 && (
+                <tr>
+                  <td className="p-2 text-neutral-500" colSpan={4}>この月の記録はありません。</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   );
 }

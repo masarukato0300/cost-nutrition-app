@@ -15,6 +15,7 @@ import type {
   SalesRecord,
   SetProductCostSummary,
   WasteRecord,
+  WasteMonthlySummary,
   WasteSummary,
 } from "./types";
 
@@ -295,6 +296,68 @@ export function calculateWasteSummary(data: AppData): WasteSummary {
     totalCostAmount: data.wasteRecords.reduce((sum, record) => sum + record.costAmount, 0),
     totalSalesEquivalentAmount: data.wasteRecords.reduce((sum, record) => sum + record.salesEquivalentAmount, 0),
     topRows: [...topMap.values()].sort((a, b) => b.costAmount - a.costAmount).slice(0, 10),
+  };
+}
+
+function wasteItemDetails(data: AppData, record: WasteRecord) {
+  if (record.itemType === "INGREDIENT") {
+    const ingredient = data.ingredients.find((item) => item.id === record.itemId);
+    return {
+      itemName: ingredient?.name || "削除済み原材料",
+      categoryName: ingredient?.type === "PACKAGING" ? "包材" : "原材料",
+    };
+  }
+  const product = data.products.find((item) => item.id === record.itemId);
+  return {
+    itemName: product?.name || "削除済み商品",
+    categoryName: product?.category || (record.itemType === "INTERMEDIATE" ? "中間材料" : "商品"),
+  };
+}
+
+export function calculateWasteMonthlySummary(data: AppData, month: string): WasteMonthlySummary {
+  const monthRecords = data.wasteRecords.filter((record) => record.date.startsWith(month));
+  const categoryMap = new Map<string, WasteMonthlySummary["categoryRows"][number]>();
+  const reasonMap = new Map<string, WasteMonthlySummary["reasonRows"][number]>();
+  const itemMap = new Map<string, WasteMonthlySummary["itemRows"][number]>();
+
+  monthRecords.forEach((record) => {
+    const details = wasteItemDetails(data, record);
+    const category = categoryMap.get(details.categoryName);
+    categoryMap.set(details.categoryName, {
+      categoryName: details.categoryName,
+      quantity: (category?.quantity ?? 0) + record.quantity,
+      costAmount: (category?.costAmount ?? 0) + record.costAmount,
+      salesEquivalentAmount: (category?.salesEquivalentAmount ?? 0) + record.salesEquivalentAmount,
+    });
+
+    const reason = reasonMap.get(record.reason);
+    reasonMap.set(record.reason, {
+      reason: record.reason,
+      quantity: (reason?.quantity ?? 0) + record.quantity,
+      costAmount: (reason?.costAmount ?? 0) + record.costAmount,
+      salesEquivalentAmount: (reason?.salesEquivalentAmount ?? 0) + record.salesEquivalentAmount,
+    });
+
+    const itemKey = `${record.itemType}:${record.itemId}`;
+    const item = itemMap.get(itemKey);
+    itemMap.set(itemKey, {
+      itemName: details.itemName,
+      itemType: record.itemType,
+      categoryName: details.categoryName,
+      quantity: (item?.quantity ?? 0) + record.quantity,
+      costAmount: (item?.costAmount ?? 0) + record.costAmount,
+      salesEquivalentAmount: (item?.salesEquivalentAmount ?? 0) + record.salesEquivalentAmount,
+    });
+  });
+
+  return {
+    month,
+    totalCostAmount: monthRecords.reduce((sum, record) => sum + record.costAmount, 0),
+    totalSalesEquivalentAmount: monthRecords.reduce((sum, record) => sum + record.salesEquivalentAmount, 0),
+    recordCount: monthRecords.length,
+    categoryRows: [...categoryMap.values()].sort((a, b) => b.costAmount - a.costAmount),
+    reasonRows: [...reasonMap.values()].sort((a, b) => b.costAmount - a.costAmount),
+    itemRows: [...itemMap.values()].sort((a, b) => b.costAmount - a.costAmount).slice(0, 20),
   };
 }
 
