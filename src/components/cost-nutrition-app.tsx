@@ -3650,6 +3650,28 @@ function HelpGuide({ onNavigate }: { onNavigate: (page: PageKey) => void }) {
     ["ラベル表示", "商品名、栄養成分、アレルゲン、原材料表示名を確認用テキストにします。"],
     ["原材料マスター", "登録済み原材料を一覧で確認し、タップで編集、削除ボタンで削除できます。"],
   ];
+  const ocrVideoSteps = [
+    {
+      title: "1. 価格表を明るく置く",
+      body: "紙が斜めになりすぎないように、原材料名と価格が画面いっぱいに入るようにします。",
+      label: "準備",
+    },
+    {
+      title: "2. カメラ起動を押す",
+      body: "赤いカメラ起動ボタンから撮影します。写真から読む時は写真ボタンを使います。",
+      label: "撮影",
+    },
+    {
+      title: "3. 自動でAI読み取り",
+      body: "撮影後は自動で読み取りが始まります。複数商品がある時は候補が順番に出ます。",
+      label: "読取",
+    },
+    {
+      title: "4. 確認して保存",
+      body: "原材料名、製品名、内容量、価格を確認して、合っていれば保存します。重複候補はスキップできます。",
+      label: "確認",
+    },
+  ];
 
   return (
     <div className="grid gap-4">
@@ -3670,6 +3692,51 @@ function HelpGuide({ onNavigate }: { onNavigate: (page: PageKey) => void }) {
               )}
             </div>
           ))}
+        </div>
+      </section>
+
+      <section className="rounded-md border border-neutral-200 bg-white p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-lg font-black text-neutral-900">動画ガイド: OCRで原材料を登録する流れ</h3>
+            <p className="mt-1 text-sm font-bold text-neutral-500">初めてのスタッフでも、撮影から保存までの流れがわかる説明です。</p>
+          </div>
+          <button className="rounded-md bg-rose-700 px-4 py-2 text-sm font-bold text-white" onClick={() => onNavigate("ingredient")}>
+            原材料登録を開く
+          </button>
+        </div>
+        <div className="mt-4 rounded-md border border-neutral-200 bg-neutral-950 p-3 text-white shadow-sm">
+          <div className="grid gap-3 lg:grid-cols-[320px_1fr]">
+            <OcrPhoneFrame />
+            <div className="grid gap-3">
+              <div className="rounded-md bg-white/10 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-black text-rose-200">OCR GUIDE</span>
+                  <span className="rounded bg-white/10 px-2 py-1 text-[11px] font-bold">約1分</span>
+                </div>
+                <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/20">
+                  <div className="h-full w-3/4 rounded-full bg-rose-400" />
+                </div>
+              </div>
+              <div className="grid gap-2 md:grid-cols-2">
+                {ocrVideoSteps.map((step, index) => (
+                  <div key={step.title} className="rounded-md border border-white/10 bg-white/10 p-3">
+                    <span className="rounded bg-rose-400 px-2 py-1 text-[11px] font-black text-neutral-950">{step.label}</span>
+                    <strong className="mt-3 block text-base">{step.title}</strong>
+                    <p className="mt-2 text-sm font-bold text-white/75">{step.body}</p>
+                    <div className="mt-3 flex gap-1">
+                      {ocrVideoSteps.map((_, dotIndex) => (
+                        <span key={dotIndex} className={`h-1.5 flex-1 rounded-full ${dotIndex <= index ? "bg-rose-300" : "bg-white/20"}`} />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="rounded-md border border-amber-300/40 bg-amber-300/10 p-3 text-sm font-bold text-amber-100">
+                読み取り結果はそのまま保存せず、必ず確認画面で人が確認してから登録します。価格や内容量が違う場合は手直しできます。
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -3722,6 +3789,49 @@ function HelpBox({ title, body }: { title: string; body: string }) {
     <div className="rounded-md border border-neutral-200 bg-neutral-50 p-3 text-center">
       <strong className="block text-neutral-900">{title}</strong>
       <p className="mt-2 text-sm font-bold text-neutral-600">{body}</p>
+    </div>
+  );
+}
+
+function OcrPhoneFrame() {
+  return (
+    <div className="mx-auto w-full max-w-[280px] rounded-[28px] border-4 border-white/20 bg-neutral-900 p-3 shadow-xl">
+      <div className="rounded-[20px] bg-neutral-100 p-3 text-neutral-900">
+        <div className="flex items-center justify-between text-[11px] font-black text-neutral-500">
+          <span>原材料登録</span>
+          <span>OCR</span>
+        </div>
+        <div className="mt-3 rounded-md border-2 border-dashed border-rose-400 bg-white p-3">
+          <div className="rounded-md bg-neutral-100 p-2">
+            <div className="h-3 w-3/4 rounded bg-neutral-300" />
+            <div className="mt-2 h-3 w-5/6 rounded bg-neutral-300" />
+            <div className="mt-2 grid grid-cols-[1fr_70px] gap-2">
+              <div className="h-3 rounded bg-neutral-300" />
+              <div className="h-3 rounded bg-rose-300" />
+            </div>
+            <div className="mt-2 grid grid-cols-[1fr_70px] gap-2">
+              <div className="h-3 rounded bg-neutral-300" />
+              <div className="h-3 rounded bg-rose-300" />
+            </div>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="rounded-md bg-rose-600 px-2 py-2 text-center text-xs font-black text-white">カメラ起動</div>
+            <div className="rounded-md bg-neutral-800 px-2 py-2 text-center text-xs font-black text-white">写真</div>
+          </div>
+        </div>
+        <div className="mt-3 rounded-md border border-teal-200 bg-teal-50 p-2">
+          <div className="text-xs font-black text-teal-900">確認POPUP</div>
+          <div className="mt-2 grid gap-1">
+            <div className="h-3 rounded bg-teal-200" />
+            <div className="h-3 rounded bg-teal-200" />
+            <div className="h-3 w-2/3 rounded bg-teal-200" />
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] font-black">
+            <div className="rounded bg-teal-700 py-1 text-center text-white">反映</div>
+            <div className="rounded bg-white py-1 text-center text-teal-800">スキップ</div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
