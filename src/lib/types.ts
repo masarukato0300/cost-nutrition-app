@@ -116,6 +116,8 @@ export type AppData = {
   priceHistories: PriceHistory[];
   ingredientAliases: IngredientAlias[];
   wasteRecords: WasteRecord[];
+  salesRecords: SalesRecord[];
+  actualCostRecords: ActualCostRecord[];
 };
 
 export type ProductCostSummary = {
@@ -192,4 +194,45 @@ export type WasteSummary = {
     costAmount: number;
     salesEquivalentAmount: number;
   }>;
+};
+
+export type SalesRecord = {
+  id: string;
+  month: string;
+  productId: string;
+  quantity: number;
+  sellingPrice: number;
+  memo: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ActualCostRecord = {
+  id: string;
+  month: string;
+  supplier: string;
+  amount: number;
+  memo: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MonthlyTheoryRow = {
+  product: Product;
+  quantity: number;
+  salesAmount: number;
+  theoryCostAmount: number;
+  grossProfit: number;
+  theoryCostRate: number;
+};
+
+export type MonthlyTheorySummary = {
+  month: string;
+  rows: MonthlyTheoryRow[];
+  totalSalesAmount: number;
+  totalTheoryCostAmount: number;
+  totalGrossProfit: number;
+  theoryCostRate: number;
+  actualCostAmount: number;
+  differenceAmount: number;
 };

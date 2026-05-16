@@ -133,4 +133,16 @@ export const sampleData: AppData = {
   ],
   ingredientAliases: [],
   wasteRecords: [],
+  salesRecords: [
+    { id: "sales-shortcake", month: "2026-05", productId: "prd-shortcake", quantity: 420, sellingPrice: 520, memo: "サンプル販売数", createdAt: now, updatedAt: now },
+    { id: "sales-roll", month: "2026-05", productId: "prd-roll", quantity: 80, sellingPrice: 1200, memo: "サンプル販売数", createdAt: now, updatedAt: now },
+    { id: "sales-madeleine", month: "2026-05", productId: "prd-madeleine", quantity: 650, sellingPrice: 220, memo: "サンプル販売数", createdAt: now, updatedAt: now },
+    { id: "sales-castella", month: "2026-05", productId: "prd-castella", quantity: 110, sellingPrice: 980, memo: "サンプル販売数", createdAt: now, updatedAt: now },
+    { id: "sales-gift", month: "2026-05", productId: "prd-gift", quantity: 55, sellingPrice: 2000, memo: "サンプル販売数", createdAt: now, updatedAt: now },
+  ],
+  actualCostRecords: [
+    { id: "actual-cream", month: "2026-05", supplier: "山手デイリー", amount: 98000, memo: "サンプル実仕入", createdAt: now, updatedAt: now },
+    { id: "actual-flour", month: "2026-05", supplier: "東京製粉", amount: 58000, memo: "サンプル実仕入", createdAt: now, updatedAt: now },
+    { id: "actual-packaging", month: "2026-05", supplier: "包材センター", amount: 42000, memo: "サンプル実仕入", createdAt: now, updatedAt: now },
+  ],
 };

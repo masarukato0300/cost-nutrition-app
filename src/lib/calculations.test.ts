@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { calculatePriceImpact, calculateProductCost, calculateProductNutrition, calculateProductionRequirements, calculateWasteRecordAmounts, calculateWasteSummary, pricePerGram } from "./calculations";
+import { calculateMonthlyTheoryCost, calculatePriceImpact, calculateProductCost, calculateProductNutrition, calculateProductionRequirements, calculateWasteRecordAmounts, calculateWasteSummary, pricePerGram } from "./calculations";
 import { sampleData } from "./sample-data";
 
 const shortcake = sampleData.products.find((product) => product.id === "prd-shortcake");
@@ -65,5 +65,12 @@ const wasteSummary = calculateWasteSummary({
 });
 assert.equal(Math.round(wasteSummary.totalSalesEquivalentAmount), 1560);
 assert.equal(wasteSummary.topRows[0]?.itemName, "苺のショートケーキ");
+
+const monthlyTheory = calculateMonthlyTheoryCost(sampleData, "2026-05");
+assert(monthlyTheory.totalSalesAmount > 0);
+assert(monthlyTheory.totalTheoryCostAmount > 0);
+assert(monthlyTheory.actualCostAmount > 0);
+assert(monthlyTheory.differenceAmount !== 0);
+assert(monthlyTheory.rows.some((row) => row.product.name === "苺のショートケーキ"));
 
 console.log("calculation tests passed");

@@ -8,6 +8,7 @@ import {
   calculateProductNutrition,
   calculateWasteRecordAmounts,
   calculateWasteSummary,
+  calculateMonthlyTheoryCost,
   collectAllergens,
   collectLabelNames,
   hasNutrition,
@@ -15,11 +16,12 @@ import {
   amountToGram,
   pricePerGram,
   recipeItemAmountGram,
+  upsertSalesRecord,
 } from "@/lib/calculations";
 import { sampleData } from "@/lib/sample-data";
 import { standardNutritionFoods } from "@/lib/standard-nutrition";
 import type { StandardNutritionFood } from "@/lib/standard-nutrition";
-import type { AppData, Ingredient, IngredientAlias, MaterialType, Product, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow, WasteItemType, WasteReason, WasteRecord } from "@/lib/types";
+import type { ActualCostRecord, AppData, Ingredient, IngredientAlias, MaterialType, MonthlyTheoryRow, Product, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow, SalesRecord, WasteItemType, WasteReason, WasteRecord } from "@/lib/types";
 
 const defaultStoreId = "デモ店舗";
 const legacyStorageKey = "cost-nutrition-label-mvp-v1";
@@ -46,6 +48,7 @@ const pages = [
   { key: "production", label: "仕込み量逆算" },
   { key: "order", label: "発注リスト" },
   { key: "waste", label: "廃棄ロス" },
+  { key: "monthly", label: "月間理論原価" },
   { key: "impact", label: "影響分析" },
   { key: "label", label: "ラベル表示" },
   { key: "csv", label: "CSV出力" },
@@ -120,6 +123,12 @@ const pageTones: Record<PageNavKey, { navActive: string; navIdle: string; topCar
     navIdle: "border-pink-100 bg-white text-neutral-700 hover:border-pink-300 hover:bg-pink-50",
     topCard: "border-pink-100 bg-pink-50/70 hover:border-pink-400",
     mark: "bg-pink-500",
+  },
+  monthly: {
+    navActive: "border-blue-500 bg-blue-50 text-blue-900 shadow-sm",
+    navIdle: "border-blue-100 bg-white text-neutral-700 hover:border-blue-300 hover:bg-blue-50",
+    topCard: "border-blue-100 bg-blue-50/70 hover:border-blue-400",
+    mark: "bg-blue-500",
   },
   impact: {
     navActive: "border-red-500 bg-red-50 text-red-900 shadow-sm",
@@ -247,6 +256,8 @@ function normalizeData(parsed: AppData): AppData {
     recipeItems: parsed.recipeItems.map(normalizeRecipeItem),
     ingredientAliases: parsed.ingredientAliases || [],
     wasteRecords: parsed.wasteRecords || [],
+    salesRecords: parsed.salesRecords || [],
+    actualCostRecords: parsed.actualCostRecords || [],
   };
 }
 
@@ -487,6 +498,7 @@ function topPageDescription(pageKey: PageKey) {
     production: "予定数から必要材料を逆算",
     order: "必要材料を仕入先別に確認",
     waste: "廃棄や試作ロスを記録",
+    monthly: "販売数から理論原価を確認",
     impact: "価格変更時の影響商品を確認",
     ocr: "OCR読み取り結果から価格更新候補を作成",
     label: "確認用ラベルテキストを作成",
@@ -747,6 +759,18 @@ const emptyWasteRecord = (): WasteRecord => ({
   updatedAt: now(),
 });
 
+const currentMonth = () => new Date().toISOString().slice(0, 7);
+
+const emptyActualCostRecord = (): ActualCostRecord => ({
+  id: "",
+  month: currentMonth(),
+  supplier: "",
+  amount: 0,
+  memo: "",
+  createdAt: now(),
+  updatedAt: now(),
+});
+
 export function CostNutritionApp() {
   const ingredientCameraInputRef = useRef<HTMLInputElement | null>(null);
   const ingredientPhotoInputRef = useRef<HTMLInputElement | null>(null);
@@ -781,6 +805,8 @@ export function CostNutritionApp() {
   const [nutritionSearchText, setNutritionSearchText] = useState("");
   const [selectedStandardNutritionId, setSelectedStandardNutritionId] = useState("");
   const [wasteForm, setWasteForm] = useState<WasteRecord>(() => emptyWasteRecord());
+  const [monthlyTargetMonth, setMonthlyTargetMonth] = useState("2026-05");
+  const [actualCostForm, setActualCostForm] = useState<ActualCostRecord>(() => ({ ...emptyActualCostRecord(), month: "2026-05" }));
   const [productionPlan, setProductionPlan] = useState<Record<string, number>>({
     "prd-shortcake": 50,
     "prd-madeleine": 100,
@@ -1026,6 +1052,10 @@ export function CostNutritionApp() {
       .filter((product) => wasteForm.itemType === "INTERMEDIATE" ? product.isIntermediateMaterial : !product.isIntermediateMaterial)
       .map((product) => ({ id: product.id, label: product.name }));
   }, [data.ingredients, data.products, wasteForm.itemType]);
+  const monthlyTheory = useMemo(
+    () => calculateMonthlyTheoryCost(data, monthlyTargetMonth),
+    [data, monthlyTargetMonth],
+  );
 
   const dashboard = useMemo(() => {
     const productCosts = data.products.map((product) => calculateProductCost(product, data.ingredients, data.recipeItems, data.products));
@@ -1521,6 +1551,61 @@ export function CostNutritionApp() {
         record.reason,
         record.memo,
       ]),
+    ]);
+  }
+
+  function updateMonthlySales(product: Product, quantity: number) {
+    const nextRecord: SalesRecord = {
+      id: createId("sales"),
+      month: monthlyTargetMonth,
+      productId: product.id,
+      quantity,
+      sellingPrice: product.sellingPrice,
+      memo: "",
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    commit({ ...data, salesRecords: upsertSalesRecord(data.salesRecords, nextRecord) });
+  }
+
+  function saveActualCostRecord() {
+    if (!actualCostForm.supplier.trim() || actualCostForm.amount <= 0) return;
+    const record: ActualCostRecord = {
+      ...actualCostForm,
+      id: actualCostForm.id || createId("actual"),
+      month: monthlyTargetMonth,
+      createdAt: actualCostForm.createdAt || now(),
+      updatedAt: now(),
+    };
+    commit({
+      ...data,
+      actualCostRecords: actualCostForm.id
+        ? data.actualCostRecords.map((item) => (item.id === record.id ? record : item))
+        : [record, ...data.actualCostRecords],
+    });
+    setActualCostForm({ ...emptyActualCostRecord(), month: monthlyTargetMonth });
+  }
+
+  function deleteActualCostRecord(recordId: string) {
+    if (!confirm("この実仕入額を削除しますか？")) return;
+    commit({ ...data, actualCostRecords: data.actualCostRecords.filter((record) => record.id !== recordId) });
+  }
+
+  function exportMonthlyTheoryCsv() {
+    downloadCsv(`monthly-theory-${monthlyTargetMonth}.csv`, [
+      ["月", "商品名", "販売数", "売上", "理論原価", "理論原価率", "粗利"],
+      ...monthlyTheory.rows.map((row) => [
+        monthlyTargetMonth,
+        row.product.name,
+        row.quantity,
+        row.salesAmount,
+        row.theoryCostAmount,
+        row.theoryCostRate,
+        row.grossProfit,
+      ]),
+      ["合計", "", "", monthlyTheory.totalSalesAmount, monthlyTheory.totalTheoryCostAmount, monthlyTheory.theoryCostRate, monthlyTheory.totalGrossProfit],
+      ["実原価", "", "", "", monthlyTheory.actualCostAmount, "", ""],
+      ["差額", "", "", "", monthlyTheory.differenceAmount, "", ""],
     ]);
   }
 
@@ -2388,6 +2473,92 @@ export function CostNutritionApp() {
         </Panel>
       )}
 
+      {activePage === "monthly" && (
+        <Panel title="月間理論原価">
+          <section className="mb-3 rounded-md border border-blue-200 bg-blue-50 p-3 text-sm font-bold text-blue-900">
+            月ごとの販売数を入力すると、売上・理論原価・理論原価率を計算します。実際の仕入額も入れると差額を確認できます。
+          </section>
+          <div className="grid gap-3 lg:grid-cols-[360px_1fr]">
+            <section className="rounded-md border border-neutral-200 bg-white p-3">
+              <h3 className="font-black">販売数入力</h3>
+              <div className="mt-3 grid gap-3">
+                <TextInput
+                  label="対象月"
+                  value={monthlyTargetMonth}
+                  onChange={(value) => {
+                    setMonthlyTargetMonth(value);
+                    setActualCostForm((current) => ({ ...current, month: value }));
+                  }}
+                />
+                {data.products.filter((product) => !product.isIntermediateMaterial).map((product) => {
+                  const record = data.salesRecords.find((item) => item.month === monthlyTargetMonth && item.productId === product.id);
+                  return (
+                    <label key={product.id} className="grid grid-cols-[1fr_110px] items-center gap-2 rounded-md border border-neutral-100 bg-neutral-50 p-2 font-bold">
+                      <span>{product.name}</span>
+                      <input
+                        className="rounded-md border border-neutral-200 bg-white px-2 py-1 text-right"
+                        type="number"
+                        value={record?.quantity ?? 0}
+                        onChange={(event) => updateMonthlySales(product, Number(event.target.value))}
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+              <section className="mt-4 rounded-md border border-neutral-200 bg-neutral-50 p-3">
+                <h3 className="font-black">実際仕入額</h3>
+                <div className="mt-3 grid gap-2">
+                  <TextInput label="仕入先" value={actualCostForm.supplier} onChange={(value) => setActualCostForm({ ...actualCostForm, supplier: value })} />
+                  <NumberInput label="金額" value={actualCostForm.amount} onChange={(value) => setActualCostForm({ ...actualCostForm, amount: value })} />
+                  <TextInput label="メモ" value={actualCostForm.memo} onChange={(value) => setActualCostForm({ ...actualCostForm, memo: value })} />
+                  <button className="rounded-md bg-blue-700 px-4 py-2 font-bold text-white" onClick={saveActualCostRecord}>
+                    実仕入額を保存
+                  </button>
+                </div>
+              </section>
+            </section>
+            <section className="rounded-md border border-neutral-200 bg-white p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="font-black">理論原価結果</h3>
+                <button className="rounded-md bg-blue-700 px-3 py-2 text-sm font-bold text-white" onClick={exportMonthlyTheoryCsv}>
+                  CSV出力
+                </button>
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-3">
+                <Metric label="月間売上" value={yen(monthlyTheory.totalSalesAmount)} />
+                <Metric label="月間理論原価" value={yen(monthlyTheory.totalTheoryCostAmount)} />
+                <Metric label="理論原価率" value={percent(monthlyTheory.theoryCostRate)} tone={monthlyTheory.theoryCostRate >= 40 ? "danger" : monthlyTheory.theoryCostRate >= 35 ? "warn" : "normal"} />
+                <Metric label="実際仕入額" value={yen(monthlyTheory.actualCostAmount)} />
+                <Metric label="理論との差額" value={yen(monthlyTheory.differenceAmount)} tone={monthlyTheory.differenceAmount > 0 ? "warn" : "normal"} />
+                <Metric label="理論粗利" value={yen(monthlyTheory.totalGrossProfit)} />
+              </div>
+              <MonthlyTheoryTable rows={monthlyTheory.rows} />
+              <section className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900">
+                <h4 className="font-black">差額が大きい時の確認ポイント</h4>
+                <p className="mt-2">廃棄、試作、仕込み量の作りすぎ、原材料単価の更新漏れ、レシピ入力漏れ、棚卸差異を確認してください。</p>
+              </section>
+              <section className="mt-4 rounded-md border border-neutral-200 bg-neutral-50 p-3">
+                <h4 className="font-black">実仕入額の内訳</h4>
+                <div className="mt-2 grid gap-2">
+                  {data.actualCostRecords.filter((record) => record.month === monthlyTargetMonth).map((record) => (
+                    <div key={record.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-white px-3 py-2 text-sm font-bold">
+                      <span>{record.supplier} / {record.memo || "メモなし"}</span>
+                      <span>{yen(record.amount)}</span>
+                      <button className="rounded-md bg-red-50 px-2 py-1 text-red-700" onClick={() => deleteActualCostRecord(record.id)}>
+                        削除
+                      </button>
+                    </div>
+                  ))}
+                  {data.actualCostRecords.filter((record) => record.month === monthlyTargetMonth).length === 0 && (
+                    <p className="text-sm font-bold text-neutral-500">実仕入額はまだ登録されていません。</p>
+                  )}
+                </div>
+              </section>
+            </section>
+          </div>
+        </Panel>
+      )}
+
       {activePage === "impact" && (
         <Panel title="影響分析">
           <div className="grid gap-3 md:grid-cols-3">
@@ -3053,6 +3224,42 @@ function RequirementTable({ rows, compact = false }: { rows: RequirementRow[]; c
           {rows.length === 0 && (
             <tr>
               <td className="p-3 text-neutral-500" colSpan={5}>製造予定数を入力すると表示されます。</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function MonthlyTheoryTable({ rows }: { rows: MonthlyTheoryRow[] }) {
+  return (
+    <div className="mt-4 overflow-x-auto rounded-md border border-neutral-200">
+      <table className="w-full min-w-[860px] border-collapse bg-white text-left">
+        <thead className="bg-neutral-100">
+          <tr>
+            <th className="p-3">商品</th>
+            <th className="p-3 text-right">販売数</th>
+            <th className="p-3 text-right">売上</th>
+            <th className="p-3 text-right">理論原価</th>
+            <th className="p-3 text-right">理論原価率</th>
+            <th className="p-3 text-right">粗利</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.product.id} className="border-t border-neutral-200">
+              <td className="p-3 font-bold">{row.product.name}</td>
+              <td className="p-3 text-right">{number(row.quantity, 0)}</td>
+              <td className="p-3 text-right">{yen(row.salesAmount)}</td>
+              <td className="p-3 text-right">{yen(row.theoryCostAmount)}</td>
+              <td className="p-3 text-right">{percent(row.theoryCostRate)}</td>
+              <td className="p-3 text-right">{yen(row.grossProfit)}</td>
+            </tr>
+          ))}
+          {rows.length === 0 && (
+            <tr>
+              <td className="p-3 text-neutral-500" colSpan={6}>販売数を入力すると表示されます。</td>
             </tr>
           )}
         </tbody>

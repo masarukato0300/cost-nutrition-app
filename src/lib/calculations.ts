@@ -1,6 +1,7 @@
 import type {
   AppData,
   Ingredient,
+  MonthlyTheorySummary,
   Nutrition,
   PriceImpactRow,
   Product,
@@ -9,6 +10,7 @@ import type {
   ProductionPlanInput,
   RecipeItem,
   RequirementRow,
+  SalesRecord,
   WasteRecord,
   WasteSummary,
 } from "./types";
@@ -291,6 +293,53 @@ export function calculateWasteSummary(data: AppData): WasteSummary {
     totalSalesEquivalentAmount: data.wasteRecords.reduce((sum, record) => sum + record.salesEquivalentAmount, 0),
     topRows: [...topMap.values()].sort((a, b) => b.costAmount - a.costAmount).slice(0, 10),
   };
+}
+
+export function calculateMonthlyTheoryCost(data: AppData, month: string): MonthlyTheorySummary {
+  const monthSales = data.salesRecords.filter((record) => record.month === month);
+  const rows = monthSales
+    .map((record) => {
+      const product = data.products.find((item) => item.id === record.productId);
+      if (!product) return null;
+      const cost = calculateProductCost(product, data.ingredients, data.recipeItems, data.products);
+      const salesAmount = priceWithTax(record.sellingPrice, product.taxType) * record.quantity;
+      const theoryCostAmount = cost.costPerPiece * record.quantity;
+      return {
+        product,
+        quantity: record.quantity,
+        salesAmount,
+        theoryCostAmount,
+        grossProfit: salesAmount - theoryCostAmount,
+        theoryCostRate: salesAmount ? (theoryCostAmount / salesAmount) * 100 : 0,
+      };
+    })
+    .filter((row): row is NonNullable<typeof row> => Boolean(row));
+  const totalSalesAmount = rows.reduce((sum, row) => sum + row.salesAmount, 0);
+  const totalTheoryCostAmount = rows.reduce((sum, row) => sum + row.theoryCostAmount, 0);
+  const actualCostAmount = data.actualCostRecords
+    .filter((record) => record.month === month)
+    .reduce((sum, record) => sum + record.amount, 0);
+
+  return {
+    month,
+    rows,
+    totalSalesAmount,
+    totalTheoryCostAmount,
+    totalGrossProfit: totalSalesAmount - totalTheoryCostAmount,
+    theoryCostRate: totalSalesAmount ? (totalTheoryCostAmount / totalSalesAmount) * 100 : 0,
+    actualCostAmount,
+    differenceAmount: actualCostAmount - totalTheoryCostAmount,
+  };
+}
+
+export function upsertSalesRecord(records: SalesRecord[], nextRecord: SalesRecord): SalesRecord[] {
+  const existing = records.find((record) => record.month === nextRecord.month && record.productId === nextRecord.productId);
+  if (!existing) return [nextRecord, ...records];
+  return records.map((record) => (
+    record.id === existing.id
+      ? { ...record, quantity: nextRecord.quantity, sellingPrice: nextRecord.sellingPrice, memo: nextRecord.memo, updatedAt: nextRecord.updatedAt }
+      : record
+  ));
 }
 
 export function nutritionForAmount(ingredient: Ingredient, amountGram: number): Nutrition {
