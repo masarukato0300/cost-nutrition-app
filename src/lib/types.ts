@@ -120,6 +120,7 @@ export type AppData = {
   actualCostRecords: ActualCostRecord[];
   eventPlans: EventPlan[];
   eventPlanItems: EventPlanItem[];
+  laborCosts: LaborCost[];
 };
 
 export type ProductCostSummary = {
@@ -280,4 +281,27 @@ export type EventSimulationSummary = {
   totalCurrentGrossProfit: number;
   totalSimulatedGrossProfit: number;
   totalProfitDecrease: number;
+};
+
+export type LaborCost = {
+  id: string;
+  productId: string;
+  processName: string;
+  minutes: number;
+  workers: number;
+  hourlyWage: number;
+  memo: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ProductLaborCostSummary = {
+  product: Product;
+  laborRows: Array<LaborCost & { costAmount: number }>;
+  materialAndPackagingCostPerPiece: number;
+  laborTotalCost: number;
+  laborCostPerPiece: number;
+  effectiveCostPerPiece: number;
+  laborCostRate: number;
+  effectiveCostRate: number;
 };

@@ -153,4 +153,10 @@ export const sampleData: AppData = {
     { id: "event-item-roll", eventPlanId: "event-christmas-2026", productId: "prd-roll", plannedQuantity: 120, sellingPrice: 1380, memo: "予約ロール", createdAt: now, updatedAt: now },
     { id: "event-item-gift", eventPlanId: "event-christmas-2026", productId: "prd-gift", plannedQuantity: 180, sellingPrice: 2200, memo: "焼き菓子ギフト", createdAt: now, updatedAt: now },
   ],
+  laborCosts: [
+    { id: "labor-shortcake-slice", productId: "prd-shortcake", processName: "組み立て・カット", minutes: 35, workers: 1, hourlyWage: 1200, memo: "8個取り", createdAt: now, updatedAt: now },
+    { id: "labor-shortcake-finish", productId: "prd-shortcake", processName: "仕上げ", minutes: 25, workers: 1, hourlyWage: 1200, memo: "ナッペ、苺飾り", createdAt: now, updatedAt: now },
+    { id: "labor-madeleine", productId: "prd-madeleine", processName: "仕込み・袋詰め", minutes: 50, workers: 1, hourlyWage: 1100, memo: "20個分", createdAt: now, updatedAt: now },
+    { id: "labor-gift", productId: "prd-gift", processName: "箱詰め・包装", minutes: 12, workers: 1, hourlyWage: 1100, memo: "1セット", createdAt: now, updatedAt: now },
+  ],
 };

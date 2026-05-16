@@ -7,6 +7,7 @@ import type {
   PriceImpactRow,
   Product,
   ProductCostSummary,
+  ProductLaborCostSummary,
   ProductNutritionSummary,
   ProductionPlanInput,
   RecipeItem,
@@ -390,6 +391,35 @@ export function calculateEventSimulation(
     totalCurrentGrossProfit: rows.reduce((sum, row) => sum + row.currentGrossProfit, 0),
     totalSimulatedGrossProfit: rows.reduce((sum, row) => sum + row.simulatedGrossProfit, 0),
     totalProfitDecrease: totalSimulatedCost - totalCurrentCost,
+  };
+}
+
+export function calculateLaborCostAmount(minutes: number, workers: number, hourlyWage: number): number {
+  return (Math.max(minutes, 0) / 60) * Math.max(workers, 0) * Math.max(hourlyWage, 0);
+}
+
+export function calculateProductLaborCost(data: AppData, product: Product): ProductLaborCostSummary {
+  const cost = calculateProductCost(product, data.ingredients, data.recipeItems, data.products);
+  const laborRows = data.laborCosts
+    .filter((row) => row.productId === product.id)
+    .map((row) => ({
+      ...row,
+      costAmount: calculateLaborCostAmount(row.minutes, row.workers, row.hourlyWage),
+    }));
+  const laborTotalCost = laborRows.reduce((sum, row) => sum + row.costAmount, 0);
+  const laborCostPerPiece = product.yieldCount ? laborTotalCost / product.yieldCount : 0;
+  const effectiveCostPerPiece = cost.costPerPiece + laborCostPerPiece;
+  const sellingPrice = priceWithTax(product.sellingPrice, product.taxType);
+
+  return {
+    product,
+    laborRows,
+    materialAndPackagingCostPerPiece: cost.costPerPiece,
+    laborTotalCost,
+    laborCostPerPiece,
+    effectiveCostPerPiece,
+    laborCostRate: sellingPrice ? (laborCostPerPiece / sellingPrice) * 100 : 0,
+    effectiveCostRate: sellingPrice ? (effectiveCostPerPiece / sellingPrice) * 100 : 0,
   };
 }
 

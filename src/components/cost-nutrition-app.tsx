@@ -12,6 +12,7 @@ import {
   calculateMonthlyTheoryCost,
   collectAllergens,
   collectLabelNames,
+  calculateProductLaborCost,
   hasNutrition,
   ingredientUnitLabel,
   amountToGram,
@@ -22,7 +23,7 @@ import {
 import { sampleData } from "@/lib/sample-data";
 import { standardNutritionFoods } from "@/lib/standard-nutrition";
 import type { StandardNutritionFood } from "@/lib/standard-nutrition";
-import type { ActualCostRecord, AppData, EventPlan, EventSimulationRow, Ingredient, IngredientAlias, MaterialType, MonthlyTheoryRow, Product, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow, SalesRecord, WasteItemType, WasteReason, WasteRecord } from "@/lib/types";
+import type { ActualCostRecord, AppData, EventPlan, EventSimulationRow, Ingredient, IngredientAlias, LaborCost, MaterialType, MonthlyTheoryRow, Product, ProductLaborCostSummary, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow, SalesRecord, WasteItemType, WasteReason, WasteRecord } from "@/lib/types";
 
 const defaultStoreId = "デモ店舗";
 const legacyStorageKey = "cost-nutrition-label-mvp-v1";
@@ -51,6 +52,7 @@ const pages = [
   { key: "waste", label: "廃棄ロス" },
   { key: "monthly", label: "月間理論原価" },
   { key: "event", label: "イベント原価" },
+  { key: "labor", label: "人件費原価" },
   { key: "impact", label: "影響分析" },
   { key: "label", label: "ラベル表示" },
   { key: "csv", label: "CSV出力" },
@@ -137,6 +139,12 @@ const pageTones: Record<PageNavKey, { navActive: string; navIdle: string; topCar
     navIdle: "border-rose-100 bg-white text-neutral-700 hover:border-rose-300 hover:bg-rose-50",
     topCard: "border-rose-100 bg-rose-50/70 hover:border-rose-400",
     mark: "bg-rose-500",
+  },
+  labor: {
+    navActive: "border-stone-500 bg-stone-50 text-stone-900 shadow-sm",
+    navIdle: "border-stone-100 bg-white text-neutral-700 hover:border-stone-300 hover:bg-stone-50",
+    topCard: "border-stone-100 bg-stone-50/70 hover:border-stone-400",
+    mark: "bg-stone-500",
   },
   impact: {
     navActive: "border-red-500 bg-red-50 text-red-900 shadow-sm",
@@ -268,6 +276,7 @@ function normalizeData(parsed: AppData): AppData {
     actualCostRecords: parsed.actualCostRecords || [],
     eventPlans: parsed.eventPlans || [],
     eventPlanItems: parsed.eventPlanItems || [],
+    laborCosts: parsed.laborCosts || [],
   };
 }
 
@@ -510,6 +519,7 @@ function topPageDescription(pageKey: PageKey) {
     waste: "廃棄や試作ロスを記録",
     monthly: "販売数から理論原価を確認",
     event: "イベント販売の粗利を試算",
+    labor: "作業時間から実質原価を確認",
     impact: "価格変更時の影響商品を確認",
     ocr: "OCR読み取り結果から価格更新候補を作成",
     label: "確認用ラベルテキストを作成",
@@ -791,6 +801,18 @@ const emptyEventPlan = (): EventPlan => ({
   updatedAt: now(),
 });
 
+const emptyLaborCost = (productId = ""): LaborCost => ({
+  id: "",
+  productId,
+  processName: "",
+  minutes: 0,
+  workers: 1,
+  hourlyWage: 1200,
+  memo: "",
+  createdAt: now(),
+  updatedAt: now(),
+});
+
 export function CostNutritionApp() {
   const ingredientCameraInputRef = useRef<HTMLInputElement | null>(null);
   const ingredientPhotoInputRef = useRef<HTMLInputElement | null>(null);
@@ -831,6 +853,7 @@ export function CostNutritionApp() {
   const [selectedEventPlanId, setSelectedEventPlanId] = useState(sampleData.eventPlans[0]?.id ?? "");
   const [eventImpactIngredientId, setEventImpactIngredientId] = useState(sampleData.ingredients.find((ingredient) => ingredient.id === "ing-butter")?.id ?? sampleData.ingredients[0]?.id ?? "");
   const [eventImpactNewPrice, setEventImpactNewPrice] = useState(sampleData.ingredients.find((ingredient) => ingredient.id === "ing-butter")?.price ?? 0);
+  const [laborForm, setLaborForm] = useState<LaborCost>(() => emptyLaborCost(sampleData.products.find((product) => !product.isIntermediateMaterial)?.id ?? ""));
   const [productionPlan, setProductionPlan] = useState<Record<string, number>>({
     "prd-shortcake": 50,
     "prd-madeleine": 100,
@@ -853,6 +876,7 @@ export function CostNutritionApp() {
       setSelectedEventPlanId(loadedData.eventPlans[0]?.id ?? "");
       setEventImpactIngredientId(loadedData.ingredients.find((ingredient) => ingredient.id === "ing-butter")?.id ?? loadedData.ingredients[0]?.id ?? "");
       setEventImpactNewPrice(loadedData.ingredients.find((ingredient) => ingredient.id === "ing-butter")?.price ?? loadedData.ingredients[0]?.price ?? 0);
+      setLaborForm(emptyLaborCost(loadedData.products.find((product) => !product.isIntermediateMaterial)?.id ?? ""));
     });
   }, []);
 
@@ -873,6 +897,7 @@ export function CostNutritionApp() {
     setSelectedEventPlanId(nextData.eventPlans[0]?.id ?? "");
     setEventImpactIngredientId(nextData.ingredients.find((ingredient) => ingredient.id === "ing-butter")?.id ?? nextData.ingredients[0]?.id ?? "");
     setEventImpactNewPrice(nextData.ingredients.find((ingredient) => ingredient.id === "ing-butter")?.price ?? nextData.ingredients[0]?.price ?? 0);
+    setLaborForm(emptyLaborCost(nextData.products.find((product) => !product.isIntermediateMaterial)?.id ?? ""));
     setSwitchStoreId(storeId);
     setSwitchStorePin("");
     setActivePage("top");
@@ -1021,6 +1046,9 @@ export function CostNutritionApp() {
   const costSummary = selectedProduct
     ? calculateProductCost(selectedProduct, data.ingredients, data.recipeItems, data.products)
     : null;
+  const effectiveCostSummary = selectedProduct
+    ? calculateProductLaborCost(data, selectedProduct)
+    : null;
   const nutritionSummary = selectedProduct
     ? calculateProductNutrition(selectedProduct, data.ingredients, data.recipeItems, data.products)
     : null;
@@ -1094,6 +1122,15 @@ export function CostNutritionApp() {
   const eventImpactSimulation = useMemo(
     () => calculateEventSimulation(data, selectedEventPlan?.id ?? "", eventImpactIngredientId ? { [eventImpactIngredientId]: eventImpactNewPrice } : {}),
     [data, eventImpactIngredientId, eventImpactNewPrice, selectedEventPlan?.id],
+  );
+  const selectedLaborProduct = data.products.find((product) => product.id === laborForm.productId) ?? data.products.find((product) => !product.isIntermediateMaterial) ?? data.products[0];
+  const selectedLaborSummary = selectedLaborProduct ? calculateProductLaborCost(data, selectedLaborProduct) : null;
+  const laborSummaries = useMemo(
+    () => data.products
+      .filter((product) => !product.isIntermediateMaterial)
+      .map((product) => calculateProductLaborCost(data, product))
+      .sort((a, b) => b.effectiveCostRate - a.effectiveCostRate),
+    [data],
   );
 
   const dashboard = useMemo(() => {
@@ -1706,12 +1743,62 @@ export function CostNutritionApp() {
     ]);
   }
 
+  function saveLaborCost() {
+    if (!laborForm.productId || !laborForm.processName.trim()) return;
+    const record: LaborCost = {
+      ...laborForm,
+      id: laborForm.id || createId("labor"),
+      workers: laborForm.workers || 1,
+      createdAt: laborForm.createdAt || now(),
+      updatedAt: now(),
+    };
+    commit({
+      ...data,
+      laborCosts: laborForm.id
+        ? data.laborCosts.map((item) => (item.id === record.id ? record : item))
+        : [record, ...data.laborCosts],
+    });
+    setLaborForm(emptyLaborCost(record.productId));
+  }
+
+  function editLaborCost(record: LaborCost) {
+    setLaborForm(record);
+  }
+
+  function deleteLaborCost(recordId: string) {
+    if (!confirm("この作業時間を削除しますか？")) return;
+    commit({ ...data, laborCosts: data.laborCosts.filter((record) => record.id !== recordId) });
+  }
+
+  function exportLaborCsv() {
+    downloadCsv("labor-costs.csv", [
+      ["商品名", "工程", "分数", "人数", "時給", "作業原価", "人件費/個", "材料包材原価/個", "実質原価/個", "実質原価率"],
+      ...laborSummaries.flatMap((summary) => (
+        summary.laborRows.length > 0
+          ? summary.laborRows.map((row) => [
+            summary.product.name,
+            row.processName,
+            row.minutes,
+            row.workers,
+            row.hourlyWage,
+            row.costAmount,
+            summary.laborCostPerPiece,
+            summary.materialAndPackagingCostPerPiece,
+            summary.effectiveCostPerPiece,
+            summary.effectiveCostRate,
+          ])
+          : [[summary.product.name, "", "", "", "", 0, 0, summary.materialAndPackagingCostPerPiece, summary.effectiveCostPerPiece, summary.effectiveCostRate]]
+      )),
+    ]);
+  }
+
   function resetSample() {
     if (!confirm("サンプルデータに戻しますか？")) return;
     commit(sampleData);
     setSelectedProductId(sampleData.products[0]?.id ?? "");
     setImpactIngredientId("ing-cream");
     setImpactNewPrice(860);
+    setLaborForm(emptyLaborCost(sampleData.products.find((product) => !product.isIntermediateMaterial)?.id ?? ""));
   }
 
   const labelText = selectedProduct && costSummary && nutritionSummary
@@ -2342,6 +2429,13 @@ export function CostNutritionApp() {
               <Metric label="包材合計原価" value={yen(costSummary.packagingTotalCost)} />
               <Metric label="包材原価/個" value={yen(costSummary.packagingCostPerPiece)} />
               <Metric label="レシピ重量" value={`${number(costSummary.totalRecipeWeightGram)}g`} />
+              {effectiveCostSummary && (
+                <>
+                  <Metric label="人件費/個" value={yen(effectiveCostSummary.laborCostPerPiece)} />
+                  <Metric label="実質原価/個" value={yen(effectiveCostSummary.effectiveCostPerPiece)} />
+                  <Metric label="実質原価率" value={percent(effectiveCostSummary.effectiveCostRate)} tone={effectiveCostSummary.effectiveCostRate >= 50 ? "danger" : effectiveCostSummary.effectiveCostRate >= 40 ? "warn" : "normal"} />
+                </>
+              )}
             </div>
           )}
           <RecipeTable rows={recipeRows} ingredients={data.ingredients} products={data.products} recipeItems={data.recipeItems} onDelete={deleteRecipeItem} />
@@ -2737,6 +2831,76 @@ export function CostNutritionApp() {
                 </div>
               </div>
               <EventSimulationTable rows={eventImpactSimulation.rows} />
+            </section>
+          </div>
+        </Panel>
+      )}
+
+      {activePage === "labor" && (
+        <Panel title="作業時間・人件費原価">
+          <section className="mb-3 rounded-md border border-stone-200 bg-stone-50 p-3 text-sm font-bold text-stone-900">
+            商品ごとに工程、作業時間、人数、時給を入れると、材料原価に人件費を足した実質原価を計算します。
+          </section>
+          <div className="grid gap-3 lg:grid-cols-[360px_1fr]">
+            <section className="rounded-md border border-neutral-200 bg-white p-3">
+              <h3 className="font-black">作業時間を登録</h3>
+              <div className="mt-3 grid gap-3">
+                <SelectInput
+                  label="商品"
+                  value={laborForm.productId || selectedLaborProduct?.id || ""}
+                  options={data.products.filter((product) => !product.isIntermediateMaterial).map((product) => product.id)}
+                  optionLabels={Object.fromEntries(data.products.filter((product) => !product.isIntermediateMaterial).map((product) => [product.id, product.name]))}
+                  onChange={(value) => setLaborForm(emptyLaborCost(value))}
+                />
+                <TextInput label="工程名" value={laborForm.processName} onChange={(value) => setLaborForm({ ...laborForm, processName: value })} />
+                <NumberInput label="作業時間 分" value={laborForm.minutes} onChange={(value) => setLaborForm({ ...laborForm, minutes: value })} />
+                <NumberInput label="人数" value={laborForm.workers} onChange={(value) => setLaborForm({ ...laborForm, workers: value })} />
+                <NumberInput label="時給" value={laborForm.hourlyWage} onChange={(value) => setLaborForm({ ...laborForm, hourlyWage: value })} />
+                <TextInput label="メモ" value={laborForm.memo} onChange={(value) => setLaborForm({ ...laborForm, memo: value })} />
+                <button className="rounded-md bg-stone-800 px-4 py-2 font-bold text-white" onClick={saveLaborCost}>
+                  作業時間を保存
+                </button>
+              </div>
+            </section>
+            <section className="rounded-md border border-neutral-200 bg-white p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="font-black">実質原価</h3>
+                <button className="rounded-md bg-stone-800 px-3 py-2 text-sm font-bold text-white" onClick={exportLaborCsv}>
+                  CSV出力
+                </button>
+              </div>
+              {selectedLaborSummary && (
+                <div className="mt-3 grid gap-3 md:grid-cols-3">
+                  <Metric label="材料＋包材/個" value={yen(selectedLaborSummary.materialAndPackagingCostPerPiece)} />
+                  <Metric label="人件費/個" value={yen(selectedLaborSummary.laborCostPerPiece)} />
+                  <Metric label="実質原価/個" value={yen(selectedLaborSummary.effectiveCostPerPiece)} />
+                  <Metric label="人件費率" value={percent(selectedLaborSummary.laborCostRate)} tone={selectedLaborSummary.laborCostRate >= 20 ? "warn" : "normal"} />
+                  <Metric label="実質原価率" value={percent(selectedLaborSummary.effectiveCostRate)} tone={selectedLaborSummary.effectiveCostRate >= 50 ? "danger" : selectedLaborSummary.effectiveCostRate >= 40 ? "warn" : "normal"} />
+                  <Metric label="作業原価合計" value={yen(selectedLaborSummary.laborTotalCost)} />
+                </div>
+              )}
+              <div className="mt-4 rounded-md border border-neutral-200 bg-neutral-50 p-3">
+                <h4 className="font-black">登録済み工程</h4>
+                <div className="mt-2 grid gap-2">
+                  {(selectedLaborSummary?.laborRows ?? []).map((row) => (
+                    <div key={row.id} className="grid gap-2 rounded-md bg-white p-2 text-sm font-bold md:grid-cols-[1fr_80px_70px_90px_100px_120px] md:items-center">
+                      <span>{row.processName}</span>
+                      <span className="text-right">{number(row.minutes, 0)}分</span>
+                      <span className="text-right">{number(row.workers, 0)}人</span>
+                      <span className="text-right">{yen(row.hourlyWage)}</span>
+                      <span className="text-right">{yen(row.costAmount)}</span>
+                      <span className="flex justify-end gap-2">
+                        <button className="rounded-md bg-neutral-100 px-2 py-1 text-neutral-700" onClick={() => editLaborCost(row)}>編集</button>
+                        <button className="rounded-md bg-red-50 px-2 py-1 text-red-700" onClick={() => deleteLaborCost(row.id)}>削除</button>
+                      </span>
+                    </div>
+                  ))}
+                  {(selectedLaborSummary?.laborRows.length ?? 0) === 0 && (
+                    <p className="text-sm font-bold text-neutral-500">作業時間を登録するとここに表示されます。</p>
+                  )}
+                </div>
+              </div>
+              <LaborSummaryTable rows={laborSummaries} />
             </section>
           </div>
         </Panel>
@@ -3485,6 +3649,41 @@ function EventSimulationTable({ rows }: { rows: EventSimulationRow[] }) {
               <td className="p-3 text-neutral-500" colSpan={8}>予定販売数を入力すると表示されます。</td>
             </tr>
           )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function LaborSummaryTable({ rows }: { rows: ProductLaborCostSummary[] }) {
+  return (
+    <div className="mt-4 overflow-x-auto rounded-md border border-neutral-200">
+      <table className="w-full min-w-[900px] border-collapse bg-white text-left">
+        <thead className="bg-neutral-100">
+          <tr>
+            <th className="p-3">商品</th>
+            <th className="p-3 text-right">材料＋包材/個</th>
+            <th className="p-3 text-right">人件費/個</th>
+            <th className="p-3 text-right">実質原価/個</th>
+            <th className="p-3 text-right">人件費率</th>
+            <th className="p-3 text-right">実質原価率</th>
+            <th className="p-3 text-right">工程数</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.product.id} className="border-t border-neutral-200">
+              <td className="p-3 font-bold">{row.product.name}</td>
+              <td className="p-3 text-right">{yen(row.materialAndPackagingCostPerPiece)}</td>
+              <td className="p-3 text-right">{yen(row.laborCostPerPiece)}</td>
+              <td className="p-3 text-right">{yen(row.effectiveCostPerPiece)}</td>
+              <td className="p-3 text-right">{percent(row.laborCostRate)}</td>
+              <td className={`p-3 text-right font-black ${row.effectiveCostRate >= 50 ? "text-red-700" : row.effectiveCostRate >= 40 ? "text-amber-700" : "text-neutral-900"}`}>
+                {percent(row.effectiveCostRate)}
+              </td>
+              <td className="p-3 text-right">{row.laborRows.length}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
