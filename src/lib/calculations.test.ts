@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { calculatePriceImpact, calculateProductCost, calculateProductNutrition, calculateProductionRequirements, pricePerGram } from "./calculations";
+import { calculatePriceImpact, calculateProductCost, calculateProductNutrition, calculateProductionRequirements, calculateWasteRecordAmounts, calculateWasteSummary, pricePerGram } from "./calculations";
 import { sampleData } from "./sample-data";
 
 const shortcake = sampleData.products.find((product) => product.id === "prd-shortcake");
@@ -43,5 +43,27 @@ assert(requiredFlour && requiredFlour.requiredAmount > 0);
 assert(requiredTray && Math.round(requiredTray.requiredAmount) === 50);
 assert(requirements.some((row) => row.isPackaging));
 assert(requirements.reduce((sum, row) => sum + row.cost, 0) > 0);
+
+const wasteAmounts = calculateWasteRecordAmounts(sampleData, "PRODUCT", "prd-shortcake", 3);
+assert(Math.round(wasteAmounts.costAmount) > 0);
+assert.equal(Math.round(wasteAmounts.salesEquivalentAmount), 1560);
+const wasteSummary = calculateWasteSummary({
+  ...sampleData,
+  wasteRecords: [{
+    id: "waste-test",
+    date: "2026-05-16",
+    itemType: "PRODUCT",
+    itemId: "prd-shortcake",
+    quantity: 3,
+    costAmount: wasteAmounts.costAmount,
+    salesEquivalentAmount: wasteAmounts.salesEquivalentAmount,
+    reason: "売れ残り",
+    memo: "",
+    createdAt: "2026-05-16T00:00:00.000Z",
+    updatedAt: "2026-05-16T00:00:00.000Z",
+  }],
+});
+assert.equal(Math.round(wasteSummary.totalSalesEquivalentAmount), 1560);
+assert.equal(wasteSummary.topRows[0]?.itemName, "苺のショートケーキ");
 
 console.log("calculation tests passed");

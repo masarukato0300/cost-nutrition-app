@@ -132,4 +132,5 @@ export const sampleData: AppData = {
     priceHistory("hist-sugar", "ing-sugar", 6200, 6750, "東京製糖"),
   ],
   ingredientAliases: [],
+  wasteRecords: [],
 };

@@ -9,6 +9,8 @@ import type {
   ProductionPlanInput,
   RecipeItem,
   RequirementRow,
+  WasteRecord,
+  WasteSummary,
 } from "./types";
 
 export const TAX_RATE = 0.1;
@@ -242,6 +244,53 @@ export function calculateProductionRequirements(data: AppData, planItems: Produc
       collectProductRequirements(product, multiplier, data, requirements, new Set<string>());
     });
   return [...requirements.values()].sort((a, b) => Number(a.isPackaging) - Number(b.isPackaging) || a.supplier.localeCompare(b.supplier, "ja") || a.ingredient.name.localeCompare(b.ingredient.name, "ja"));
+}
+
+export function calculateWasteRecordAmounts(
+  data: AppData,
+  itemType: WasteRecord["itemType"],
+  itemId: string,
+  quantity: number,
+) {
+  if (itemType === "PRODUCT" || itemType === "INTERMEDIATE") {
+    const product = data.products.find((item) => item.id === itemId);
+    if (!product) return { costAmount: 0, salesEquivalentAmount: 0 };
+    const summary = calculateProductCost(product, data.ingredients, data.recipeItems, data.products);
+    const costAmount = summary.costPerPiece * quantity;
+    const salesEquivalentAmount = itemType === "PRODUCT" ? priceWithTax(product.sellingPrice, product.taxType) * quantity : 0;
+    return { costAmount, salesEquivalentAmount };
+  }
+
+  const ingredient = data.ingredients.find((item) => item.id === itemId);
+  if (!ingredient) return { costAmount: 0, salesEquivalentAmount: 0 };
+  return {
+    costAmount: ingredientCost(ingredient, quantity),
+    salesEquivalentAmount: 0,
+  };
+}
+
+export function calculateWasteSummary(data: AppData): WasteSummary {
+  const topMap = new Map<string, WasteSummary["topRows"][number]>();
+  data.wasteRecords.forEach((record) => {
+    const product = data.products.find((item) => item.id === record.itemId);
+    const ingredient = data.ingredients.find((item) => item.id === record.itemId);
+    const itemName = product?.name || ingredient?.name || "削除済み";
+    const key = `${record.itemType}:${record.itemId}`;
+    const current = topMap.get(key);
+    topMap.set(key, {
+      itemName,
+      itemType: record.itemType,
+      quantity: (current?.quantity ?? 0) + record.quantity,
+      costAmount: (current?.costAmount ?? 0) + record.costAmount,
+      salesEquivalentAmount: (current?.salesEquivalentAmount ?? 0) + record.salesEquivalentAmount,
+    });
+  });
+
+  return {
+    totalCostAmount: data.wasteRecords.reduce((sum, record) => sum + record.costAmount, 0),
+    totalSalesEquivalentAmount: data.wasteRecords.reduce((sum, record) => sum + record.salesEquivalentAmount, 0),
+    topRows: [...topMap.values()].sort((a, b) => b.costAmount - a.costAmount).slice(0, 10),
+  };
 }
 
 export function nutritionForAmount(ingredient: Ingredient, amountGram: number): Nutrition {

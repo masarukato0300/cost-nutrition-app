@@ -6,6 +6,8 @@ import {
   calculateProductionRequirements,
   calculateProductCost,
   calculateProductNutrition,
+  calculateWasteRecordAmounts,
+  calculateWasteSummary,
   collectAllergens,
   collectLabelNames,
   hasNutrition,
@@ -17,7 +19,7 @@ import {
 import { sampleData } from "@/lib/sample-data";
 import { standardNutritionFoods } from "@/lib/standard-nutrition";
 import type { StandardNutritionFood } from "@/lib/standard-nutrition";
-import type { AppData, Ingredient, IngredientAlias, MaterialType, Product, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow } from "@/lib/types";
+import type { AppData, Ingredient, IngredientAlias, MaterialType, Product, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow, WasteItemType, WasteReason, WasteRecord } from "@/lib/types";
 
 const defaultStoreId = "デモ店舗";
 const legacyStorageKey = "cost-nutrition-label-mvp-v1";
@@ -31,6 +33,7 @@ const materialTypeLabels: Record<MaterialType, string> = {
   PACKAGING: "包材",
 };
 const materialTypeOptions: MaterialType[] = ["PURCHASED_INGREDIENT", "PACKAGING"];
+const wasteReasons: WasteReason[] = ["売れ残り", "破損", "作りすぎ", "試作", "品質不良", "その他"];
 const pages = [
   { key: "top", label: "TOP" },
   { key: "help", label: "使い方" },
@@ -42,6 +45,7 @@ const pages = [
   { key: "allergen", label: "アレルゲン一覧" },
   { key: "production", label: "仕込み量逆算" },
   { key: "order", label: "発注リスト" },
+  { key: "waste", label: "廃棄ロス" },
   { key: "impact", label: "影響分析" },
   { key: "label", label: "ラベル表示" },
   { key: "csv", label: "CSV出力" },
@@ -110,6 +114,12 @@ const pageTones: Record<PageNavKey, { navActive: string; navIdle: string; topCar
     navIdle: "border-yellow-100 bg-white text-neutral-700 hover:border-yellow-300 hover:bg-yellow-50",
     topCard: "border-yellow-100 bg-yellow-50/70 hover:border-yellow-400",
     mark: "bg-yellow-500",
+  },
+  waste: {
+    navActive: "border-pink-500 bg-pink-50 text-pink-900 shadow-sm",
+    navIdle: "border-pink-100 bg-white text-neutral-700 hover:border-pink-300 hover:bg-pink-50",
+    topCard: "border-pink-100 bg-pink-50/70 hover:border-pink-400",
+    mark: "bg-pink-500",
   },
   impact: {
     navActive: "border-red-500 bg-red-50 text-red-900 shadow-sm",
@@ -236,6 +246,7 @@ function normalizeData(parsed: AppData): AppData {
     })),
     recipeItems: parsed.recipeItems.map(normalizeRecipeItem),
     ingredientAliases: parsed.ingredientAliases || [],
+    wasteRecords: parsed.wasteRecords || [],
   };
 }
 
@@ -475,6 +486,7 @@ function topPageDescription(pageKey: PageKey) {
     allergen: "商品ごとのアレルゲンを一覧確認",
     production: "予定数から必要材料を逆算",
     order: "必要材料を仕入先別に確認",
+    waste: "廃棄や試作ロスを記録",
     impact: "価格変更時の影響商品を確認",
     ocr: "OCR読み取り結果から価格更新候補を作成",
     label: "確認用ラベルテキストを作成",
@@ -508,6 +520,13 @@ function downloadCsv(fileName: string, rows: Array<Array<string | number | null 
   link.download = fileName;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+function wasteRecordItemName(record: WasteRecord, data: AppData) {
+  if (record.itemType === "INGREDIENT") {
+    return data.ingredients.find((ingredient) => ingredient.id === record.itemId)?.name ?? "削除済み原材料";
+  }
+  return data.products.find((product) => product.id === record.itemId)?.name ?? "削除済み商品";
 }
 
 function extractPriceNumbers(line: string) {
@@ -714,6 +733,20 @@ const emptyProduct = (): Product => ({
   updatedAt: now(),
 });
 
+const emptyWasteRecord = (): WasteRecord => ({
+  id: "",
+  date: new Date().toISOString().slice(0, 10),
+  itemType: "PRODUCT",
+  itemId: "",
+  quantity: 1,
+  costAmount: 0,
+  salesEquivalentAmount: 0,
+  reason: "売れ残り",
+  memo: "",
+  createdAt: now(),
+  updatedAt: now(),
+});
+
 export function CostNutritionApp() {
   const ingredientCameraInputRef = useRef<HTMLInputElement | null>(null);
   const ingredientPhotoInputRef = useRef<HTMLInputElement | null>(null);
@@ -747,6 +780,7 @@ export function CostNutritionApp() {
   const [ingredientOcrCandidateIndex, setIngredientOcrCandidateIndex] = useState(0);
   const [nutritionSearchText, setNutritionSearchText] = useState("");
   const [selectedStandardNutritionId, setSelectedStandardNutritionId] = useState("");
+  const [wasteForm, setWasteForm] = useState<WasteRecord>(() => emptyWasteRecord());
   const [productionPlan, setProductionPlan] = useState<Record<string, number>>({
     "prd-shortcake": 50,
     "prd-madeleine": 100,
@@ -983,6 +1017,15 @@ export function CostNutritionApp() {
   const productionMaterialRequirements = productionRequirements.filter((row) => !row.isPackaging);
   const productionPackagingRequirements = productionRequirements.filter((row) => row.isPackaging);
   const productionTotalCost = productionRequirements.reduce((sum, row) => sum + row.cost, 0);
+  const wasteSummary = useMemo(() => calculateWasteSummary(data), [data]);
+  const wasteItemOptions = useMemo(() => {
+    if (wasteForm.itemType === "INGREDIENT") {
+      return data.ingredients.filter((ingredient) => ingredient.type !== "PACKAGING").map((ingredient) => ({ id: ingredient.id, label: ingredientOptionLabel(ingredient) }));
+    }
+    return data.products
+      .filter((product) => wasteForm.itemType === "INTERMEDIATE" ? product.isIntermediateMaterial : !product.isIntermediateMaterial)
+      .map((product) => ({ id: product.id, label: product.name }));
+  }, [data.ingredients, data.products, wasteForm.itemType]);
 
   const dashboard = useMemo(() => {
     const productCosts = data.products.map((product) => calculateProductCost(product, data.ingredients, data.recipeItems, data.products));
@@ -1437,6 +1480,46 @@ export function CostNutritionApp() {
         row.requiredAmount,
         row.unit,
         row.cost,
+      ]),
+    ]);
+  }
+
+  function saveWasteRecord() {
+    if (!wasteForm.itemId || wasteForm.quantity <= 0) return;
+    const amounts = calculateWasteRecordAmounts(data, wasteForm.itemType, wasteForm.itemId, wasteForm.quantity);
+    const record: WasteRecord = {
+      ...wasteForm,
+      ...amounts,
+      id: wasteForm.id || createId("waste"),
+      createdAt: wasteForm.createdAt || now(),
+      updatedAt: now(),
+    };
+    commit({
+      ...data,
+      wasteRecords: wasteForm.id
+        ? data.wasteRecords.map((item) => (item.id === record.id ? record : item))
+        : [record, ...data.wasteRecords],
+    });
+    setWasteForm(emptyWasteRecord());
+  }
+
+  function deleteWasteRecord(recordId: string) {
+    if (!confirm("この廃棄記録を削除しますか？")) return;
+    commit({ ...data, wasteRecords: data.wasteRecords.filter((record) => record.id !== recordId) });
+  }
+
+  function exportWasteCsv() {
+    downloadCsv("waste-records.csv", [
+      ["日付", "種別", "品目", "数量", "廃棄原価", "販売価格換算", "理由", "メモ"],
+      ...data.wasteRecords.map((record) => [
+        record.date,
+        record.itemType === "PRODUCT" ? "商品" : record.itemType === "INTERMEDIATE" ? "中間材料" : "原材料",
+        wasteRecordItemName(record, data),
+        record.quantity,
+        record.costAmount,
+        record.salesEquivalentAmount,
+        record.reason,
+        record.memo,
       ]),
     ]);
   }
@@ -2203,6 +2286,104 @@ export function CostNutritionApp() {
                 </section>
               );
             })}
+          </div>
+        </Panel>
+      )}
+
+      {activePage === "waste" && (
+        <Panel title="廃棄ロス記録">
+          <section className="mb-3 rounded-md border border-pink-200 bg-pink-50 p-3 text-sm font-bold text-pink-900">
+            売れ残り、破損、作りすぎ、試作などを記録します。商品は販売価格換算の損失も自動で表示します。
+          </section>
+          <div className="grid gap-3 lg:grid-cols-[360px_1fr]">
+            <section className="rounded-md border border-neutral-200 bg-white p-3">
+              <h3 className="font-black">ロスを記録</h3>
+              <div className="mt-3 grid gap-3">
+                <TextInput label="日付" value={wasteForm.date} onChange={(value) => setWasteForm({ ...wasteForm, date: value })} />
+                <SelectInput
+                  label="種別"
+                  value={wasteForm.itemType}
+                  options={["PRODUCT", "INTERMEDIATE", "INGREDIENT"]}
+                  optionLabels={{ PRODUCT: "販売商品", INTERMEDIATE: "中間材料", INGREDIENT: "原材料" }}
+                  onChange={(value) => setWasteForm({ ...wasteForm, itemType: value as WasteItemType, itemId: "" })}
+                />
+                <SelectInput
+                  label="品目"
+                  value={wasteForm.itemId}
+                  options={["", ...wasteItemOptions.map((item) => item.id)]}
+                  optionLabels={{ "": "選択してください", ...Object.fromEntries(wasteItemOptions.map((item) => [item.id, item.label])) }}
+                  onChange={(value) => setWasteForm({ ...wasteForm, itemId: value })}
+                />
+                <NumberInput label={wasteForm.itemType === "INGREDIENT" ? "数量 g" : "数量"} value={wasteForm.quantity} onChange={(value) => setWasteForm({ ...wasteForm, quantity: value })} />
+                <SelectInput label="理由" value={wasteForm.reason} options={wasteReasons} onChange={(value) => setWasteForm({ ...wasteForm, reason: value as WasteReason })} />
+                <TextInput label="メモ" value={wasteForm.memo} onChange={(value) => setWasteForm({ ...wasteForm, memo: value })} />
+                <button className="rounded-md bg-pink-700 px-4 py-2 font-bold text-white" onClick={saveWasteRecord}>
+                  廃棄ロスを保存
+                </button>
+              </div>
+            </section>
+            <section className="rounded-md border border-neutral-200 bg-white p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="font-black">廃棄ロス集計</h3>
+                <button className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-bold text-white" onClick={exportWasteCsv}>
+                  CSV出力
+                </button>
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-3">
+                <Metric label="廃棄原価合計" value={yen(wasteSummary.totalCostAmount)} tone={wasteSummary.totalCostAmount > 0 ? "warn" : "normal"} />
+                <Metric label="販売価格換算" value={yen(wasteSummary.totalSalesEquivalentAmount)} tone={wasteSummary.totalSalesEquivalentAmount > 0 ? "warn" : "normal"} />
+                <Metric label="記録件数" value={`${data.wasteRecords.length}件`} />
+              </div>
+              <div className="mt-4 overflow-x-auto rounded-md border border-neutral-200">
+                <table className="w-full min-w-[860px] border-collapse bg-white text-left">
+                  <thead className="bg-neutral-100">
+                    <tr>
+                      <th className="p-3">日付</th>
+                      <th className="p-3">品目</th>
+                      <th className="p-3">理由</th>
+                      <th className="p-3 text-right">数量</th>
+                      <th className="p-3 text-right">廃棄原価</th>
+                      <th className="p-3 text-right">販売価格換算</th>
+                      <th className="p-3"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.wasteRecords.map((record) => (
+                      <tr key={record.id} className="border-t border-neutral-200">
+                        <td className="p-3">{record.date}</td>
+                        <td className="p-3 font-bold">{wasteRecordItemName(record, data)}</td>
+                        <td className="p-3">{record.reason}</td>
+                        <td className="p-3 text-right">{number(record.quantity, record.itemType === "INGREDIENT" ? 1 : 0)}{record.itemType === "INGREDIENT" ? "g" : ""}</td>
+                        <td className="p-3 text-right">{yen(record.costAmount)}</td>
+                        <td className="p-3 text-right">{yen(record.salesEquivalentAmount)}</td>
+                        <td className="p-3 text-right">
+                          <button className="rounded-md bg-red-50 px-3 py-1 font-bold text-red-700" onClick={() => deleteWasteRecord(record.id)}>
+                            削除
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {data.wasteRecords.length === 0 && (
+                      <tr>
+                        <td className="p-3 text-neutral-500" colSpan={7}>まだ廃棄ロス記録はありません。</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <section className="mt-4 rounded-md border border-neutral-200 bg-neutral-50 p-3">
+                <h4 className="font-black">廃棄が多い品目TOP10</h4>
+                <div className="mt-2 grid gap-2">
+                  {wasteSummary.topRows.map((row) => (
+                    <div key={`${row.itemType}-${row.itemName}`} className="flex flex-wrap justify-between gap-2 rounded-md bg-white px-3 py-2 text-sm font-bold">
+                      <span>{row.itemName}</span>
+                      <span>{yen(row.costAmount)} / 販売換算 {yen(row.salesEquivalentAmount)}</span>
+                    </div>
+                  ))}
+                  {wasteSummary.topRows.length === 0 && <p className="text-sm font-bold text-neutral-500">記録するとここに集計されます。</p>}
+                </div>
+              </section>
+            </section>
           </div>
         </Panel>
       )}

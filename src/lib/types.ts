@@ -5,6 +5,8 @@ export type RecipeUsageType = "gram" | "count" | "fraction";
 export type RecipeItemType = "ingredient" | "intermediate";
 export type ProductStatus = "販売中" | "休止中";
 export type PriceHistorySourceType = "manual" | "ocr" | "csv";
+export type WasteItemType = "PRODUCT" | "INGREDIENT" | "INTERMEDIATE";
+export type WasteReason = "売れ残り" | "破損" | "作りすぎ" | "試作" | "品質不良" | "その他";
 
 export type Nutrition = {
   calories: number;
@@ -113,6 +115,7 @@ export type AppData = {
   recipeItems: RecipeItem[];
   priceHistories: PriceHistory[];
   ingredientAliases: IngredientAlias[];
+  wasteRecords: WasteRecord[];
 };
 
 export type ProductCostSummary = {
@@ -163,4 +166,30 @@ export type RequirementRow = {
   cost: number;
   supplier: string;
   isPackaging: boolean;
+};
+
+export type WasteRecord = {
+  id: string;
+  date: string;
+  itemType: WasteItemType;
+  itemId: string;
+  quantity: number;
+  costAmount: number;
+  salesEquivalentAmount: number;
+  reason: WasteReason;
+  memo: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type WasteSummary = {
+  totalCostAmount: number;
+  totalSalesEquivalentAmount: number;
+  topRows: Array<{
+    itemName: string;
+    itemType: WasteItemType;
+    quantity: number;
+    costAmount: number;
+    salesEquivalentAmount: number;
+  }>;
 };
