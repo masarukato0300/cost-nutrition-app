@@ -39,6 +39,13 @@ const materialTypeLabels: Record<MaterialType, string> = {
 };
 const materialTypeOptions: MaterialType[] = ["PURCHASED_INGREDIENT", "PACKAGING"];
 const wasteReasons: WasteReason[] = ["売れ残り", "破損", "作りすぎ", "試作", "品質不良", "その他"];
+const wasteCategories = [
+  { key: "baked", label: "焼菓子" },
+  { key: "fresh", label: "生菓子" },
+  { key: "semi", label: "半生菓子" },
+  { key: "packaging", label: "包材" },
+  { key: "ingredient", label: "原材料" },
+] as const;
 const pages = [
   { key: "top", label: "TOP" },
   { key: "help", label: "使い方" },
@@ -63,6 +70,7 @@ const pages = [
 
 type PageNavKey = (typeof pages)[number]["key"];
 type PageKey = PageNavKey | "ocr";
+type WasteCategoryKey = (typeof wasteCategories)[number]["key"];
 const pageTones: Record<PageNavKey, { navActive: string; navIdle: string; topCard: string; mark: string }> = {
   top: {
     navActive: "border-emerald-700 bg-emerald-600 text-white shadow-sm",
@@ -225,6 +233,12 @@ function percent(value: number) {
 
 function now() {
   return new Date().toISOString();
+}
+
+function todayDate() {
+  const date = new Date();
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 10);
 }
 
 function createId(prefix: string) {
@@ -603,6 +617,52 @@ function wasteRecordItemName(record: WasteRecord, data: AppData) {
   return data.products.find((product) => product.id === record.itemId)?.name ?? "削除済み商品";
 }
 
+function productBelongsToWasteCategory(product: Product, category: WasteCategoryKey) {
+  const text = `${product.category} ${product.name}`;
+  if (product.isIntermediateMaterial) return false;
+  if (category === "baked") return /焼菓子|ギフト|詰合せ|カステラ|マドレーヌ|クッキー|サブレ|フィナンシェ/.test(text);
+  if (category === "fresh") return /生菓子|プティガトー|ケーキ|ショート|ロール|カフェ|フレンチ/.test(text);
+  if (category === "semi") return /半生|パウンド|ダックワーズ|ブッセ|常温/.test(text);
+  return false;
+}
+
+function wasteCategoryRows(data: AppData, category: WasteCategoryKey) {
+  if (category === "packaging") {
+    return data.ingredients
+      .filter((ingredient) => ingredient.type === "PACKAGING")
+      .map((ingredient) => ({
+        id: ingredient.id,
+        name: ingredient.packageName || ingredient.name,
+        subName: ingredient.packageName && ingredient.packageName !== ingredient.name ? ingredient.name : ingredient.supplier,
+        itemType: "INGREDIENT" as WasteItemType,
+        unit: ingredientUnitLabel(ingredient),
+        step: 1,
+      }));
+  }
+  if (category === "ingredient") {
+    return data.ingredients
+      .filter((ingredient) => ingredient.type !== "PACKAGING")
+      .map((ingredient) => ({
+        id: ingredient.id,
+        name: ingredient.packageName || ingredient.name,
+        subName: ingredient.packageName && ingredient.packageName !== ingredient.name ? ingredient.name : ingredient.supplier,
+        itemType: "INGREDIENT" as WasteItemType,
+        unit: ingredientUnitLabel(ingredient),
+        step: ingredientUnitLabel(ingredient) === "g" || ingredientUnitLabel(ingredient) === "ml" ? 100 : 1,
+      }));
+  }
+  return data.products
+    .filter((product) => productBelongsToWasteCategory(product, category))
+    .map((product) => ({
+      id: product.id,
+      name: product.name,
+      subName: product.category,
+      itemType: "PRODUCT" as WasteItemType,
+      unit: "個",
+      step: 1,
+    }));
+}
+
 function extractPriceNumbers(line: string) {
   return Array.from(line.matchAll(/\d[\d,]*(?:\.\d+)?/g))
     .map((match) => Number(match[0].replace(/,/g, "")))
@@ -807,20 +867,6 @@ const emptyProduct = (): Product => ({
   updatedAt: now(),
 });
 
-const emptyWasteRecord = (): WasteRecord => ({
-  id: "",
-  date: new Date().toISOString().slice(0, 10),
-  itemType: "PRODUCT",
-  itemId: "",
-  quantity: 1,
-  costAmount: 0,
-  salesEquivalentAmount: 0,
-  reason: "売れ残り",
-  memo: "",
-  createdAt: now(),
-  updatedAt: now(),
-});
-
 const currentMonth = () => new Date().toISOString().slice(0, 7);
 
 const emptyActualCostRecord = (): ActualCostRecord => ({
@@ -897,7 +943,9 @@ export function CostNutritionApp() {
   const [ingredientOcrCandidateIndex, setIngredientOcrCandidateIndex] = useState(0);
   const [nutritionSearchText, setNutritionSearchText] = useState("");
   const [selectedStandardNutritionId, setSelectedStandardNutritionId] = useState("");
-  const [wasteForm, setWasteForm] = useState<WasteRecord>(() => emptyWasteRecord());
+  const [activeWasteCategory, setActiveWasteCategory] = useState<WasteCategoryKey>("baked");
+  const [wasteDate, setWasteDate] = useState(todayDate());
+  const [wasteReason, setWasteReason] = useState<WasteReason>("売れ残り");
   const [monthlyTargetMonth, setMonthlyTargetMonth] = useState("2026-05");
   const [actualCostForm, setActualCostForm] = useState<ActualCostRecord>(() => ({ ...emptyActualCostRecord(), month: "2026-05" }));
   const [eventPlanForm, setEventPlanForm] = useState<EventPlan>(() => emptyEventPlan());
@@ -1159,14 +1207,10 @@ export function CostNutritionApp() {
   const productionPackagingRequirements = productionRequirements.filter((row) => row.isPackaging);
   const productionTotalCost = productionRequirements.reduce((sum, row) => sum + row.cost, 0);
   const wasteSummary = useMemo(() => calculateWasteSummary(data), [data]);
-  const wasteItemOptions = useMemo(() => {
-    if (wasteForm.itemType === "INGREDIENT") {
-      return data.ingredients.filter((ingredient) => ingredient.type !== "PACKAGING").map((ingredient) => ({ id: ingredient.id, label: ingredientOptionLabel(ingredient) }));
-    }
-    return data.products
-      .filter((product) => wasteForm.itemType === "INTERMEDIATE" ? product.isIntermediateMaterial : !product.isIntermediateMaterial)
-      .map((product) => ({ id: product.id, label: product.name }));
-  }, [data.ingredients, data.products, wasteForm.itemType]);
+  const activeWasteRows = useMemo(
+    () => wasteCategoryRows(data, activeWasteCategory),
+    [activeWasteCategory, data],
+  );
   const monthlyTheory = useMemo(
     () => calculateMonthlyTheoryCost(data, monthlyTargetMonth),
     [data, monthlyTargetMonth],
@@ -1657,23 +1701,53 @@ export function CostNutritionApp() {
     ]);
   }
 
-  function saveWasteRecord() {
-    if (!wasteForm.itemId || wasteForm.quantity <= 0) return;
-    const amounts = calculateWasteRecordAmounts(data, wasteForm.itemType, wasteForm.itemId, wasteForm.quantity);
+  function wasteQuickRecord(itemType: WasteItemType, itemId: string) {
+    return data.wasteRecords.find((record) => (
+      record.date === wasteDate &&
+      record.reason === wasteReason &&
+      record.itemType === itemType &&
+      record.itemId === itemId
+    ));
+  }
+
+  function upsertWasteQuantity(itemType: WasteItemType, itemId: string, quantity: number) {
+    const normalizedQuantity = Math.max(0, quantity);
+    const existing = wasteQuickRecord(itemType, itemId);
+    if (normalizedQuantity === 0) {
+      if (!existing) return;
+      commit({ ...data, wasteRecords: data.wasteRecords.filter((record) => record.id !== existing.id) });
+      return;
+    }
+    const amounts = calculateWasteRecordAmounts(data, itemType, itemId, normalizedQuantity);
     const record: WasteRecord = {
-      ...wasteForm,
+      id: existing?.id || createId("waste"),
+      date: wasteDate,
+      itemType,
+      itemId,
+      quantity: normalizedQuantity,
       ...amounts,
-      id: wasteForm.id || createId("waste"),
-      createdAt: wasteForm.createdAt || now(),
+      reason: wasteReason,
+      memo: "",
+      createdAt: existing?.createdAt || now(),
       updatedAt: now(),
     };
     commit({
       ...data,
-      wasteRecords: wasteForm.id
-        ? data.wasteRecords.map((item) => (item.id === record.id ? record : item))
+      wasteRecords: existing
+        ? data.wasteRecords.map((item) => (item.id === existing.id ? record : item))
         : [record, ...data.wasteRecords],
     });
-    setWasteForm(emptyWasteRecord());
+  }
+
+  function incrementWasteQuantity(itemType: WasteItemType, itemId: string, step: number) {
+    const currentQuantity = wasteQuickRecord(itemType, itemId)?.quantity ?? 0;
+    upsertWasteQuantity(itemType, itemId, currentQuantity + step);
+  }
+
+  function clearWasteQuantity(itemType: WasteItemType, itemId: string) {
+    const existing = wasteQuickRecord(itemType, itemId);
+    if (!existing) return;
+    commit({ ...data, wasteRecords: data.wasteRecords.filter((record) => record.id !== existing.id) });
   }
 
   function deleteWasteRecord(recordId: string) {
@@ -2704,33 +2778,88 @@ export function CostNutritionApp() {
       {activePage === "waste" && (
         <Panel title="廃棄ロス記録">
           <section className="mb-3 rounded-md border border-pink-200 bg-pink-50 p-3 text-sm font-bold text-pink-900">
-            売れ残り、破損、作りすぎ、試作などを記録します。商品は販売価格換算の損失も自動で表示します。
+            種別を選ぶと品目が一覧表示されます。数量をタップで増やすだけで、廃棄原価と販売価格換算の損失を自動計算します。
           </section>
-          <div className="grid gap-3 lg:grid-cols-[360px_1fr]">
+          <div className="grid gap-3 xl:grid-cols-[1.1fr_0.9fr]">
             <section className="rounded-md border border-neutral-200 bg-white p-3">
-              <h3 className="font-black">ロスを記録</h3>
-              <div className="mt-3 grid gap-3">
-                <TextInput label="日付" value={wasteForm.date} onChange={(value) => setWasteForm({ ...wasteForm, date: value })} />
-                <SelectInput
-                  label="種別"
-                  value={wasteForm.itemType}
-                  options={["PRODUCT", "INTERMEDIATE", "INGREDIENT"]}
-                  optionLabels={{ PRODUCT: "販売商品", INTERMEDIATE: "中間材料", INGREDIENT: "原材料" }}
-                  onChange={(value) => setWasteForm({ ...wasteForm, itemType: value as WasteItemType, itemId: "" })}
-                />
-                <SelectInput
-                  label="品目"
-                  value={wasteForm.itemId}
-                  options={["", ...wasteItemOptions.map((item) => item.id)]}
-                  optionLabels={{ "": "選択してください", ...Object.fromEntries(wasteItemOptions.map((item) => [item.id, item.label])) }}
-                  onChange={(value) => setWasteForm({ ...wasteForm, itemId: value })}
-                />
-                <NumberInput label={wasteForm.itemType === "INGREDIENT" ? "数量 g" : "数量"} value={wasteForm.quantity} onChange={(value) => setWasteForm({ ...wasteForm, quantity: value })} />
-                <SelectInput label="理由" value={wasteForm.reason} options={wasteReasons} onChange={(value) => setWasteForm({ ...wasteForm, reason: value as WasteReason })} />
-                <TextInput label="メモ" value={wasteForm.memo} onChange={(value) => setWasteForm({ ...wasteForm, memo: value })} />
-                <button className="rounded-md bg-pink-700 px-4 py-2 font-bold text-white" onClick={saveWasteRecord}>
-                  廃棄ロスを保存
-                </button>
+              <div className="grid gap-3 md:grid-cols-[160px_180px_1fr]">
+                <TextInput label="日付" value={wasteDate} onChange={setWasteDate} />
+                <SelectInput label="理由" value={wasteReason} options={wasteReasons} onChange={(value) => setWasteReason(value as WasteReason)} />
+                <div>
+                  <p className="mb-1 text-xs font-bold text-neutral-500">種別</p>
+                  <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+                    {wasteCategories.map((category) => (
+                      <button
+                        key={category.key}
+                        className={`rounded-md border-2 px-3 py-2 font-black ${
+                          activeWasteCategory === category.key
+                            ? "border-pink-700 bg-pink-600 text-white"
+                            : "border-pink-200 bg-pink-50 text-pink-900"
+                        }`}
+                        onClick={() => setActiveWasteCategory(category.key)}
+                      >
+                        {category.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4 overflow-x-auto rounded-md border border-neutral-200">
+                <table className="w-full min-w-[760px] border-collapse bg-white text-left">
+                  <thead className="bg-neutral-100">
+                    <tr>
+                      <th className="p-3">品目</th>
+                      <th className="p-3 text-right">数量</th>
+                      <th className="p-3 text-center">入力</th>
+                      <th className="p-3 text-right">廃棄原価</th>
+                      <th className="p-3 text-right">販売換算</th>
+                      <th className="p-3"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activeWasteRows.map((row) => {
+                      const record = wasteQuickRecord(row.itemType, row.id);
+                      const quantity = record?.quantity ?? 0;
+                      const amounts = calculateWasteRecordAmounts(data, row.itemType, row.id, quantity);
+                      return (
+                        <tr key={`${row.itemType}-${row.id}`} className="border-t border-neutral-200">
+                          <td className="p-3">
+                            <strong>{row.name}</strong>
+                            <span className="ml-2 text-xs font-bold text-neutral-500">{row.subName}</span>
+                          </td>
+                          <td className="p-3 text-right font-black">
+                            {number(quantity, row.itemType === "INGREDIENT" && row.unit !== "個" && row.unit !== "枚" ? 1 : 0)}{row.unit}
+                          </td>
+                          <td className="p-3">
+                            <div className="flex items-center justify-center gap-2">
+                              <button className="grid h-10 w-10 place-items-center rounded-md bg-pink-600 text-xl font-black text-white" onClick={() => incrementWasteQuantity(row.itemType, row.id, row.step)}>
+                                +
+                              </button>
+                              <input
+                                className="h-10 w-24 rounded-md border border-neutral-300 px-2 text-right font-black"
+                                type="number"
+                                value={quantity}
+                                onChange={(event) => upsertWasteQuantity(row.itemType, row.id, Number(event.target.value))}
+                              />
+                            </div>
+                          </td>
+                          <td className="p-3 text-right">{yen(amounts.costAmount)}</td>
+                          <td className="p-3 text-right">{yen(amounts.salesEquivalentAmount)}</td>
+                          <td className="p-3 text-right">
+                            <button className="rounded-md bg-red-50 px-3 py-2 font-bold text-red-700" onClick={() => clearWasteQuantity(row.itemType, row.id)}>
+                              削除
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {activeWasteRows.length === 0 && (
+                      <tr>
+                        <td className="p-3 text-neutral-500" colSpan={6}>この種別に表示できる品目がありません。</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </section>
             <section className="rounded-md border border-neutral-200 bg-white p-3">
