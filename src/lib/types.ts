@@ -150,3 +150,17 @@ export type PriceImpactRow = {
   priceCandidates: Array<{ unit: number; price: number; costRate: number }>;
   needsPriceReview: boolean;
 };
+
+export type ProductionPlanInput = {
+  productId: string;
+  quantity: number;
+};
+
+export type RequirementRow = {
+  ingredient: Ingredient;
+  requiredAmount: number;
+  unit: string;
+  cost: number;
+  supplier: string;
+  isPackaging: boolean;
+};

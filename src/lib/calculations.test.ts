@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { calculatePriceImpact, calculateProductCost, calculateProductNutrition, pricePerGram } from "./calculations";
+import { calculatePriceImpact, calculateProductCost, calculateProductNutrition, calculateProductionRequirements, pricePerGram } from "./calculations";
 import { sampleData } from "./sample-data";
 
 const shortcake = sampleData.products.find((product) => product.id === "prd-shortcake");
@@ -31,5 +31,17 @@ assert(impact.some((row) => row.product.name === "苺のショートケーキ"))
 assert(impact.some((row) => row.product.name === "クレームシャンティ"));
 assert(impact[0]?.increase > 0);
 assert(impact[0]?.priceCandidates.length === 3);
+
+const requirements = calculateProductionRequirements(sampleData, [
+  { productId: "prd-shortcake", quantity: 50 },
+  { productId: "prd-madeleine", quantity: 100 },
+  { productId: "prd-castella", quantity: 30 },
+]);
+const requiredFlour = requirements.find((row) => row.ingredient.id === "ing-flour");
+const requiredTray = requirements.find((row) => row.ingredient.id === "pkg-tray");
+assert(requiredFlour && requiredFlour.requiredAmount > 0);
+assert(requiredTray && Math.round(requiredTray.requiredAmount) === 50);
+assert(requirements.some((row) => row.isPackaging));
+assert(requirements.reduce((sum, row) => sum + row.cost, 0) > 0);
 
 console.log("calculation tests passed");

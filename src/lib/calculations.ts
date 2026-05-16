@@ -6,7 +6,9 @@ import type {
   Product,
   ProductCostSummary,
   ProductNutritionSummary,
+  ProductionPlanInput,
   RecipeItem,
+  RequirementRow,
 } from "./types";
 
 export const TAX_RATE = 0.1;
@@ -187,6 +189,59 @@ export function calculateProductCost(
   products: Product[] = [],
 ): ProductCostSummary {
   return calculateProductCostInternal(product, ingredients, products, recipeItems, new Set<string>());
+}
+
+function addRequirement(
+  requirements: Map<string, RequirementRow>,
+  ingredient: Ingredient,
+  amount: number,
+) {
+  const current = requirements.get(ingredient.id);
+  const requiredAmount = (current?.requiredAmount ?? 0) + amount;
+  requirements.set(ingredient.id, {
+    ingredient,
+    requiredAmount,
+    unit: ingredientUnitLabel(ingredient),
+    cost: ingredientCost(ingredient, requiredAmount),
+    supplier: ingredient.supplier,
+    isPackaging: isPackagingIngredient(ingredient),
+  });
+}
+
+function collectProductRequirements(
+  product: Product,
+  multiplier: number,
+  data: AppData,
+  requirements: Map<string, RequirementRow>,
+  visited: Set<string>,
+) {
+  if (visited.has(product.id)) return;
+  const nextVisited = new Set(visited).add(product.id);
+  getProductRecipeItems(data.recipeItems, product.id).forEach((item) => {
+    const amount = recipeItemAmountGram(item) * multiplier;
+    if (item.itemType === "intermediate") {
+      const intermediate = data.products.find((candidate) => candidate.id === item.intermediateProductId);
+      if (!intermediate) return;
+      const basisWeight = getIntermediateBasisWeight(intermediate, data.ingredients, data.recipeItems, nextVisited);
+      collectProductRequirements(intermediate, basisWeight ? amount / basisWeight : 0, data, requirements, nextVisited);
+      return;
+    }
+    const ingredient = data.ingredients.find((candidate) => candidate.id === item.ingredientId);
+    if (ingredient) addRequirement(requirements, ingredient, amount);
+  });
+}
+
+export function calculateProductionRequirements(data: AppData, planItems: ProductionPlanInput[]): RequirementRow[] {
+  const requirements = new Map<string, RequirementRow>();
+  planItems
+    .filter((item) => item.quantity > 0)
+    .forEach((item) => {
+      const product = data.products.find((candidate) => candidate.id === item.productId);
+      if (!product) return;
+      const multiplier = product.yieldCount ? item.quantity / product.yieldCount : item.quantity;
+      collectProductRequirements(product, multiplier, data, requirements, new Set<string>());
+    });
+  return [...requirements.values()].sort((a, b) => Number(a.isPackaging) - Number(b.isPackaging) || a.supplier.localeCompare(b.supplier, "ja") || a.ingredient.name.localeCompare(b.ingredient.name, "ja"));
 }
 
 export function nutritionForAmount(ingredient: Ingredient, amountGram: number): Nutrition {

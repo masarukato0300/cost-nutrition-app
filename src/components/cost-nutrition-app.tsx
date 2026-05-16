@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   calculatePriceImpact,
+  calculateProductionRequirements,
   calculateProductCost,
   calculateProductNutrition,
   collectAllergens,
@@ -16,7 +17,7 @@ import {
 import { sampleData } from "@/lib/sample-data";
 import { standardNutritionFoods } from "@/lib/standard-nutrition";
 import type { StandardNutritionFood } from "@/lib/standard-nutrition";
-import type { AppData, Ingredient, IngredientAlias, MaterialType, Product, ProductStatus, RecipeItem, RecipeUsageType } from "@/lib/types";
+import type { AppData, Ingredient, IngredientAlias, MaterialType, Product, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow } from "@/lib/types";
 
 const defaultStoreId = "デモ店舗";
 const legacyStorageKey = "cost-nutrition-label-mvp-v1";
@@ -39,6 +40,8 @@ const pages = [
   { key: "cost", label: "原価計算" },
   { key: "nutrition", label: "栄養成分計算" },
   { key: "allergen", label: "アレルゲン一覧" },
+  { key: "production", label: "仕込み量逆算" },
+  { key: "order", label: "発注リスト" },
   { key: "impact", label: "影響分析" },
   { key: "label", label: "ラベル表示" },
   { key: "csv", label: "CSV出力" },
@@ -95,6 +98,18 @@ const pageTones: Record<PageNavKey, { navActive: string; navIdle: string; topCar
     navIdle: "border-fuchsia-100 bg-white text-neutral-700 hover:border-fuchsia-300 hover:bg-fuchsia-50",
     topCard: "border-fuchsia-100 bg-fuchsia-50/70 hover:border-fuchsia-400",
     mark: "bg-fuchsia-500",
+  },
+  production: {
+    navActive: "border-emerald-500 bg-emerald-50 text-emerald-900 shadow-sm",
+    navIdle: "border-emerald-100 bg-white text-neutral-700 hover:border-emerald-300 hover:bg-emerald-50",
+    topCard: "border-emerald-100 bg-emerald-50/70 hover:border-emerald-400",
+    mark: "bg-emerald-500",
+  },
+  order: {
+    navActive: "border-yellow-500 bg-yellow-50 text-yellow-900 shadow-sm",
+    navIdle: "border-yellow-100 bg-white text-neutral-700 hover:border-yellow-300 hover:bg-yellow-50",
+    topCard: "border-yellow-100 bg-yellow-50/70 hover:border-yellow-400",
+    mark: "bg-yellow-500",
   },
   impact: {
     navActive: "border-red-500 bg-red-50 text-red-900 shadow-sm",
@@ -458,6 +473,8 @@ function topPageDescription(pageKey: PageKey) {
     cost: "材料原価と包材込み原価を確認",
     nutrition: "レシピから栄養成分表示を計算",
     allergen: "商品ごとのアレルゲンを一覧確認",
+    production: "予定数から必要材料を逆算",
+    order: "必要材料を仕入先別に確認",
     impact: "価格変更時の影響商品を確認",
     ocr: "OCR読み取り結果から価格更新候補を作成",
     label: "確認用ラベルテキストを作成",
@@ -730,6 +747,11 @@ export function CostNutritionApp() {
   const [ingredientOcrCandidateIndex, setIngredientOcrCandidateIndex] = useState(0);
   const [nutritionSearchText, setNutritionSearchText] = useState("");
   const [selectedStandardNutritionId, setSelectedStandardNutritionId] = useState("");
+  const [productionPlan, setProductionPlan] = useState<Record<string, number>>({
+    "prd-shortcake": 50,
+    "prd-madeleine": 100,
+    "prd-castella": 30,
+  });
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -950,6 +972,17 @@ export function CostNutritionApp() {
     [ingredientForm.name, ingredientForm.packageName, nutritionSearchText],
   );
   const selectedStandardNutrition = standardNutritionFoods.find((food) => food.id === selectedStandardNutritionId) ?? standardNutritionMatches[0];
+  const productionPlanItems = useMemo(
+    () => Object.entries(productionPlan).map(([productId, quantity]) => ({ productId, quantity: Number(quantity) || 0 })),
+    [productionPlan],
+  );
+  const productionRequirements = useMemo(
+    () => calculateProductionRequirements(data, productionPlanItems),
+    [data, productionPlanItems],
+  );
+  const productionMaterialRequirements = productionRequirements.filter((row) => !row.isPackaging);
+  const productionPackagingRequirements = productionRequirements.filter((row) => row.isPackaging);
+  const productionTotalCost = productionRequirements.reduce((sum, row) => sum + row.cost, 0);
 
   const dashboard = useMemo(() => {
     const productCosts = data.products.map((product) => calculateProductCost(product, data.ingredients, data.recipeItems, data.products));
@@ -1386,6 +1419,25 @@ export function CostNutritionApp() {
           history.memo,
         ];
       }),
+    ]);
+  }
+
+  function updateProductionPlan(productId: string, quantity: number) {
+    setProductionPlan((current) => ({ ...current, [productId]: quantity }));
+  }
+
+  function exportProductionRequirementsCsv() {
+    downloadCsv("production-requirements.csv", [
+      ["種別", "原材料名", "製品名", "仕入先", "必要量", "単位", "概算原価"],
+      ...productionRequirements.map((row) => [
+        row.isPackaging ? "包材" : "原材料",
+        row.ingredient.name,
+        row.ingredient.packageName,
+        row.supplier,
+        row.requiredAmount,
+        row.unit,
+        row.cost,
+      ]),
     ]);
   }
 
@@ -2088,6 +2140,73 @@ export function CostNutritionApp() {
         </Panel>
       )}
 
+      {activePage === "production" && (
+        <Panel title="仕込み量逆算">
+          <section className="mb-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm font-bold text-emerald-900">
+            作りたい販売数を入力すると、中間材料のレシピまで展開して必要な原材料と包材を計算します。
+          </section>
+          <div className="grid gap-3 lg:grid-cols-[360px_1fr]">
+            <section className="rounded-md border border-neutral-200 bg-white p-3">
+              <h3 className="font-black">製造予定数</h3>
+              <div className="mt-3 grid gap-2">
+                {data.products.filter((product) => !product.isIntermediateMaterial).map((product) => (
+                  <label key={product.id} className="grid grid-cols-[1fr_110px] items-center gap-2 rounded-md border border-neutral-100 bg-neutral-50 p-2 font-bold">
+                    <span>{product.name}</span>
+                    <input
+                      className="rounded-md border border-neutral-200 bg-white px-2 py-1 text-right"
+                      type="number"
+                      value={productionPlan[product.id] ?? 0}
+                      onChange={(event) => updateProductionPlan(product.id, Number(event.target.value))}
+                    />
+                  </label>
+                ))}
+              </div>
+            </section>
+            <section className="rounded-md border border-neutral-200 bg-white p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="font-black">必要材料</h3>
+                <button className="rounded-md bg-emerald-700 px-3 py-2 text-sm font-bold text-white" onClick={exportProductionRequirementsCsv}>
+                  CSV出力
+                </button>
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-3">
+                <Metric label="必要原材料数" value={`${productionMaterialRequirements.length}件`} />
+                <Metric label="必要包材数" value={`${productionPackagingRequirements.length}件`} />
+                <Metric label="概算原価合計" value={yen(productionTotalCost)} />
+              </div>
+              <RequirementTable rows={productionRequirements} />
+            </section>
+          </div>
+        </Panel>
+      )}
+
+      {activePage === "order" && (
+        <Panel title="発注リスト">
+          <section className="mb-3 rounded-md border border-yellow-200 bg-yellow-50 p-3 text-sm font-bold text-yellow-900">
+            在庫機能は次の段階で追加予定です。まずは仕込み量逆算から「必要材料リスト」として確認できます。
+          </section>
+          <div className="flex flex-wrap justify-end gap-2">
+            <button className="rounded-md bg-yellow-700 px-3 py-2 text-sm font-bold text-white" onClick={exportProductionRequirementsCsv}>
+              発注リストCSV
+            </button>
+          </div>
+          <div className="mt-3 grid gap-3">
+            {Array.from(new Set(productionRequirements.map((row) => row.supplier || "仕入先未登録"))).map((supplier) => {
+              const rows = productionRequirements.filter((row) => (row.supplier || "仕入先未登録") === supplier);
+              return (
+                <section key={supplier} className="rounded-md border border-neutral-200 bg-white p-3">
+                  <div className="flex flex-wrap justify-between gap-2">
+                    <h3 className="font-black">{supplier}</h3>
+                    <span className="text-sm font-bold text-neutral-600">概算 {yen(rows.reduce((sum, row) => sum + row.cost, 0))}</span>
+                  </div>
+                  <RequirementTable rows={rows} compact />
+                </section>
+              );
+            })}
+          </div>
+        </Panel>
+      )}
+
       {activePage === "impact" && (
         <Panel title="影響分析">
           <div className="grid gap-3 md:grid-cols-3">
@@ -2718,6 +2837,47 @@ function usageDescription(item: RecipeItem) {
   if (item.usageType === "count") return `${number(item.baseAmountGram)}の${number(item.totalCount, 0)}個中${number(item.usedCount, 0)}個`;
   if (item.usageType === "fraction") return `${number(item.baseAmountGram)}の1/${number(item.fractionDenominator, 0)}`;
   return number(item.amountGram);
+}
+
+function RequirementTable({ rows, compact = false }: { rows: RequirementRow[]; compact?: boolean }) {
+  return (
+    <div className="mt-3 overflow-x-auto rounded-md border border-neutral-200">
+      <table className="w-full min-w-[720px] border-collapse bg-white text-left">
+        <thead className="bg-neutral-100">
+          <tr>
+            <th className="p-3">種別</th>
+            <th className="p-3">原材料</th>
+            <th className="p-3">仕入先</th>
+            <th className="p-3 text-right">必要量</th>
+            <th className="p-3 text-right">概算原価</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.ingredient.id} className="border-t border-neutral-200">
+              <td className="p-3">
+                <span className={`rounded-md px-2 py-1 text-xs font-bold ${row.isPackaging ? "bg-yellow-50 text-yellow-800" : "bg-emerald-50 text-emerald-800"}`}>
+                  {row.isPackaging ? "包材" : "原材料"}
+                </span>
+              </td>
+              <td className="p-3">
+                <strong>{row.ingredient.packageName || row.ingredient.name}</strong>
+                {!compact && row.ingredient.packageName !== row.ingredient.name && <span className="ml-2 text-xs font-bold text-neutral-500">{row.ingredient.name}</span>}
+              </td>
+              <td className="p-3">{row.supplier || "未登録"}</td>
+              <td className="p-3 text-right">{number(row.requiredAmount, row.isPackaging ? 0 : 1)}{row.unit}</td>
+              <td className="p-3 text-right">{yen(row.cost)}</td>
+            </tr>
+          ))}
+          {rows.length === 0 && (
+            <tr>
+              <td className="p-3 text-neutral-500" colSpan={5}>製造予定数を入力すると表示されます。</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function NutritionBlock({ title, nutrition }: { title: string; nutrition: { calories: number; protein: number; fat: number; carbs: number; salt: number } }) {
