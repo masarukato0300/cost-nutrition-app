@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { calculateEventSimulation, calculateMonthlyTheoryCost, calculatePriceImpact, calculateProductCost, calculateProductLaborCost, calculateProductNutrition, calculateProductionRequirements, calculateWasteRecordAmounts, calculateWasteSummary, pricePerGram } from "./calculations";
+import { calculateEventSimulation, calculateMonthlyTheoryCost, calculatePriceImpact, calculateProductCost, calculateProductLaborCost, calculateProductNutrition, calculateProductionRequirements, calculateSetProductCost, calculateWasteRecordAmounts, calculateWasteSummary, pricePerGram } from "./calculations";
 import { sampleData } from "./sample-data";
 
 const shortcake = sampleData.products.find((product) => product.id === "prd-shortcake");
@@ -85,5 +85,14 @@ assert(laborCost.laborTotalCost > 0);
 assert(laborCost.laborCostPerPiece > 0);
 assert(laborCost.effectiveCostPerPiece > cost.costPerPiece);
 assert(laborCost.effectiveCostRate > cost.costRate);
+
+const gift = sampleData.products.find((product) => product.id === "prd-gift");
+assert(gift);
+const setCost = calculateSetProductCost(sampleData, gift);
+assert.equal(setCost.childRows.length, 2);
+assert(setCost.childProductsCost > 0);
+assert(setCost.packagingCost > 0);
+assert(setCost.totalCost > setCost.packagingCost);
+assert(setCost.costRate > 0);
 
 console.log("calculation tests passed");

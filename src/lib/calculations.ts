@@ -13,6 +13,7 @@ import type {
   RecipeItem,
   RequirementRow,
   SalesRecord,
+  SetProductCostSummary,
   WasteRecord,
   WasteSummary,
 } from "./types";
@@ -420,6 +421,41 @@ export function calculateProductLaborCost(data: AppData, product: Product): Prod
     effectiveCostPerPiece,
     laborCostRate: sellingPrice ? (laborCostPerPiece / sellingPrice) * 100 : 0,
     effectiveCostRate: sellingPrice ? (effectiveCostPerPiece / sellingPrice) * 100 : 0,
+  };
+}
+
+export function calculateSetProductCost(data: AppData, setProduct: Product): SetProductCostSummary {
+  const childRows = data.setProductItems
+    .filter((item) => item.setProductId === setProduct.id && item.quantity > 0)
+    .map((item) => {
+      const childProduct = data.products.find((product) => product.id === item.childProductId);
+      if (!childProduct) return null;
+      const cost = calculateProductCost(childProduct, data.ingredients, data.recipeItems, data.products);
+      return {
+        item,
+        childProduct,
+        unitCost: cost.costPerPiece,
+        quantity: item.quantity,
+        totalCost: cost.costPerPiece * item.quantity,
+      };
+    })
+    .filter((row): row is NonNullable<typeof row> => Boolean(row));
+
+  const ownRecipeCost = calculateProductCost(setProduct, data.ingredients, data.recipeItems, data.products);
+  const childProductsCost = childRows.reduce((sum, row) => sum + row.totalCost, 0);
+  const totalCost = childProductsCost + ownRecipeCost.packagingTotalCost;
+  const sellingPrice = priceWithTax(setProduct.sellingPrice, setProduct.taxType);
+  const targetRecommendedPrice = recommendedPrice(totalCost, setProduct.targetCostRate);
+
+  return {
+    setProduct,
+    childRows,
+    childProductsCost,
+    packagingCost: ownRecipeCost.packagingTotalCost,
+    totalCost,
+    sellingPrice,
+    costRate: sellingPrice ? (totalCost / sellingPrice) * 100 : 0,
+    recommendedPrice: targetRecommendedPrice,
   };
 }
 

@@ -121,6 +121,7 @@ export type AppData = {
   eventPlans: EventPlan[];
   eventPlanItems: EventPlanItem[];
   laborCosts: LaborCost[];
+  setProductItems: SetProductItem[];
 };
 
 export type ProductCostSummary = {
@@ -304,4 +305,33 @@ export type ProductLaborCostSummary = {
   effectiveCostPerPiece: number;
   laborCostRate: number;
   effectiveCostRate: number;
+};
+
+export type SetProductItem = {
+  id: string;
+  setProductId: string;
+  childProductId: string;
+  quantity: number;
+  memo: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SetProductCostRow = {
+  item: SetProductItem;
+  childProduct: Product;
+  unitCost: number;
+  quantity: number;
+  totalCost: number;
+};
+
+export type SetProductCostSummary = {
+  setProduct: Product;
+  childRows: SetProductCostRow[];
+  childProductsCost: number;
+  packagingCost: number;
+  totalCost: number;
+  sellingPrice: number;
+  costRate: number;
+  recommendedPrice: number;
 };

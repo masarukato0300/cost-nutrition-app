@@ -159,4 +159,8 @@ export const sampleData: AppData = {
     { id: "labor-madeleine", productId: "prd-madeleine", processName: "仕込み・袋詰め", minutes: 50, workers: 1, hourlyWage: 1100, memo: "20個分", createdAt: now, updatedAt: now },
     { id: "labor-gift", productId: "prd-gift", processName: "箱詰め・包装", minutes: 12, workers: 1, hourlyWage: 1100, memo: "1セット", createdAt: now, updatedAt: now },
   ],
+  setProductItems: [
+    { id: "set-gift-madeleine", setProductId: "prd-gift", childProductId: "prd-madeleine", quantity: 4, memo: "マドレーヌ4個", createdAt: now, updatedAt: now },
+    { id: "set-gift-castella", setProductId: "prd-gift", childProductId: "prd-castella", quantity: 1, memo: "奈良カステラ1本", createdAt: now, updatedAt: now },
+  ],
 };

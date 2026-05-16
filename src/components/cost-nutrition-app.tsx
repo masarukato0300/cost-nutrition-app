@@ -13,6 +13,7 @@ import {
   collectAllergens,
   collectLabelNames,
   calculateProductLaborCost,
+  calculateSetProductCost,
   hasNutrition,
   ingredientUnitLabel,
   amountToGram,
@@ -23,7 +24,7 @@ import {
 import { sampleData } from "@/lib/sample-data";
 import { standardNutritionFoods } from "@/lib/standard-nutrition";
 import type { StandardNutritionFood } from "@/lib/standard-nutrition";
-import type { ActualCostRecord, AppData, EventPlan, EventSimulationRow, Ingredient, IngredientAlias, LaborCost, MaterialType, MonthlyTheoryRow, Product, ProductLaborCostSummary, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow, SalesRecord, WasteItemType, WasteReason, WasteRecord } from "@/lib/types";
+import type { ActualCostRecord, AppData, EventPlan, EventSimulationRow, Ingredient, IngredientAlias, LaborCost, MaterialType, MonthlyTheoryRow, Product, ProductLaborCostSummary, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow, SalesRecord, SetProductCostSummary, SetProductItem, WasteItemType, WasteReason, WasteRecord } from "@/lib/types";
 
 const defaultStoreId = "デモ店舗";
 const legacyStorageKey = "cost-nutrition-label-mvp-v1";
@@ -53,6 +54,7 @@ const pages = [
   { key: "monthly", label: "月間理論原価" },
   { key: "event", label: "イベント原価" },
   { key: "labor", label: "人件費原価" },
+  { key: "set", label: "セット商品" },
   { key: "impact", label: "影響分析" },
   { key: "label", label: "ラベル表示" },
   { key: "csv", label: "CSV出力" },
@@ -145,6 +147,12 @@ const pageTones: Record<PageNavKey, { navActive: string; navIdle: string; topCar
     navIdle: "border-stone-100 bg-white text-neutral-700 hover:border-stone-300 hover:bg-stone-50",
     topCard: "border-stone-100 bg-stone-50/70 hover:border-stone-400",
     mark: "bg-stone-500",
+  },
+  set: {
+    navActive: "border-purple-500 bg-purple-50 text-purple-900 shadow-sm",
+    navIdle: "border-purple-100 bg-white text-neutral-700 hover:border-purple-300 hover:bg-purple-50",
+    topCard: "border-purple-100 bg-purple-50/70 hover:border-purple-400",
+    mark: "bg-purple-500",
   },
   impact: {
     navActive: "border-red-500 bg-red-50 text-red-900 shadow-sm",
@@ -277,6 +285,7 @@ function normalizeData(parsed: AppData): AppData {
     eventPlans: parsed.eventPlans || [],
     eventPlanItems: parsed.eventPlanItems || [],
     laborCosts: parsed.laborCosts || [],
+    setProductItems: parsed.setProductItems || [],
   };
 }
 
@@ -520,6 +529,7 @@ function topPageDescription(pageKey: PageKey) {
     monthly: "販売数から理論原価を確認",
     event: "イベント販売の粗利を試算",
     labor: "作業時間から実質原価を確認",
+    set: "ギフトや詰め合わせの原価を計算",
     impact: "価格変更時の影響商品を確認",
     ocr: "OCR読み取り結果から価格更新候補を作成",
     label: "確認用ラベルテキストを作成",
@@ -813,6 +823,16 @@ const emptyLaborCost = (productId = ""): LaborCost => ({
   updatedAt: now(),
 });
 
+const emptySetProductItem = (setProductId = "", childProductId = ""): SetProductItem => ({
+  id: "",
+  setProductId,
+  childProductId,
+  quantity: 1,
+  memo: "",
+  createdAt: now(),
+  updatedAt: now(),
+});
+
 export function CostNutritionApp() {
   const ingredientCameraInputRef = useRef<HTMLInputElement | null>(null);
   const ingredientPhotoInputRef = useRef<HTMLInputElement | null>(null);
@@ -854,6 +874,8 @@ export function CostNutritionApp() {
   const [eventImpactIngredientId, setEventImpactIngredientId] = useState(sampleData.ingredients.find((ingredient) => ingredient.id === "ing-butter")?.id ?? sampleData.ingredients[0]?.id ?? "");
   const [eventImpactNewPrice, setEventImpactNewPrice] = useState(sampleData.ingredients.find((ingredient) => ingredient.id === "ing-butter")?.price ?? 0);
   const [laborForm, setLaborForm] = useState<LaborCost>(() => emptyLaborCost(sampleData.products.find((product) => !product.isIntermediateMaterial)?.id ?? ""));
+  const [selectedSetProductId, setSelectedSetProductId] = useState(sampleData.products.find((product) => product.id === "prd-gift")?.id ?? sampleData.products.find((product) => !product.isIntermediateMaterial)?.id ?? "");
+  const [setProductItemForm, setSetProductItemForm] = useState<SetProductItem>(() => emptySetProductItem(sampleData.products.find((product) => product.id === "prd-gift")?.id ?? "", sampleData.products.find((product) => product.id === "prd-madeleine")?.id ?? ""));
   const [productionPlan, setProductionPlan] = useState<Record<string, number>>({
     "prd-shortcake": 50,
     "prd-madeleine": 100,
@@ -877,6 +899,8 @@ export function CostNutritionApp() {
       setEventImpactIngredientId(loadedData.ingredients.find((ingredient) => ingredient.id === "ing-butter")?.id ?? loadedData.ingredients[0]?.id ?? "");
       setEventImpactNewPrice(loadedData.ingredients.find((ingredient) => ingredient.id === "ing-butter")?.price ?? loadedData.ingredients[0]?.price ?? 0);
       setLaborForm(emptyLaborCost(loadedData.products.find((product) => !product.isIntermediateMaterial)?.id ?? ""));
+      setSelectedSetProductId(loadedData.products.find((product) => product.category === "ギフト")?.id ?? loadedData.products.find((product) => !product.isIntermediateMaterial)?.id ?? "");
+      setSetProductItemForm(emptySetProductItem(loadedData.products.find((product) => product.category === "ギフト")?.id ?? "", loadedData.products.find((product) => !product.isIntermediateMaterial && product.category !== "ギフト")?.id ?? ""));
     });
   }, []);
 
@@ -898,6 +922,8 @@ export function CostNutritionApp() {
     setEventImpactIngredientId(nextData.ingredients.find((ingredient) => ingredient.id === "ing-butter")?.id ?? nextData.ingredients[0]?.id ?? "");
     setEventImpactNewPrice(nextData.ingredients.find((ingredient) => ingredient.id === "ing-butter")?.price ?? nextData.ingredients[0]?.price ?? 0);
     setLaborForm(emptyLaborCost(nextData.products.find((product) => !product.isIntermediateMaterial)?.id ?? ""));
+    setSelectedSetProductId(nextData.products.find((product) => product.category === "ギフト")?.id ?? nextData.products.find((product) => !product.isIntermediateMaterial)?.id ?? "");
+    setSetProductItemForm(emptySetProductItem(nextData.products.find((product) => product.category === "ギフト")?.id ?? "", nextData.products.find((product) => !product.isIntermediateMaterial && product.category !== "ギフト")?.id ?? ""));
     setSwitchStoreId(storeId);
     setSwitchStorePin("");
     setActivePage("top");
@@ -1132,6 +1158,16 @@ export function CostNutritionApp() {
       .sort((a, b) => b.effectiveCostRate - a.effectiveCostRate),
     [data],
   );
+  const selectedSetProduct = data.products.find((product) => product.id === selectedSetProductId) ?? data.products.find((product) => product.category === "ギフト") ?? data.products.find((product) => !product.isIntermediateMaterial) ?? data.products[0];
+  const setProductSummaries = useMemo(
+    () => data.products
+      .filter((product) => !product.isIntermediateMaterial)
+      .map((product) => calculateSetProductCost(data, product))
+      .filter((summary) => summary.childRows.length > 0)
+      .sort((a, b) => b.costRate - a.costRate),
+    [data],
+  );
+  const selectedSetSummary = selectedSetProduct ? calculateSetProductCost(data, selectedSetProduct) : null;
 
   const dashboard = useMemo(() => {
     const productCosts = data.products.map((product) => calculateProductCost(product, data.ingredients, data.recipeItems, data.products));
@@ -1792,6 +1828,67 @@ export function CostNutritionApp() {
     ]);
   }
 
+  function saveSetProductItem() {
+    if (!setProductItemForm.setProductId || !setProductItemForm.childProductId || setProductItemForm.quantity <= 0) return;
+    if (setProductItemForm.setProductId === setProductItemForm.childProductId) {
+      alert("セット商品自身は中身に追加できません。");
+      return;
+    }
+    const record: SetProductItem = {
+      ...setProductItemForm,
+      id: setProductItemForm.id || createId("set-item"),
+      createdAt: setProductItemForm.createdAt || now(),
+      updatedAt: now(),
+    };
+    commit({
+      ...data,
+      setProductItems: setProductItemForm.id
+        ? data.setProductItems.map((item) => (item.id === record.id ? record : item))
+        : [record, ...data.setProductItems],
+    });
+    setSelectedSetProductId(record.setProductId);
+    setSetProductItemForm(emptySetProductItem(record.setProductId, record.childProductId));
+  }
+
+  function editSetProductItem(record: SetProductItem) {
+    setSetProductItemForm(record);
+    setSelectedSetProductId(record.setProductId);
+  }
+
+  function deleteSetProductItem(recordId: string) {
+    if (!confirm("このセット内容を削除しますか？")) return;
+    commit({ ...data, setProductItems: data.setProductItems.filter((record) => record.id !== recordId) });
+  }
+
+  function updateSelectedSetProductSellingPrice(sellingPrice: number) {
+    if (!selectedSetProduct) return;
+    const nextProduct = { ...selectedSetProduct, sellingPrice, updatedAt: now() };
+    commit({
+      ...data,
+      products: data.products.map((product) => (product.id === nextProduct.id ? nextProduct : product)),
+    });
+  }
+
+  function exportSetProductCsv() {
+    downloadCsv("set-products.csv", [
+      ["セット商品", "販売価格", "子商品", "数量", "子商品原価/個", "子商品原価計", "包材原価", "セット原価", "原価率", "推奨販売価格"],
+      ...setProductSummaries.flatMap((summary) => (
+        summary.childRows.map((row) => [
+          summary.setProduct.name,
+          summary.sellingPrice,
+          row.childProduct.name,
+          row.quantity,
+          row.unitCost,
+          row.totalCost,
+          summary.packagingCost,
+          summary.totalCost,
+          summary.costRate,
+          summary.recommendedPrice,
+        ])
+      )),
+    ]);
+  }
+
   function resetSample() {
     if (!confirm("サンプルデータに戻しますか？")) return;
     commit(sampleData);
@@ -1799,6 +1896,8 @@ export function CostNutritionApp() {
     setImpactIngredientId("ing-cream");
     setImpactNewPrice(860);
     setLaborForm(emptyLaborCost(sampleData.products.find((product) => !product.isIntermediateMaterial)?.id ?? ""));
+    setSelectedSetProductId(sampleData.products.find((product) => product.id === "prd-gift")?.id ?? "");
+    setSetProductItemForm(emptySetProductItem("prd-gift", "prd-madeleine"));
   }
 
   const labelText = selectedProduct && costSummary && nutritionSummary
@@ -2906,6 +3005,67 @@ export function CostNutritionApp() {
         </Panel>
       )}
 
+      {activePage === "set" && (
+        <Panel title="セット商品・ギフト原価計算">
+          <section className="mb-3 rounded-md border border-purple-200 bg-purple-50 p-3 text-sm font-bold text-purple-900">
+            焼き菓子ギフトのように、単品商品を組み合わせたセット商品の原価を計算します。箱・リボンなどの包材は、セット商品のレシピに登録した包材原価を使います。
+          </section>
+          <div className="grid gap-3 lg:grid-cols-[360px_1fr]">
+            <section className="rounded-md border border-neutral-200 bg-white p-3">
+              <h3 className="font-black">セット内容を登録</h3>
+              <div className="mt-3 grid gap-3">
+                <SelectInput
+                  label="セット商品"
+                  value={selectedSetProduct?.id ?? ""}
+                  options={data.products.filter((product) => !product.isIntermediateMaterial).map((product) => product.id)}
+                  optionLabels={Object.fromEntries(data.products.filter((product) => !product.isIntermediateMaterial).map((product) => [product.id, product.name]))}
+                  onChange={(value) => {
+                    setSelectedSetProductId(value);
+                    setSetProductItemForm(emptySetProductItem(value, data.products.find((product) => !product.isIntermediateMaterial && product.id !== value)?.id ?? ""));
+                  }}
+                />
+                <NumberInput label="セット販売価格" value={selectedSetProduct?.sellingPrice ?? 0} onChange={updateSelectedSetProductSellingPrice} />
+                <SelectInput
+                  label="中に入れる商品"
+                  value={setProductItemForm.childProductId}
+                  options={data.products.filter((product) => !product.isIntermediateMaterial && product.id !== selectedSetProduct?.id).map((product) => product.id)}
+                  optionLabels={Object.fromEntries(data.products.filter((product) => !product.isIntermediateMaterial && product.id !== selectedSetProduct?.id).map((product) => [product.id, product.name]))}
+                  onChange={(value) => setSetProductItemForm({ ...setProductItemForm, setProductId: selectedSetProduct?.id ?? setProductItemForm.setProductId, childProductId: value })}
+                />
+                <NumberInput label="数量" value={setProductItemForm.quantity} onChange={(value) => setSetProductItemForm({ ...setProductItemForm, setProductId: selectedSetProduct?.id ?? setProductItemForm.setProductId, quantity: value })} />
+                <TextInput label="メモ" value={setProductItemForm.memo} onChange={(value) => setSetProductItemForm({ ...setProductItemForm, memo: value })} />
+                <button className="rounded-md bg-purple-700 px-4 py-2 font-bold text-white" onClick={saveSetProductItem}>
+                  セット内容を保存
+                </button>
+              </div>
+            </section>
+            <section className="rounded-md border border-neutral-200 bg-white p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="font-black">{selectedSetProduct?.name || "セット商品未選択"}</h3>
+                <button className="rounded-md bg-purple-700 px-3 py-2 text-sm font-bold text-white" onClick={exportSetProductCsv}>
+                  CSV出力
+                </button>
+              </div>
+              {selectedSetSummary && (
+                <div className="mt-3 grid gap-3 md:grid-cols-3">
+                  <Metric label="中身の商品原価" value={yen(selectedSetSummary.childProductsCost)} />
+                  <Metric label="包材原価" value={yen(selectedSetSummary.packagingCost)} />
+                  <Metric label="セット原価" value={yen(selectedSetSummary.totalCost)} />
+                  <Metric label="販売価格" value={yen(selectedSetSummary.sellingPrice)} />
+                  <Metric label="セット原価率" value={percent(selectedSetSummary.costRate)} tone={selectedSetSummary.costRate >= 40 ? "danger" : selectedSetSummary.costRate >= 35 ? "warn" : "normal"} />
+                  <Metric label="推奨販売価格" value={yen(selectedSetSummary.recommendedPrice)} />
+                </div>
+              )}
+              <SetProductTable summary={selectedSetSummary} onEdit={editSetProductItem} onDelete={deleteSetProductItem} />
+              <section className="mt-4 rounded-md border border-neutral-200 bg-neutral-50 p-3">
+                <h4 className="font-black">登録済みセット商品</h4>
+                <SetProductSummaryTable rows={setProductSummaries} />
+              </section>
+            </section>
+          </div>
+        </Panel>
+      )}
+
       {activePage === "impact" && (
         <Panel title="影響分析">
           <div className="grid gap-3 md:grid-cols-3">
@@ -3684,6 +3844,95 @@ function LaborSummaryTable({ rows }: { rows: ProductLaborCostSummary[] }) {
               <td className="p-3 text-right">{row.laborRows.length}</td>
             </tr>
           ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function SetProductTable({
+  summary,
+  onEdit,
+  onDelete,
+}: {
+  summary: SetProductCostSummary | null;
+  onEdit: (item: SetProductItem) => void;
+  onDelete: (id: string) => void;
+}) {
+  return (
+    <div className="mt-4 overflow-x-auto rounded-md border border-neutral-200">
+      <table className="w-full min-w-[760px] border-collapse bg-white text-left">
+        <thead className="bg-neutral-100">
+          <tr>
+            <th className="p-3">中に入れる商品</th>
+            <th className="p-3 text-right">数量</th>
+            <th className="p-3 text-right">原価/個</th>
+            <th className="p-3 text-right">原価計</th>
+            <th className="p-3">メモ</th>
+            <th className="p-3"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {(summary?.childRows ?? []).map((row) => (
+            <tr key={row.item.id} className="border-t border-neutral-200">
+              <td className="p-3 font-bold">{row.childProduct.name}</td>
+              <td className="p-3 text-right">{number(row.quantity, 0)}</td>
+              <td className="p-3 text-right">{yen(row.unitCost)}</td>
+              <td className="p-3 text-right">{yen(row.totalCost)}</td>
+              <td className="p-3">{row.item.memo || "-"}</td>
+              <td className="p-3 text-right">
+                <button className="mr-2 rounded-md bg-neutral-100 px-2 py-1 font-bold text-neutral-700" onClick={() => onEdit(row.item)}>
+                  編集
+                </button>
+                <button className="rounded-md bg-red-50 px-2 py-1 font-bold text-red-700" onClick={() => onDelete(row.item.id)}>
+                  削除
+                </button>
+              </td>
+            </tr>
+          ))}
+          {(summary?.childRows.length ?? 0) === 0 && (
+            <tr>
+              <td className="p-3 text-neutral-500" colSpan={6}>セット内容を登録すると表示されます。</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function SetProductSummaryTable({ rows }: { rows: SetProductCostSummary[] }) {
+  return (
+    <div className="mt-3 overflow-x-auto rounded-md border border-neutral-200">
+      <table className="w-full min-w-[760px] border-collapse bg-white text-left">
+        <thead className="bg-neutral-100">
+          <tr>
+            <th className="p-3">セット商品</th>
+            <th className="p-3 text-right">品目数</th>
+            <th className="p-3 text-right">セット原価</th>
+            <th className="p-3 text-right">販売価格</th>
+            <th className="p-3 text-right">原価率</th>
+            <th className="p-3 text-right">推奨販売価格</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.setProduct.id} className="border-t border-neutral-200">
+              <td className="p-3 font-bold">{row.setProduct.name}</td>
+              <td className="p-3 text-right">{row.childRows.length}</td>
+              <td className="p-3 text-right">{yen(row.totalCost)}</td>
+              <td className="p-3 text-right">{yen(row.sellingPrice)}</td>
+              <td className={`p-3 text-right font-black ${row.costRate >= 40 ? "text-red-700" : row.costRate >= 35 ? "text-amber-700" : "text-neutral-900"}`}>
+                {percent(row.costRate)}
+              </td>
+              <td className="p-3 text-right">{yen(row.recommendedPrice)}</td>
+            </tr>
+          ))}
+          {rows.length === 0 && (
+            <tr>
+              <td className="p-3 text-neutral-500" colSpan={6}>セット商品を登録すると表示されます。</td>
+            </tr>
+          )}
         </tbody>
       </table>
     </div>
