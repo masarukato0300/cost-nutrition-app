@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  calculateEventSimulation,
   calculatePriceImpact,
   calculateProductionRequirements,
   calculateProductCost,
@@ -21,7 +22,7 @@ import {
 import { sampleData } from "@/lib/sample-data";
 import { standardNutritionFoods } from "@/lib/standard-nutrition";
 import type { StandardNutritionFood } from "@/lib/standard-nutrition";
-import type { ActualCostRecord, AppData, Ingredient, IngredientAlias, MaterialType, MonthlyTheoryRow, Product, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow, SalesRecord, WasteItemType, WasteReason, WasteRecord } from "@/lib/types";
+import type { ActualCostRecord, AppData, EventPlan, EventSimulationRow, Ingredient, IngredientAlias, MaterialType, MonthlyTheoryRow, Product, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow, SalesRecord, WasteItemType, WasteReason, WasteRecord } from "@/lib/types";
 
 const defaultStoreId = "デモ店舗";
 const legacyStorageKey = "cost-nutrition-label-mvp-v1";
@@ -49,6 +50,7 @@ const pages = [
   { key: "order", label: "発注リスト" },
   { key: "waste", label: "廃棄ロス" },
   { key: "monthly", label: "月間理論原価" },
+  { key: "event", label: "イベント原価" },
   { key: "impact", label: "影響分析" },
   { key: "label", label: "ラベル表示" },
   { key: "csv", label: "CSV出力" },
@@ -129,6 +131,12 @@ const pageTones: Record<PageNavKey, { navActive: string; navIdle: string; topCar
     navIdle: "border-blue-100 bg-white text-neutral-700 hover:border-blue-300 hover:bg-blue-50",
     topCard: "border-blue-100 bg-blue-50/70 hover:border-blue-400",
     mark: "bg-blue-500",
+  },
+  event: {
+    navActive: "border-rose-500 bg-rose-50 text-rose-900 shadow-sm",
+    navIdle: "border-rose-100 bg-white text-neutral-700 hover:border-rose-300 hover:bg-rose-50",
+    topCard: "border-rose-100 bg-rose-50/70 hover:border-rose-400",
+    mark: "bg-rose-500",
   },
   impact: {
     navActive: "border-red-500 bg-red-50 text-red-900 shadow-sm",
@@ -258,6 +266,8 @@ function normalizeData(parsed: AppData): AppData {
     wasteRecords: parsed.wasteRecords || [],
     salesRecords: parsed.salesRecords || [],
     actualCostRecords: parsed.actualCostRecords || [],
+    eventPlans: parsed.eventPlans || [],
+    eventPlanItems: parsed.eventPlanItems || [],
   };
 }
 
@@ -499,6 +509,7 @@ function topPageDescription(pageKey: PageKey) {
     order: "必要材料を仕入先別に確認",
     waste: "廃棄や試作ロスを記録",
     monthly: "販売数から理論原価を確認",
+    event: "イベント販売の粗利を試算",
     impact: "価格変更時の影響商品を確認",
     ocr: "OCR読み取り結果から価格更新候補を作成",
     label: "確認用ラベルテキストを作成",
@@ -771,6 +782,15 @@ const emptyActualCostRecord = (): ActualCostRecord => ({
   updatedAt: now(),
 });
 
+const emptyEventPlan = (): EventPlan => ({
+  id: "",
+  name: "",
+  date: new Date().toISOString().slice(0, 10),
+  memo: "",
+  createdAt: now(),
+  updatedAt: now(),
+});
+
 export function CostNutritionApp() {
   const ingredientCameraInputRef = useRef<HTMLInputElement | null>(null);
   const ingredientPhotoInputRef = useRef<HTMLInputElement | null>(null);
@@ -807,6 +827,10 @@ export function CostNutritionApp() {
   const [wasteForm, setWasteForm] = useState<WasteRecord>(() => emptyWasteRecord());
   const [monthlyTargetMonth, setMonthlyTargetMonth] = useState("2026-05");
   const [actualCostForm, setActualCostForm] = useState<ActualCostRecord>(() => ({ ...emptyActualCostRecord(), month: "2026-05" }));
+  const [eventPlanForm, setEventPlanForm] = useState<EventPlan>(() => emptyEventPlan());
+  const [selectedEventPlanId, setSelectedEventPlanId] = useState(sampleData.eventPlans[0]?.id ?? "");
+  const [eventImpactIngredientId, setEventImpactIngredientId] = useState(sampleData.ingredients.find((ingredient) => ingredient.id === "ing-butter")?.id ?? sampleData.ingredients[0]?.id ?? "");
+  const [eventImpactNewPrice, setEventImpactNewPrice] = useState(sampleData.ingredients.find((ingredient) => ingredient.id === "ing-butter")?.price ?? 0);
   const [productionPlan, setProductionPlan] = useState<Record<string, number>>({
     "prd-shortcake": 50,
     "prd-madeleine": 100,
@@ -826,6 +850,9 @@ export function CostNutritionApp() {
       setRecipeIngredientId(loadedData.ingredients[0]?.id ?? "");
       setImpactIngredientId(loadedData.ingredients[4]?.id ?? loadedData.ingredients[0]?.id ?? "");
       setImpactNewPrice(loadedData.ingredients[4]?.price + 100 || 0);
+      setSelectedEventPlanId(loadedData.eventPlans[0]?.id ?? "");
+      setEventImpactIngredientId(loadedData.ingredients.find((ingredient) => ingredient.id === "ing-butter")?.id ?? loadedData.ingredients[0]?.id ?? "");
+      setEventImpactNewPrice(loadedData.ingredients.find((ingredient) => ingredient.id === "ing-butter")?.price ?? loadedData.ingredients[0]?.price ?? 0);
     });
   }, []);
 
@@ -843,6 +870,9 @@ export function CostNutritionApp() {
     setRecipeIngredientId(nextData.ingredients[0]?.id ?? "");
     setImpactIngredientId(nextData.ingredients[4]?.id ?? nextData.ingredients[0]?.id ?? "");
     setImpactNewPrice(nextData.ingredients[4]?.price + 100 || 0);
+    setSelectedEventPlanId(nextData.eventPlans[0]?.id ?? "");
+    setEventImpactIngredientId(nextData.ingredients.find((ingredient) => ingredient.id === "ing-butter")?.id ?? nextData.ingredients[0]?.id ?? "");
+    setEventImpactNewPrice(nextData.ingredients.find((ingredient) => ingredient.id === "ing-butter")?.price ?? nextData.ingredients[0]?.price ?? 0);
     setSwitchStoreId(storeId);
     setSwitchStorePin("");
     setActivePage("top");
@@ -1055,6 +1085,15 @@ export function CostNutritionApp() {
   const monthlyTheory = useMemo(
     () => calculateMonthlyTheoryCost(data, monthlyTargetMonth),
     [data, monthlyTargetMonth],
+  );
+  const selectedEventPlan = data.eventPlans.find((eventPlan) => eventPlan.id === selectedEventPlanId) ?? data.eventPlans[0] ?? null;
+  const eventSimulation = useMemo(
+    () => calculateEventSimulation(data, selectedEventPlan?.id ?? "", {}),
+    [data, selectedEventPlan?.id],
+  );
+  const eventImpactSimulation = useMemo(
+    () => calculateEventSimulation(data, selectedEventPlan?.id ?? "", eventImpactIngredientId ? { [eventImpactIngredientId]: eventImpactNewPrice } : {}),
+    [data, eventImpactIngredientId, eventImpactNewPrice, selectedEventPlan?.id],
   );
 
   const dashboard = useMemo(() => {
@@ -1606,6 +1645,64 @@ export function CostNutritionApp() {
       ["合計", "", "", monthlyTheory.totalSalesAmount, monthlyTheory.totalTheoryCostAmount, monthlyTheory.theoryCostRate, monthlyTheory.totalGrossProfit],
       ["実原価", "", "", "", monthlyTheory.actualCostAmount, "", ""],
       ["差額", "", "", "", monthlyTheory.differenceAmount, "", ""],
+    ]);
+  }
+
+  function saveEventPlan() {
+    if (!eventPlanForm.name.trim()) return;
+    const plan: EventPlan = {
+      ...eventPlanForm,
+      id: eventPlanForm.id || createId("event"),
+      createdAt: eventPlanForm.createdAt || now(),
+      updatedAt: now(),
+    };
+    commit({
+      ...data,
+      eventPlans: eventPlanForm.id
+        ? data.eventPlans.map((item) => (item.id === plan.id ? plan : item))
+        : [plan, ...data.eventPlans],
+    });
+    setSelectedEventPlanId(plan.id);
+    setEventPlanForm(emptyEventPlan());
+  }
+
+  function updateEventPlanItem(product: Product, patch: { plannedQuantity?: number; sellingPrice?: number }) {
+    if (!selectedEventPlan) return;
+    const existing = data.eventPlanItems.find((item) => item.eventPlanId === selectedEventPlan.id && item.productId === product.id);
+    const nextItem = {
+      id: existing?.id || createId("event-item"),
+      eventPlanId: selectedEventPlan.id,
+      productId: product.id,
+      plannedQuantity: patch.plannedQuantity ?? existing?.plannedQuantity ?? 0,
+      sellingPrice: patch.sellingPrice ?? existing?.sellingPrice ?? product.sellingPrice,
+      memo: existing?.memo ?? "",
+      createdAt: existing?.createdAt || now(),
+      updatedAt: now(),
+    };
+    commit({
+      ...data,
+      eventPlanItems: existing
+        ? data.eventPlanItems.map((item) => (item.id === existing.id ? nextItem : item))
+        : [nextItem, ...data.eventPlanItems],
+    });
+  }
+
+  function exportEventCsv() {
+    downloadCsv(`event-${selectedEventPlan?.name || "simulation"}.csv`, [
+      ["イベント", "商品名", "予定販売数", "販売価格", "売上", "現在原価/個", "粗利", "値上げ後原価/個", "値上げ後粗利", "利益減少"],
+      ...eventImpactSimulation.rows.map((row) => [
+        selectedEventPlan?.name ?? "",
+        row.product.name,
+        row.plannedQuantity,
+        row.sellingPrice,
+        row.salesAmount,
+        row.currentUnitCost,
+        row.currentGrossProfit,
+        row.simulatedUnitCost,
+        row.simulatedGrossProfit,
+        row.profitDecrease,
+      ]),
+      ["合計", "", "", "", eventImpactSimulation.totalSalesAmount, eventImpactSimulation.totalCurrentCost, eventImpactSimulation.totalCurrentGrossProfit, eventImpactSimulation.totalSimulatedCost, eventImpactSimulation.totalSimulatedGrossProfit, eventImpactSimulation.totalProfitDecrease],
     ]);
   }
 
@@ -2559,6 +2656,92 @@ export function CostNutritionApp() {
         </Panel>
       )}
 
+      {activePage === "event" && (
+        <Panel title="イベント・クリスマス原価シミュレーション">
+          <section className="mb-3 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm font-bold text-rose-900">
+            イベント名、予定販売数、イベント販売価格を入れると、売上・原価・粗利を計算します。原材料値上げ時の利益減少も確認できます。
+          </section>
+          <div className="grid gap-3 lg:grid-cols-[360px_1fr]">
+            <section className="rounded-md border border-neutral-200 bg-white p-3">
+              <h3 className="font-black">イベント作成・選択</h3>
+              <div className="mt-3 grid gap-3">
+                <SelectInput
+                  label="イベント"
+                  value={selectedEventPlan?.id ?? ""}
+                  options={data.eventPlans.map((event) => event.id)}
+                  optionLabels={Object.fromEntries(data.eventPlans.map((event) => [event.id, event.name]))}
+                  onChange={setSelectedEventPlanId}
+                />
+                <TextInput label="イベント名" value={eventPlanForm.name} onChange={(value) => setEventPlanForm({ ...eventPlanForm, name: value })} />
+                <TextInput label="日付" value={eventPlanForm.date} onChange={(value) => setEventPlanForm({ ...eventPlanForm, date: value })} />
+                <TextInput label="メモ" value={eventPlanForm.memo} onChange={(value) => setEventPlanForm({ ...eventPlanForm, memo: value })} />
+                <button className="rounded-md bg-rose-700 px-4 py-2 font-bold text-white" onClick={saveEventPlan}>
+                  イベントを保存
+                </button>
+              </div>
+              <section className="mt-4 rounded-md border border-neutral-200 bg-neutral-50 p-3">
+                <h3 className="font-black">値上げ影響を見る</h3>
+                <div className="mt-3 grid gap-3">
+                  <SelectInput
+                    label="原材料"
+                    value={eventImpactIngredientId}
+                    options={data.ingredients.map((ingredient) => ingredient.id)}
+                    optionLabels={Object.fromEntries(data.ingredients.map((ingredient) => [ingredient.id, ingredientOptionLabel(ingredient)]))}
+                    onChange={(value) => {
+                      setEventImpactIngredientId(value);
+                      setEventImpactNewPrice(data.ingredients.find((ingredient) => ingredient.id === value)?.price ?? 0);
+                    }}
+                  />
+                  <NumberInput label="新価格" value={eventImpactNewPrice} onChange={setEventImpactNewPrice} />
+                </div>
+              </section>
+            </section>
+            <section className="rounded-md border border-neutral-200 bg-white p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="font-black">{selectedEventPlan?.name || "イベント未選択"}</h3>
+                <button className="rounded-md bg-rose-700 px-3 py-2 text-sm font-bold text-white" onClick={exportEventCsv}>
+                  CSV出力
+                </button>
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-3">
+                <Metric label="予定売上" value={yen(eventSimulation.totalSalesAmount)} />
+                <Metric label="現在粗利" value={yen(eventSimulation.totalCurrentGrossProfit)} />
+                <Metric label="値上げ後粗利" value={yen(eventImpactSimulation.totalSimulatedGrossProfit)} />
+                <Metric label="現在原価" value={yen(eventSimulation.totalCurrentCost)} />
+                <Metric label="値上げ後原価" value={yen(eventImpactSimulation.totalSimulatedCost)} />
+                <Metric label="利益減少" value={yen(eventImpactSimulation.totalProfitDecrease)} tone={eventImpactSimulation.totalProfitDecrease > 0 ? "warn" : "normal"} />
+              </div>
+              <div className="mt-4 rounded-md border border-neutral-200 bg-neutral-50 p-3">
+                <h4 className="font-black">予定販売数とイベント販売価格</h4>
+                <div className="mt-3 grid gap-2">
+                  {data.products.filter((product) => !product.isIntermediateMaterial).map((product) => {
+                    const item = data.eventPlanItems.find((candidate) => candidate.eventPlanId === selectedEventPlan?.id && candidate.productId === product.id);
+                    return (
+                      <div key={product.id} className="grid gap-2 rounded-md bg-white p-2 font-bold md:grid-cols-[1fr_110px_130px] md:items-center">
+                        <span>{product.name}</span>
+                        <input
+                          className="rounded-md border border-neutral-200 px-2 py-1 text-right"
+                          type="number"
+                          value={item?.plannedQuantity ?? 0}
+                          onChange={(event) => updateEventPlanItem(product, { plannedQuantity: Number(event.target.value) })}
+                        />
+                        <input
+                          className="rounded-md border border-neutral-200 px-2 py-1 text-right"
+                          type="number"
+                          value={item?.sellingPrice ?? product.sellingPrice}
+                          onChange={(event) => updateEventPlanItem(product, { sellingPrice: Number(event.target.value) })}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <EventSimulationTable rows={eventImpactSimulation.rows} />
+            </section>
+          </div>
+        </Panel>
+      )}
+
       {activePage === "impact" && (
         <Panel title="影響分析">
           <div className="grid gap-3 md:grid-cols-3">
@@ -3260,6 +3443,46 @@ function MonthlyTheoryTable({ rows }: { rows: MonthlyTheoryRow[] }) {
           {rows.length === 0 && (
             <tr>
               <td className="p-3 text-neutral-500" colSpan={6}>販売数を入力すると表示されます。</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function EventSimulationTable({ rows }: { rows: EventSimulationRow[] }) {
+  return (
+    <div className="mt-4 overflow-x-auto rounded-md border border-neutral-200">
+      <table className="w-full min-w-[980px] border-collapse bg-white text-left">
+        <thead className="bg-neutral-100">
+          <tr>
+            <th className="p-3">商品</th>
+            <th className="p-3 text-right">予定数</th>
+            <th className="p-3 text-right">販売価格</th>
+            <th className="p-3 text-right">売上</th>
+            <th className="p-3 text-right">現在原価/個</th>
+            <th className="p-3 text-right">値上げ後原価/個</th>
+            <th className="p-3 text-right">現在粗利</th>
+            <th className="p-3 text-right">利益減少</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.product.id} className="border-t border-neutral-200">
+              <td className="p-3 font-bold">{row.product.name}</td>
+              <td className="p-3 text-right">{number(row.plannedQuantity, 0)}</td>
+              <td className="p-3 text-right">{yen(row.sellingPrice)}</td>
+              <td className="p-3 text-right">{yen(row.salesAmount)}</td>
+              <td className="p-3 text-right">{yen(row.currentUnitCost)}</td>
+              <td className="p-3 text-right">{yen(row.simulatedUnitCost)}</td>
+              <td className="p-3 text-right">{yen(row.currentGrossProfit)}</td>
+              <td className="p-3 text-right">{yen(row.profitDecrease)}</td>
+            </tr>
+          ))}
+          {rows.length === 0 && (
+            <tr>
+              <td className="p-3 text-neutral-500" colSpan={8}>予定販売数を入力すると表示されます。</td>
             </tr>
           )}
         </tbody>

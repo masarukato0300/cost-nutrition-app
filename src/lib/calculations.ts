@@ -1,5 +1,6 @@
 import type {
   AppData,
+  EventSimulationSummary,
   Ingredient,
   MonthlyTheorySummary,
   Nutrition,
@@ -340,6 +341,56 @@ export function upsertSalesRecord(records: SalesRecord[], nextRecord: SalesRecor
       ? { ...record, quantity: nextRecord.quantity, sellingPrice: nextRecord.sellingPrice, memo: nextRecord.memo, updatedAt: nextRecord.updatedAt }
       : record
   ));
+}
+
+export function calculateEventSimulation(
+  data: AppData,
+  eventPlanId: string,
+  priceOverrides: Record<string, number> = {},
+): EventSimulationSummary {
+  const eventPlan = data.eventPlans.find((event) => event.id === eventPlanId) ?? null;
+  const simulatedIngredients = data.ingredients.map((ingredient) => (
+    priceOverrides[ingredient.id] !== undefined ? { ...ingredient, price: priceOverrides[ingredient.id] } : ingredient
+  ));
+  const rows = data.eventPlanItems
+    .filter((item) => item.eventPlanId === eventPlanId && item.plannedQuantity > 0)
+    .map((item) => {
+      const product = data.products.find((candidate) => candidate.id === item.productId);
+      if (!product) return null;
+      const currentCost = calculateProductCost(product, data.ingredients, data.recipeItems, data.products);
+      const simulatedCost = calculateProductCost(product, simulatedIngredients, data.recipeItems, data.products);
+      const sellingPrice = priceWithTax(item.sellingPrice, product.taxType);
+      const salesAmount = sellingPrice * item.plannedQuantity;
+      const currentTotalCost = currentCost.costPerPiece * item.plannedQuantity;
+      const simulatedTotalCost = simulatedCost.costPerPiece * item.plannedQuantity;
+      return {
+        product,
+        plannedQuantity: item.plannedQuantity,
+        sellingPrice,
+        salesAmount,
+        currentUnitCost: currentCost.costPerPiece,
+        simulatedUnitCost: simulatedCost.costPerPiece,
+        currentGrossProfit: salesAmount - currentTotalCost,
+        simulatedGrossProfit: salesAmount - simulatedTotalCost,
+        profitDecrease: simulatedTotalCost - currentTotalCost,
+      };
+    })
+    .filter((row): row is NonNullable<typeof row> => Boolean(row));
+
+  const totalSalesAmount = rows.reduce((sum, row) => sum + row.salesAmount, 0);
+  const totalCurrentCost = rows.reduce((sum, row) => sum + row.currentUnitCost * row.plannedQuantity, 0);
+  const totalSimulatedCost = rows.reduce((sum, row) => sum + row.simulatedUnitCost * row.plannedQuantity, 0);
+
+  return {
+    eventPlan,
+    rows,
+    totalSalesAmount,
+    totalCurrentCost,
+    totalSimulatedCost,
+    totalCurrentGrossProfit: rows.reduce((sum, row) => sum + row.currentGrossProfit, 0),
+    totalSimulatedGrossProfit: rows.reduce((sum, row) => sum + row.simulatedGrossProfit, 0),
+    totalProfitDecrease: totalSimulatedCost - totalCurrentCost,
+  };
 }
 
 export function nutritionForAmount(ingredient: Ingredient, amountGram: number): Nutrition {

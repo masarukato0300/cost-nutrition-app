@@ -118,6 +118,8 @@ export type AppData = {
   wasteRecords: WasteRecord[];
   salesRecords: SalesRecord[];
   actualCostRecords: ActualCostRecord[];
+  eventPlans: EventPlan[];
+  eventPlanItems: EventPlanItem[];
 };
 
 export type ProductCostSummary = {
@@ -235,4 +237,47 @@ export type MonthlyTheorySummary = {
   theoryCostRate: number;
   actualCostAmount: number;
   differenceAmount: number;
+};
+
+export type EventPlan = {
+  id: string;
+  name: string;
+  date: string;
+  memo: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type EventPlanItem = {
+  id: string;
+  eventPlanId: string;
+  productId: string;
+  plannedQuantity: number;
+  sellingPrice: number;
+  memo: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type EventSimulationRow = {
+  product: Product;
+  plannedQuantity: number;
+  sellingPrice: number;
+  salesAmount: number;
+  currentUnitCost: number;
+  simulatedUnitCost: number;
+  currentGrossProfit: number;
+  simulatedGrossProfit: number;
+  profitDecrease: number;
+};
+
+export type EventSimulationSummary = {
+  eventPlan: EventPlan | null;
+  rows: EventSimulationRow[];
+  totalSalesAmount: number;
+  totalCurrentCost: number;
+  totalSimulatedCost: number;
+  totalCurrentGrossProfit: number;
+  totalSimulatedGrossProfit: number;
+  totalProfitDecrease: number;
 };

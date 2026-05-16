@@ -145,4 +145,12 @@ export const sampleData: AppData = {
     { id: "actual-flour", month: "2026-05", supplier: "東京製粉", amount: 58000, memo: "サンプル実仕入", createdAt: now, updatedAt: now },
     { id: "actual-packaging", month: "2026-05", supplier: "包材センター", amount: 42000, memo: "サンプル実仕入", createdAt: now, updatedAt: now },
   ],
+  eventPlans: [
+    { id: "event-christmas-2026", name: "クリスマス2026", date: "2026-12-24", memo: "予約販売の原価シミュレーション", createdAt: now, updatedAt: now },
+  ],
+  eventPlanItems: [
+    { id: "event-item-shortcake", eventPlanId: "event-christmas-2026", productId: "prd-shortcake", plannedQuantity: 300, sellingPrice: 680, memo: "クリスマス苺ショート相当", createdAt: now, updatedAt: now },
+    { id: "event-item-roll", eventPlanId: "event-christmas-2026", productId: "prd-roll", plannedQuantity: 120, sellingPrice: 1380, memo: "予約ロール", createdAt: now, updatedAt: now },
+    { id: "event-item-gift", eventPlanId: "event-christmas-2026", productId: "prd-gift", plannedQuantity: 180, sellingPrice: 2200, memo: "焼き菓子ギフト", createdAt: now, updatedAt: now },
+  ],
 };
