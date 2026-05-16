@@ -179,27 +179,6 @@ const pageTones: Record<PageNavKey, { navActive: string; navIdle: string; topCar
     mark: "bg-cyan-500",
   },
 };
-const pageIcons: Record<PageNavKey, string> = {
-  top: "⌂",
-  help: "?",
-  ingredient: "+",
-  product: "□",
-  recipe: "↘",
-  cost: "¥",
-  nutrition: "N",
-  allergen: "!",
-  production: "×",
-  order: "≡",
-  waste: "-",
-  monthly: "Σ",
-  event: "*",
-  labor: "h",
-  set: "▣",
-  impact: "↑",
-  label: "T",
-  csv: "CSV",
-  master: "M",
-};
 type StoreAccount = {
   id: string;
   pin: string;
@@ -361,6 +340,37 @@ function ingredientOptionLabel(ingredient: Ingredient) {
 
 function pageTone(pageKey: PageNavKey) {
   return pageTones[pageKey];
+}
+
+function NavPictogram({ pageKey }: { pageKey: PageNavKey }) {
+  const common = "fill-none stroke-current stroke-[2.2] stroke-linecap-round stroke-linejoin-round";
+  const icons: Record<PageNavKey, React.ReactNode> = {
+    top: <><path className={common} d="M4 11 12 4l8 7" /><path className={common} d="M6.5 10.5V20h11v-9.5" /><path className={common} d="M10 20v-5h4v5" /></>,
+    help: <><circle className={common} cx="12" cy="12" r="9" /><path className={common} d="M9.5 9a2.6 2.6 0 0 1 5 1.1c0 2.4-2.5 2.2-2.5 4.4" /><path className={common} d="M12 18h.01" /></>,
+    ingredient: <><path className={common} d="M9 3h6" /><path className={common} d="M10 3v5l-5 9a3 3 0 0 0 2.6 4.5h8.8A3 3 0 0 0 19 17l-5-9V3" /><path className={common} d="M8 15h8" /></>,
+    product: <><path className={common} d="M4 8h16v12H4z" /><path className={common} d="M7 8a5 5 0 0 1 10 0" /><path className={common} d="M8 12h8" /></>,
+    recipe: <><path className={common} d="M7 4h10v17H7z" /><path className={common} d="M9 8h6M9 12h6M9 16h4" /><path className={common} d="M10 3h4" /></>,
+    cost: <><circle className={common} cx="12" cy="12" r="9" /><path className={common} d="M8 7l4 5 4-5M9 13h6M9 16h6" /></>,
+    nutrition: <><path className={common} d="M5 13c0-5 4-8 11-8 0 7-3 11-8 11-2 0-3-1-3-3Z" /><path className={common} d="M8 16c2-4 5-6 8-8" /></>,
+    allergen: <><path className={common} d="M12 3 22 20H2L12 3Z" /><path className={common} d="M12 9v5" /><path className={common} d="M12 18h.01" /></>,
+    production: <><path className={common} d="M4 18h16" /><path className={common} d="M7 18V9l5-4 5 4v9" /><path className={common} d="M9 13h6" /></>,
+    order: <><path className={common} d="M4 5h2l2 10h9l2-7H7" /><circle className={common} cx="10" cy="20" r="1" /><circle className={common} cx="17" cy="20" r="1" /></>,
+    waste: <><path className={common} d="M5 7h14" /><path className={common} d="M9 7V4h6v3" /><path className={common} d="M8 10v10h8V10" /><path className={common} d="M11 11v7M14 11v7" /></>,
+    monthly: <><path className={common} d="M4 20h16" /><path className={common} d="M6 16v-4M12 16V7M18 16v-8" /></>,
+    event: <><path className={common} d="M5 5h14v15H5z" /><path className={common} d="M8 3v4M16 3v4M5 10h14" /><path className={common} d="m12 13 1 2 2 .2-1.5 1.4.4 2.1-1.9-1-1.9 1 .4-2.1L9 15.2l2-.2 1-2Z" /></>,
+    labor: <><circle className={common} cx="12" cy="8" r="3" /><path className={common} d="M5 21c1-5 4-8 7-8s6 3 7 8" /><path className={common} d="M17 4h4v4" /></>,
+    set: <><path className={common} d="M4 7h7v7H4zM13 4h7v7h-7zM13 13h7v7h-7z" /><path className={common} d="M7.5 7V5M16.5 13v-2" /></>,
+    impact: <><path className={common} d="M4 18h16" /><path className={common} d="M7 15 12 9l3 3 4-6" /><path className={common} d="M16 6h3v3" /></>,
+    label: <><path className={common} d="M4 5h10l6 6-9 9-7-7V5Z" /><circle className={common} cx="9" cy="10" r="1" /></>,
+    csv: <><path className={common} d="M6 3h9l3 3v15H6z" /><path className={common} d="M15 3v4h4" /><path className={common} d="M8 14h8M8 17h8M8 11h4" /></>,
+    master: <><ellipse className={common} cx="12" cy="6" rx="7" ry="3" /><path className={common} d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6" /><path className={common} d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3" /></>,
+  };
+
+  return (
+    <svg aria-hidden="true" className="h-6 w-6" viewBox="0 0 24 24">
+      {icons[pageKey]}
+    </svg>
+  );
 }
 
 function isNutritionEmpty(ingredient: Ingredient) {
@@ -1960,10 +1970,10 @@ export function CostNutritionApp() {
               }`}
               onClick={() => setActivePage(page.key)}
             >
-              <span className={`flex h-7 min-w-7 items-center justify-center rounded-md border text-xs font-black ${
+              <span className={`flex h-9 min-w-9 items-center justify-center rounded-md border ${
                 activePage === page.key ? "border-white/70 bg-white/20 text-white" : "border-current bg-white/70"
               }`}>
-                {pageIcons[page.key]}
+                <NavPictogram pageKey={page.key} />
               </span>
               <span className="leading-tight">{page.label}</span>
             </button>
