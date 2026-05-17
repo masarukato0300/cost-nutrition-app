@@ -83,6 +83,7 @@ export const sampleData: AppData = {
     product({ id: "prd-french-toast", name: "フレンチトースト", isIntermediateMaterial: false, category: "カフェ", sellingPrice: 680, taxType: "税込", targetCostRate: 35, displayUnit: "1個あたり", yieldCount: 6, beforeBakeWeightGram: 900, afterBakeWeightGram: 820, weightPerPieceGram: 135 }),
     product({ id: "prd-gift", name: "焼き菓子ギフト", isIntermediateMaterial: false, category: "ギフト", sellingPrice: 2000, taxType: "税込", targetCostRate: 35, displayUnit: "1袋あたり", yieldCount: 1, beforeBakeWeightGram: 420, afterBakeWeightGram: 420, weightPerPieceGram: 420 }),
   ],
+  productCategories: ["プティガトー", "焼菓子", "ロール", "カフェ", "ギフト", "仕込み材料"],
   recipeItems: [
     recipe({ id: "rec-genoise-flour", productId: "int-genoise", ingredientId: "ing-flour", itemType: "ingredient", intermediateProductId: "", amountGram: 240 }),
     recipe({ id: "rec-genoise-sugar", productId: "int-genoise", ingredientId: "ing-sugar", itemType: "ingredient", intermediateProductId: "", amountGram: 240 }),

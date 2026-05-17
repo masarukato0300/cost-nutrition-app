@@ -52,6 +52,8 @@ const pages = [
   { key: "help", label: "使い方" },
   { key: "ingredient", label: "原材料登録" },
   { key: "product", label: "商品登録" },
+  { key: "productList", label: "商品一覧" },
+  { key: "productCategory", label: "商品カテゴリ" },
   { key: "recipe", label: "レシピ登録" },
   { key: "cost", label: "原価計算" },
   { key: "nutrition", label: "栄養成分計算" },
@@ -77,7 +79,7 @@ const navGroups = [
   { key: "costs", label: "原価・値上げ", description: "原価計算、値上げ、イベント、人件費", pages: ["cost", "impact", "event", "labor", "set"] },
   { key: "display", label: "表示・ラベル", description: "栄養成分、アレルゲン、ラベル", pages: ["nutrition", "allergen", "label"] },
   { key: "operation", label: "現場管理", description: "仕込み、発注、廃棄、月間原価", pages: ["production", "order", "waste", "monthly"] },
-  { key: "data", label: "データ管理", description: "原材料一覧、CSV出力", pages: ["master", "csv"] },
+  { key: "data", label: "データ管理", description: "商品一覧、カテゴリ、原材料一覧、CSV出力", pages: ["productList", "productCategory", "master", "csv"] },
 ] as const satisfies Array<{ key: string; label: string; description: string; pages: PageNavKey[] }>;
 type NavGroupKey = (typeof navGroups)[number]["key"];
 const pageTones: Record<PageNavKey, { navActive: string; navIdle: string; topCard: string; mark: string }> = {
@@ -104,6 +106,18 @@ const pageTones: Record<PageNavKey, { navActive: string; navIdle: string; topCar
     navIdle: "border-amber-500 bg-amber-50 text-amber-900 hover:bg-amber-100",
     topCard: "border-amber-100 bg-amber-50/70 hover:border-amber-400",
     mark: "bg-amber-500",
+  },
+  productList: {
+    navActive: "border-orange-700 bg-orange-500 text-white shadow-sm",
+    navIdle: "border-orange-500 bg-orange-50 text-orange-900 hover:bg-orange-100",
+    topCard: "border-orange-100 bg-orange-50/70 hover:border-orange-400",
+    mark: "bg-orange-500",
+  },
+  productCategory: {
+    navActive: "border-yellow-700 bg-yellow-500 text-white shadow-sm",
+    navIdle: "border-yellow-500 bg-yellow-50 text-yellow-900 hover:bg-yellow-100",
+    topCard: "border-yellow-100 bg-yellow-50/70 hover:border-yellow-400",
+    mark: "bg-yellow-500",
   },
   recipe: {
     navActive: "border-teal-700 bg-teal-600 text-white shadow-sm",
@@ -300,6 +314,10 @@ function normalizeData(parsed: AppData): AppData {
       packageUnit: ingredient.packageUnit || "g",
       gramPerUnit: ingredient.gramPerUnit ?? 1,
     })),
+    productCategories: Array.from(new Set([
+      ...(parsed.productCategories || []),
+      ...parsed.products.map((product) => product.category || (product.isIntermediateMaterial ? "仕込み材料" : "未分類")),
+    ].filter(Boolean))),
     recipeItems: parsed.recipeItems.map(normalizeRecipeItem),
     ingredientAliases: parsed.ingredientAliases || [],
     wasteRecords: parsed.wasteRecords || [],
@@ -376,6 +394,8 @@ function NavPictogram({ pageKey }: { pageKey: PageNavKey }) {
     help: <><circle className={common} cx="12" cy="12" r="9" /><path className={common} d="M9.5 9a2.6 2.6 0 0 1 5 1.1c0 2.4-2.5 2.2-2.5 4.4" /><path className={common} d="M12 18h.01" /></>,
     ingredient: <><path className={common} d="M9 3h6" /><path className={common} d="M10 3v5l-5 9a3 3 0 0 0 2.6 4.5h8.8A3 3 0 0 0 19 17l-5-9V3" /><path className={common} d="M8 15h8" /></>,
     product: <><path className={common} d="M4 8h16v12H4z" /><path className={common} d="M7 8a5 5 0 0 1 10 0" /><path className={common} d="M8 12h8" /></>,
+    productList: <><path className={common} d="M5 5h14" /><path className={common} d="M5 12h14" /><path className={common} d="M5 19h14" /><path className={common} d="M8 3v4M8 10v4M8 17v4" /></>,
+    productCategory: <><path className={common} d="M4 5h7v7H4zM13 5h7v7h-7zM4 14h7v5H4zM13 14h7v5h-7z" /></>,
     recipe: <><path className={common} d="M7 4h10v17H7z" /><path className={common} d="M9 8h6M9 12h6M9 16h4" /><path className={common} d="M10 3h4" /></>,
     cost: <><circle className={common} cx="12" cy="12" r="9" /><path className={common} d="M8 7l4 5 4-5M9 13h6M9 16h6" /></>,
     nutrition: <><path className={common} d="M5 13c0-5 4-8 11-8 0 7-3 11-8 11-2 0-3-1-3-3Z" /><path className={common} d="M8 16c2-4 5-6 8-8" /></>,
@@ -605,6 +625,8 @@ function topPageDescription(pageKey: PageKey) {
     help: "初めて使う方向けの操作ガイド",
     ingredient: "原材料、製品名、価格、栄養成分を登録",
     product: "商品名、売価、出来上がり個数を登録",
+    productList: "登録済み商品をカテゴリ別に確認",
+    productCategory: "商品カテゴリを追加・削除",
     recipe: "製品名から材料を選び、使用量を入力",
     cost: "材料原価と包材込み原価を確認",
     nutrition: "レシピから栄養成分表示を計算",
@@ -1129,6 +1151,8 @@ export function CostNutritionApp() {
   const [ingredientForm, setIngredientForm] = useState<Ingredient>(() => emptyIngredient());
   const [showIngredientUnitConversion, setShowIngredientUnitConversion] = useState(false);
   const [productForm, setProductForm] = useState<Product>(() => emptyProduct());
+  const [productCategoryForm, setProductCategoryForm] = useState("");
+  const [activeProductCategory, setActiveProductCategory] = useState("すべて");
   const [recipeProductName, setRecipeProductName] = useState("");
   const [recipeIngredientId, setRecipeIngredientId] = useState(data.ingredients[0]?.id ?? "");
   const [recipeProductIsIntermediate, setRecipeProductIsIntermediate] = useState(false);
@@ -1517,6 +1541,17 @@ export function CostNutritionApp() {
   const ingredientUnitCount = usesIngredientUnitConversion && ingredientForm.gramPerUnit
     ? Math.round((ingredientForm.packageAmountGram || 0) / ingredientForm.gramPerUnit)
     : 0;
+  const productCategoryOptions = useMemo(
+    () => Array.from(new Set([...(data.productCategories || []), ...data.products.map((product) => product.category || "未分類")].filter(Boolean))),
+    [data.productCategories, data.products],
+  );
+  const productCategoryFilterOptions = ["すべて", ...productCategoryOptions];
+  const filteredProductList = useMemo(
+    () => data.products
+      .filter((product) => activeProductCategory === "すべて" || (product.category || "未分類") === activeProductCategory)
+      .sort((a, b) => Number(a.isIntermediateMaterial) - Number(b.isIntermediateMaterial) || a.category.localeCompare(b.category, "ja") || a.name.localeCompare(b.name, "ja")),
+    [activeProductCategory, data.products],
+  );
   const productionPlanItems = useMemo(
     () => Object.entries(productionPlan).map(([productId, quantity]) => ({ productId, quantity: Number(quantity) || 0 })),
     [productionPlan],
@@ -1692,10 +1727,11 @@ export function CostNutritionApp() {
   function saveProduct() {
     if (!productForm.name.trim()) return;
     const isEdit = Boolean(productForm.id);
+    const category = productForm.category || (productForm.isIntermediateMaterial ? "仕込み材料" : productCategoryOptions[0] || "未分類");
     const product: Product = {
       ...productForm,
       isIntermediateMaterial: productForm.isIntermediateMaterial,
-      category: productForm.category || (productForm.isIntermediateMaterial ? "仕込み材料" : "未分類"),
+      category,
       status: productForm.status || "販売中",
       id: productForm.id || createId("prd"),
       createdAt: productForm.createdAt || now(),
@@ -1703,11 +1739,40 @@ export function CostNutritionApp() {
     };
     commit({
       ...data,
+      productCategories: Array.from(new Set([...(data.productCategories || []), category].filter(Boolean))),
       products: isEdit ? data.products.map((item) => (item.id === product.id ? product : item)) : [...data.products, product],
     });
     setProductForm(emptyProduct());
     setSelectedProductId(product.id);
     setRecipeProductName("");
+  }
+
+  function saveProductCategory() {
+    const category = productCategoryForm.trim();
+    if (!category) return;
+    commit({
+      ...data,
+      productCategories: Array.from(new Set([...(data.productCategories || []), category])),
+    });
+    setProductCategoryForm("");
+    setActiveProductCategory(category);
+  }
+
+  function deleteProductCategory(category: string) {
+    if (!confirm(`商品カテゴリ「${category}」を削除しますか？\nこのカテゴリの商品は「未分類」に変更されます。`)) return;
+    commit({
+      ...data,
+      productCategories: (data.productCategories || []).filter((item) => item !== category),
+      products: data.products.map((product) => product.category === category ? { ...product, category: "未分類", updatedAt: now() } : product),
+    });
+    if (activeProductCategory === category) setActiveProductCategory("すべて");
+    if (productForm.category === category) setProductForm({ ...productForm, category: "未分類" });
+  }
+
+  function editProductFromList(product: Product) {
+    setProductForm(product);
+    setSelectedProductId(product.id);
+    setActivePage("product");
   }
 
   function updateRecipeProductName(value: string) {
@@ -1732,7 +1797,7 @@ export function CostNutritionApp() {
       ...emptyProduct(),
       name,
       isIntermediateMaterial: recipeProductIsIntermediate,
-      category: recipeProductIsIntermediate ? "仕込み材料" : productForm.category || "未分類",
+      category: recipeProductIsIntermediate ? "仕込み材料" : productForm.category || productCategoryOptions[0] || "未分類",
       id: createId("prd"),
       sellingPrice: productForm.sellingPrice || 0,
       taxType: productForm.taxType,
@@ -1748,7 +1813,11 @@ export function CostNutritionApp() {
       updatedAt: now(),
     };
 
-    commit({ ...data, products: [...data.products, product] });
+    commit({
+      ...data,
+      productCategories: Array.from(new Set([...(data.productCategories || []), product.category].filter(Boolean))),
+      products: [...data.products, product],
+    });
     setSelectedProductId(product.id);
     setProductForm(product);
     setRecipeProductIsIntermediate(false);
@@ -3193,7 +3262,12 @@ export function CostNutritionApp() {
         <Panel title="商品登録">
           <div className="grid gap-3 md:grid-cols-3">
             <TextInput label="商品名" value={productForm.name} onChange={(value) => setProductForm({ ...productForm, name: value })} />
-            <TextInput label="商品カテゴリ" value={productForm.category} onChange={(value) => setProductForm({ ...productForm, category: value })} />
+            <SelectInput
+              label="商品カテゴリ"
+              value={productForm.category || productCategoryOptions[0] || ""}
+              options={productCategoryOptions.length > 0 ? productCategoryOptions : ["未分類"]}
+              onChange={(value) => setProductForm({ ...productForm, category: value })}
+            />
             <NumberInput label="販売価格" value={productForm.sellingPrice} onChange={(value) => setProductForm({ ...productForm, sellingPrice: value })} />
             <SelectInput label="税込/税抜" value={productForm.taxType} options={["税込", "税抜"]} onChange={(value) => setProductForm({ ...productForm, taxType: value as Product["taxType"] })} />
             <NumberInput label="目標原価率%" value={productForm.targetCostRate} onChange={(value) => setProductForm({ ...productForm, targetCostRate: value })} />
@@ -3207,6 +3281,12 @@ export function CostNutritionApp() {
           <button className="mt-3 rounded-md bg-teal-700 px-4 py-2 font-bold text-white" onClick={saveProduct}>
             商品を保存
           </button>
+          <button className="ml-2 mt-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-2 font-bold text-amber-900" onClick={() => setActivePage("productCategory")}>
+            商品カテゴリを管理
+          </button>
+          <button className="ml-2 mt-3 rounded-md border border-orange-300 bg-orange-50 px-4 py-2 font-bold text-orange-900" onClick={() => setActivePage("productList")}>
+            商品一覧を見る
+          </button>
           <label className="mt-3 flex w-fit items-center gap-2 rounded-md border border-neutral-200 bg-white px-3 py-2 font-bold text-neutral-700">
             <input
               type="checkbox"
@@ -3215,6 +3295,98 @@ export function CostNutritionApp() {
             />
             中間材料として使う
           </label>
+        </Panel>
+      )}
+
+      {activePage === "productCategory" && (
+        <Panel title="商品カテゴリ">
+          <div className="grid gap-3 md:grid-cols-[1fr_160px]">
+            <TextInput label="新しい商品カテゴリ" value={productCategoryForm} onChange={setProductCategoryForm} onEnter={saveProductCategory} />
+            <button className="self-end rounded-md bg-yellow-600 px-4 py-2 font-bold text-white" onClick={saveProductCategory}>
+              カテゴリ追加
+            </button>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {productCategoryOptions.map((category) => (
+              <div key={category} className="flex items-center gap-2 rounded-md border border-yellow-200 bg-yellow-50 px-3 py-2">
+                <span className="font-black text-yellow-950">{category}</span>
+                <span className="text-xs font-bold text-yellow-800">
+                  {data.products.filter((product) => product.category === category).length}件
+                </span>
+                <button className="rounded bg-white px-2 py-1 text-xs font-bold text-red-700" onClick={() => deleteProductCategory(category)}>
+                  削除
+                </button>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-xs font-bold text-neutral-500">
+            商品登録では、ここで作成したカテゴリをプルダウンから選びます。
+          </p>
+        </Panel>
+      )}
+
+      {activePage === "productList" && (
+        <Panel title="商品一覧">
+          <div className="flex flex-wrap gap-2">
+            {productCategoryFilterOptions.map((category) => (
+              <button
+                key={category}
+                className={`rounded-md border px-3 py-2 text-sm font-black ${
+                  activeProductCategory === category
+                    ? "border-orange-600 bg-orange-500 text-white"
+                    : "border-orange-200 bg-orange-50 text-orange-900"
+                }`}
+                onClick={() => setActiveProductCategory(category)}
+              >
+                {category}
+              </button>
+            ))}
+          </div>
+          <div className="mt-4 overflow-x-auto rounded-md border border-neutral-200 bg-white">
+            <table className="w-full min-w-[760px] text-left text-sm">
+              <thead className="bg-orange-50 text-orange-950">
+                <tr>
+                  <th className="p-3">商品名</th>
+                  <th className="p-3">カテゴリ</th>
+                  <th className="p-3 text-right">販売価格</th>
+                  <th className="p-3 text-right">原価/個</th>
+                  <th className="p-3 text-right">原価率</th>
+                  <th className="p-3">状態</th>
+                  <th className="p-3"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredProductList.map((product) => {
+                  const summary = calculateProductCost(product, data.ingredients, data.recipeItems, data.products);
+                  return (
+                    <tr key={product.id} className="border-t border-neutral-200">
+                      <td className="p-3 font-black">
+                        {product.name}
+                        {product.isIntermediateMaterial && <span className="ml-2 rounded bg-teal-50 px-2 py-1 text-xs font-bold text-teal-800">中間材料</span>}
+                      </td>
+                      <td className="p-3">{product.category || "未分類"}</td>
+                      <td className="p-3 text-right">{yen(product.sellingPrice)}</td>
+                      <td className="p-3 text-right">{yen(summary.costPerPiece)}</td>
+                      <td className={`p-3 text-right font-black ${summary.costRate >= 40 ? "text-red-700" : summary.costRate >= 35 ? "text-amber-700" : "text-neutral-800"}`}>
+                        {number(summary.costRate)}%
+                      </td>
+                      <td className="p-3">{product.status}</td>
+                      <td className="p-3 text-right">
+                        <button className="rounded-md bg-orange-600 px-3 py-2 text-xs font-bold text-white" onClick={() => editProductFromList(product)}>
+                          編集
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {filteredProductList.length === 0 && (
+            <p className="mt-3 rounded-md border border-neutral-200 bg-neutral-50 p-3 text-sm font-bold text-neutral-600">
+              このカテゴリの商品はまだありません。
+            </p>
+          )}
         </Panel>
       )}
 

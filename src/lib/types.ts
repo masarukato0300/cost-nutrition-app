@@ -112,6 +112,7 @@ export type IngredientAlias = {
 export type AppData = {
   ingredients: Ingredient[];
   products: Product[];
+  productCategories: string[];
   recipeItems: RecipeItem[];
   priceHistories: PriceHistory[];
   ingredientAliases: IngredientAlias[];
