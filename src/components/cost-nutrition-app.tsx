@@ -2060,6 +2060,16 @@ export function CostNutritionApp() {
       recipeItems: data.recipeItems.map((item) => {
         if (item.id !== recipeItemId) return item;
         const ingredient = data.ingredients.find((candidate) => candidate.id === item.ingredientId);
+        const pieceCount = patch.usedCount ?? item.usedCount ?? 1;
+        const pieceUnitGram = ingredient?.gramPerUnit && ingredient.gramPerUnit > 1 ? ingredient.gramPerUnit : 1;
+        const piecePatch = patch.usageType === "piece" || (item.usageType === "piece" && patch.usedCount !== undefined)
+          ? {
+            usedCount: pieceCount,
+            baseAmountGram: pieceUnitGram,
+            totalCount: 1,
+            amountGram: pieceCount * pieceUnitGram,
+          }
+          : {};
         const countPatch = patch.usageType === "count" && ingredient && (ingredient.gramPerUnit || 1) > 1
           ? {
             baseAmountGram: ingredient.packageAmountGram,
@@ -2067,7 +2077,7 @@ export function CostNutritionApp() {
             usedCount: patch.usedCount || item.usedCount || 1,
           }
           : {};
-        const nextItem = normalizeRecipeItem({ ...item, ...patch, ...countPatch, updatedAt: now() });
+        const nextItem = normalizeRecipeItem({ ...item, ...patch, ...piecePatch, ...countPatch, updatedAt: now() });
         return nextItem;
       }),
     });
@@ -5096,6 +5106,7 @@ function RecipeTable({
                       onChange={(event) => onItemChange(item.id, { usageType: event.target.value as RecipeUsageType })}
                     >
                       <option value="gram">g</option>
+                      <option value="piece">個</option>
                       <option value="count">何個中何個</option>
                       <option value="fraction">何分の1</option>
                     </select>
@@ -5149,6 +5160,28 @@ function RecipeAmountEditor({
   onAmountChange: (recipeItemId: string, amountGram: number) => void;
   onItemChange?: (recipeItemId: string, patch: Partial<RecipeItem>) => void;
 }) {
+  if (item.usageType === "piece") {
+    const unitGram = ingredient?.gramPerUnit && ingredient.gramPerUnit > 1 ? ingredient.gramPerUnit : 1;
+    return (
+      <div className="grid justify-items-end gap-1">
+        {ingredient && (
+          <span className="text-[11px] font-bold text-teal-700">
+            1個={number(unitGram)}{unitGram > 1 ? "g" : ingredientUnitLabel(ingredient)}
+          </span>
+        )}
+        <SmallNumberInput
+          label="個"
+          value={item.usedCount}
+          onChange={(value) => onItemChange?.(item.id, {
+            usedCount: value,
+            amountGram: value * unitGram,
+            baseAmountGram: unitGram,
+          })}
+        />
+      </div>
+    );
+  }
+
   if (item.usageType === "count") {
     const unitGram = ingredient?.gramPerUnit || 0;
     return (
@@ -5199,12 +5232,14 @@ function SmallNumberInput({ label, value, onChange }: { label: string; value: nu
 }
 
 function usageTypeLabel(usageType: RecipeUsageType) {
+  if (usageType === "piece") return "個";
   if (usageType === "count") return "何個中何個";
   if (usageType === "fraction") return "何分の1";
   return "g";
 }
 
 function usageDescription(item: RecipeItem) {
+  if (item.usageType === "piece") return `${number(item.usedCount, 0)}個`;
   if (item.usageType === "count") return `${number(item.baseAmountGram)}の${number(item.totalCount, 0)}個中${number(item.usedCount, 0)}個`;
   if (item.usageType === "fraction") return `${number(item.baseAmountGram)}の1/${number(item.fractionDenominator, 0)}`;
   return number(item.amountGram);

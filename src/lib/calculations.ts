@@ -54,6 +54,9 @@ export function ingredientCost(ingredient: Ingredient, amount: number): number {
 
 export function recipeItemAmountGram(item: RecipeItem): number {
   const lossMultiplier = 1 + Math.max(item.lossRate || 0, 0) / 100;
+  if (item.usageType === "piece") {
+    return item.amountGram * lossMultiplier;
+  }
   if (item.usageType === "count") {
     if (!item.totalCount) return 0;
     return ((item.baseAmountGram * item.usedCount) / item.totalCount) * lossMultiplier;

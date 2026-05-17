@@ -1,7 +1,7 @@
 export type TaxType = "税込" | "税抜";
 export type DisplayUnit = "1個あたり" | "1gあたり" | "100gあたり" | "1袋あたり" | "1本あたり" | "1台あたり";
 export type MaterialType = "PURCHASED_INGREDIENT" | "INTERMEDIATE" | "PRODUCT" | "PACKAGING";
-export type RecipeUsageType = "gram" | "count" | "fraction";
+export type RecipeUsageType = "gram" | "piece" | "count" | "fraction";
 export type RecipeItemType = "ingredient" | "intermediate";
 export type ProductStatus = "販売中" | "休止中";
 export type PriceHistorySourceType = "manual" | "ocr" | "csv";
