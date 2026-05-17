@@ -839,7 +839,7 @@ function ingredientFromVisionResult(result: IngredientVisionOcrResult, base: Ing
     name: exactName || parsed.name,
     packageName: exactPackageName || parsed.packageName || exactName || parsed.name,
     supplier: exactSupplier || parsed.supplier,
-    labelName: base.labelName || exactName || parsed.labelName,
+    labelName: exactName || base.labelName || parsed.labelName,
     memo: [base.memo, result.memo, `AI OCR信頼度: ${result.confidence}`].filter(Boolean).join("\n"),
   };
 }
@@ -963,8 +963,10 @@ export function CostNutritionApp() {
   const [ingredientOcrCandidate, setIngredientOcrCandidate] = useState<Ingredient | null>(null);
   const [ingredientOcrCandidates, setIngredientOcrCandidates] = useState<Ingredient[]>([]);
   const [ingredientOcrCandidateIndex, setIngredientOcrCandidateIndex] = useState(0);
+  const [selectedOcrDuplicateIngredientId, setSelectedOcrDuplicateIngredientId] = useState("");
   const [nutritionSearchText, setNutritionSearchText] = useState("");
   const [selectedStandardNutritionId, setSelectedStandardNutritionId] = useState("");
+  const [appliedStandardNutritionId, setAppliedStandardNutritionId] = useState("");
   const [activeWasteCategory, setActiveWasteCategory] = useState<WasteCategoryKey>("baked");
   const [wasteDate, setWasteDate] = useState(todayDate());
   const [wasteReason, setWasteReason] = useState<WasteReason>("売れ残り");
@@ -1117,11 +1119,16 @@ export function CostNutritionApp() {
       const candidates = validResults.map((item) => {
         const candidate = ingredientFromVisionResult({ ...item, rawText }, ingredientForm);
         const learnedAlias = findIngredientAlias(candidate, data.ingredientAliases);
-        return learnedAlias ? applyIngredientAlias(candidate, learnedAlias) : candidate;
+        const reflectedCandidate = learnedAlias ? applyIngredientAlias(candidate, learnedAlias) : candidate;
+        return {
+          ...reflectedCandidate,
+          labelName: reflectedCandidate.name || candidate.name || reflectedCandidate.labelName,
+        };
       });
       setIngredientOcrCandidates(candidates);
       setIngredientOcrCandidateIndex(0);
       setIngredientOcrCandidate(candidates[0]);
+      setSelectedOcrDuplicateIngredientId("");
       setIngredientOcrStatus(`読み取り完了。${candidates.length}件の候補があります。確認画面で1件ずつ反映してください。`);
     } catch (error) {
       setIngredientOcrStatus(error instanceof Error ? error.message : "OCR読み取りに失敗しました。");
@@ -1137,13 +1144,36 @@ export function CostNutritionApp() {
 
   function applyIngredientOcrCandidate() {
     if (!ingredientOcrCandidate) return;
-    setIngredientForm(ingredientOcrCandidate);
+    const reflectedIngredient = selectedOcrDuplicateIngredient
+      ? {
+        ...selectedOcrDuplicateIngredient,
+        packageName: ingredientOcrCandidate.packageName || selectedOcrDuplicateIngredient.packageName,
+        supplier: ingredientOcrCandidate.supplier || selectedOcrDuplicateIngredient.supplier,
+        packageAmountGram: ingredientOcrCandidate.packageAmountGram || selectedOcrDuplicateIngredient.packageAmountGram,
+        packageUnit: ingredientOcrCandidate.packageUnit || selectedOcrDuplicateIngredient.packageUnit,
+        gramPerUnit: ingredientOcrCandidate.gramPerUnit || selectedOcrDuplicateIngredient.gramPerUnit,
+        price: ingredientOcrCandidate.price || selectedOcrDuplicateIngredient.price,
+        labelName: selectedOcrDuplicateIngredient.labelName || selectedOcrDuplicateIngredient.name,
+        memo: [
+          selectedOcrDuplicateIngredient.memo,
+          ingredientOcrCandidate.memo,
+          `AI OCR重複候補から反映: ${ingredientOptionLabel(selectedOcrDuplicateIngredient)}`,
+        ].filter(Boolean).join("\n"),
+        updatedAt: now(),
+      }
+      : ingredientOcrCandidate;
+    setIngredientForm(reflectedIngredient);
+    setAppliedStandardNutritionId("");
+    setSelectedStandardNutritionId("");
     const nextIndex = ingredientOcrCandidateIndex + 1;
     setIngredientOcrCandidateIndex(nextIndex);
+    setSelectedOcrDuplicateIngredientId("");
     setIngredientOcrCandidate(null);
     setIngredientOcrStatus(
       nextIndex < ingredientOcrCandidates.length
-        ? `${ingredientOcrCandidateIndex + 1}件目をフォームへ反映しました。保存すると次の商品を自動表示します。`
+        ? selectedOcrDuplicateIngredient
+          ? `${ingredientOcrCandidateIndex + 1}件目を登録済み候補へ反映しました。保存すると既存データを更新します。`
+          : `${ingredientOcrCandidateIndex + 1}件目をフォームへ反映しました。保存すると次の商品を自動表示します。`
         : "最後の候補をフォームへ反映しました。内容を確認して保存してください。",
     );
   }
@@ -1154,6 +1184,7 @@ export function CostNutritionApp() {
     window.setTimeout(() => {
       setIngredientOcrCandidateIndex(nextIndex);
       setIngredientOcrCandidate(nextCandidate);
+      setSelectedOcrDuplicateIngredientId("");
       setIngredientOcrStatus(`${nextIndex + 1}件目を確認してください。`);
     }, 250);
   }
@@ -1161,6 +1192,7 @@ export function CostNutritionApp() {
   function skipIngredientOcrCandidate() {
     const nextIndex = ingredientOcrCandidateIndex + 1;
     setIngredientOcrCandidateIndex(nextIndex);
+    setSelectedOcrDuplicateIngredientId("");
     setIngredientOcrCandidate(null);
     setIngredientOcrStatus(
       nextIndex < ingredientOcrCandidates.length
@@ -1209,6 +1241,7 @@ export function CostNutritionApp() {
     () => ingredientOcrCandidate ? findDuplicateIngredients(ingredientOcrCandidate, data.ingredients).slice(0, 3) : [],
     [data.ingredients, ingredientOcrCandidate],
   );
+  const selectedOcrDuplicateIngredient = possibleOcrDuplicateIngredients.find((ingredient) => ingredient.id === selectedOcrDuplicateIngredientId) ?? null;
   const learnedIngredientAlias = useMemo(
     () => findIngredientAlias(ingredientForm, data.ingredientAliases),
     [data.ingredientAliases, ingredientForm],
@@ -1218,6 +1251,7 @@ export function CostNutritionApp() {
     [ingredientForm.name, ingredientForm.packageName, nutritionSearchText],
   );
   const selectedStandardNutrition = standardNutritionFoods.find((food) => food.id === selectedStandardNutritionId) ?? standardNutritionMatches[0];
+  const appliedStandardNutrition = standardNutritionFoods.find((food) => food.id === appliedStandardNutritionId) ?? null;
   const isPackagingForm = ingredientForm.type === "PACKAGING";
   const productionPlanItems = useMemo(
     () => Object.entries(productionPlan).map(([productId, quantity]) => ({ productId, quantity: Number(quantity) || 0 })),
@@ -1349,6 +1383,8 @@ export function CostNutritionApp() {
       ingredientAliases: nextAliases,
     });
     setIngredientForm(emptyIngredient());
+    setAppliedStandardNutritionId("");
+    setSelectedStandardNutritionId("");
     if (!recipeIngredientId) setRecipeIngredientId(ingredient.id);
     if (ingredientOcrCandidateIndex < ingredientOcrCandidates.length) {
       setIngredientOcrStatus("保存しました。次の商品を表示します。");
@@ -1358,6 +1394,8 @@ export function CostNutritionApp() {
 
   function skipIngredientForm() {
     setIngredientForm(emptyIngredient());
+    setAppliedStandardNutritionId("");
+    setSelectedStandardNutritionId("");
     if (ingredientOcrCandidateIndex < ingredientOcrCandidates.length) {
       setIngredientOcrStatus("この候補をスキップしました。次の候補を確認できます。");
     } else {
@@ -1367,6 +1405,8 @@ export function CostNutritionApp() {
 
   function applyStandardNutrition(food = selectedStandardNutrition) {
     if (!food) return;
+    setSelectedStandardNutritionId(food.id);
+    setAppliedStandardNutritionId(food.id);
     setIngredientForm({
       ...ingredientForm,
       caloriesPer100g: food.caloriesPer100g,
@@ -2370,11 +2410,38 @@ export function CostNutritionApp() {
               <dt className="font-bold text-neutral-500">仕入価格</dt><dd>{yen(ingredientOcrCandidate.price)}</dd>
             </dl>
             {possibleOcrDuplicateIngredients.length > 0 && (
-              <div className="mt-4 animate-pulse rounded-md border-2 border-red-500 bg-red-50 p-3 text-sm font-black text-red-800">
-                <p className="text-base">重複してる可能性があります</p>
-                <p className="mt-1 text-xs">
-                  登録済み: {possibleOcrDuplicateIngredients.map((ingredient) => ingredientOptionLabel(ingredient)).join(" / ")}
-                </p>
+              <div className="mt-4 rounded-md border-2 border-red-500 bg-red-50 p-3 text-sm text-red-900">
+                <p className="animate-pulse text-base font-black">重複してる可能性があります</p>
+                <p className="mt-1 text-xs font-bold">同じ商品に近い登録済みデータが見つかりました。更新したい候補があればチェックしてください。</p>
+                <div className="mt-3 grid gap-2">
+                  {possibleOcrDuplicateIngredients.map((ingredient) => (
+                    <label
+                      key={ingredient.id}
+                      className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 ${
+                        selectedOcrDuplicateIngredientId === ingredient.id ? "border-red-500 bg-white" : "border-red-200 bg-red-50"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="mt-1 h-5 w-5"
+                        checked={selectedOcrDuplicateIngredientId === ingredient.id}
+                        onChange={(event) => setSelectedOcrDuplicateIngredientId(event.target.checked ? ingredient.id : "")}
+                      />
+                      <span>
+                        <span className="block font-black">{ingredient.packageName || ingredient.name}</span>
+                        <span className="mt-1 block text-xs font-bold text-red-800">
+                          原材料名: {ingredient.name || "-"} / 仕入先: {ingredient.supplier || "-"} / 内容量:
+                          {number(ingredient.packageAmountGram)}{ingredient.packageUnit} / 現在価格: {yen(ingredient.price)}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                {selectedOcrDuplicateIngredient && (
+                  <p className="mt-2 rounded-md bg-white px-3 py-2 text-xs font-black text-red-800">
+                    選択中: {ingredientOptionLabel(selectedOcrDuplicateIngredient)}。反映後に保存すると、この登録済みデータを更新します。
+                  </p>
+                )}
               </div>
             )}
             <div className="mt-4 flex flex-wrap justify-end gap-2">
@@ -2455,7 +2522,17 @@ export function CostNutritionApp() {
           <section className="rounded-md border border-neutral-200 bg-white p-4">
             <h3 className="font-black text-neutral-900">基本情報</h3>
             <div className="mt-3 grid gap-3 md:grid-cols-2">
-              <TextInput label="原材料名" value={ingredientForm.name} onChange={(value) => setIngredientForm({ ...ingredientForm, name: value })} />
+              <TextInput
+                label="原材料名"
+                value={ingredientForm.name}
+                onChange={(value) =>
+                  setIngredientForm({
+                    ...ingredientForm,
+                    name: value,
+                    labelName: value,
+                  })
+                }
+              />
               <TextInput label="製品名" value={ingredientForm.packageName} onChange={(value) => setIngredientForm({ ...ingredientForm, packageName: value })} />
               <SelectInput
                 label="材料タイプ"
@@ -2536,6 +2613,7 @@ export function CostNutritionApp() {
                   onChange={(value) => {
                     setNutritionSearchText(value);
                     setSelectedStandardNutritionId("");
+                    setAppliedStandardNutritionId("");
                   }}
                 />
                 <SelectInput
@@ -2543,7 +2621,10 @@ export function CostNutritionApp() {
                   value={selectedStandardNutrition?.id ?? ""}
                   options={standardNutritionMatches.map((food) => food.id)}
                   optionLabels={Object.fromEntries(standardNutritionMatches.map((food) => [food.id, `${food.name}（${food.foodNumber}）`]))}
-                  onChange={setSelectedStandardNutritionId}
+                  onChange={(value) => {
+                    setSelectedStandardNutritionId(value);
+                    setAppliedStandardNutritionId("");
+                  }}
                 />
                 <button
                   className="self-end rounded-md bg-sky-700 px-4 py-2 font-bold text-white disabled:bg-neutral-300"
@@ -2553,6 +2634,12 @@ export function CostNutritionApp() {
                   栄養を反映
                 </button>
               </div>
+              {appliedStandardNutrition && (
+                <div className="mt-3 rounded-md border border-sky-300 bg-white px-3 py-2 text-xs font-black text-sky-950">
+                  現在、この原材料には「{appliedStandardNutrition.name}（{appliedStandardNutrition.foodNumber}）」の栄養成分を反映しています。
+                  もう一度「栄養を反映」を押すと、同じ候補の数値を再反映します。
+                </div>
+              )}
               {selectedStandardNutrition && (
                 <p className="mt-2 text-xs font-bold text-sky-950">
                   {selectedStandardNutrition.name}: {number(selectedStandardNutrition.caloriesPer100g, 0)}kcal /
