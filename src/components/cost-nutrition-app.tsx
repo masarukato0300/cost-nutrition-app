@@ -16,6 +16,7 @@ import {
   calculateProductLaborCost,
   calculateSetProductCost,
   hasNutrition,
+  isPackagingIngredient,
   ingredientUnitLabel,
   amountToGram,
   pricePerGram,
@@ -1617,6 +1618,16 @@ export function CostNutritionApp() {
   const productFormRecommendedPrice = productFormCostSummary && productForm.targetCostRate
     ? productFormCostSummary.costForDisplayUnit / (productForm.targetCostRate / 100)
     : 0;
+  const packagingIngredients = useMemo(
+    () => data.ingredients.filter((ingredient) => isPackagingIngredient(ingredient)),
+    [data.ingredients],
+  );
+  const productFormPackagingRows = useMemo(
+    () => productForm.id
+      ? data.recipeItems.filter((item) => item.productId === productForm.id && data.ingredients.some((ingredient) => ingredient.id === item.ingredientId && isPackagingIngredient(ingredient)))
+      : [],
+    [data.ingredients, data.recipeItems, productForm.id],
+  );
   const productionPlanItems = useMemo(
     () => Object.entries(productionPlan).map(([productId, quantity]) => ({ productId, quantity: Number(quantity) || 0 })),
     [productionPlan],
@@ -2103,6 +2114,46 @@ export function CostNutritionApp() {
       else addRecipeItemForIngredient(payload.id, 0);
     } catch {
       addRecipeItemForIngredient(raw, 0);
+    }
+  }
+
+  function addPackagingItemToProduct(ingredientId: string) {
+    if (!productForm.id) {
+      alert("先に商品を保存してから、包材を追加してください。");
+      return;
+    }
+    const ingredient = data.ingredients.find((item) => item.id === ingredientId);
+    if (!ingredient || !isPackagingIngredient(ingredient)) return;
+    const unitAmount = ingredient.gramPerUnit && ingredient.gramPerUnit > 1 ? ingredient.gramPerUnit : 1;
+    const item: RecipeItem = {
+      id: createId("rec"),
+      productId: productForm.id,
+      ingredientId,
+      itemType: "ingredient",
+      intermediateProductId: "",
+      usageType: "piece",
+      amountGram: unitAmount,
+      baseAmountGram: unitAmount,
+      usedCount: 1,
+      totalCount: 1,
+      fractionDenominator: 1,
+      lossRate: 0,
+      memo: "商品登録画面で追加した包材",
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    commit({ ...data, recipeItems: [...data.recipeItems, item] });
+  }
+
+  function dropProductPackaging(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const raw = event.dataTransfer.getData("application/json") || event.dataTransfer.getData("text/plain");
+    if (!raw) return;
+    try {
+      const payload = JSON.parse(raw) as { type: "packaging" | "ingredient"; id: string };
+      addPackagingItemToProduct(payload.id);
+    } catch {
+      addPackagingItemToProduct(raw);
     }
   }
 
@@ -3536,6 +3587,85 @@ export function CostNutritionApp() {
               ) : (
                 <div className="mt-3 rounded-md border border-violet-200 bg-white p-3 text-sm font-bold text-violet-900">
                   商品を保存してからレシピ登録すると、ここに原価の目安が表示されます。
+                </div>
+              )}
+            </section>
+
+            <section className="rounded-md border border-rose-200 bg-rose-50 p-4 lg:col-span-2">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-black text-rose-950">5. 包材原価</h3>
+                  <p className="mt-1 text-xs font-bold text-rose-900">
+                    包材パレットからドラッグ＆ドロップ、またはタップで追加できます。追加した包材は包材込み原価に入ります。
+                  </p>
+                </div>
+                <button className="rounded-md border border-rose-300 bg-white px-3 py-2 text-xs font-black text-rose-800" onClick={() => setActivePage("ingredient")}>
+                  包材を登録する
+                </button>
+              </div>
+              {productForm.id ? (
+                <div className="mt-3 grid gap-3 lg:grid-cols-[280px_1fr]">
+                  <aside className="rounded-md border border-rose-200 bg-white p-3">
+                    <h4 className="font-black text-rose-950">包材パレット</h4>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      {packagingIngredients.map((ingredient) => (
+                        <button
+                          key={ingredient.id}
+                          draggable
+                          className="min-h-20 rounded-md border border-rose-200 bg-rose-50 p-2 text-left"
+                          onClick={() => addPackagingItemToProduct(ingredient.id)}
+                          onDragStart={(event) => {
+                            event.dataTransfer.setData("application/json", JSON.stringify({ type: "packaging", id: ingredient.id }));
+                            event.dataTransfer.effectAllowed = "copy";
+                          }}
+                        >
+                          <span className="block font-black text-rose-950">{ingredient.packageName || ingredient.name}</span>
+                          {ingredient.packageName && ingredient.packageName !== ingredient.name && (
+                            <span className="block text-[11px] font-bold text-rose-700">{ingredient.name}</span>
+                          )}
+                          <span className="mt-1 block text-xs font-bold text-neutral-500">
+                            {yenForSmallCost(pricePerGram(ingredient))} / {ingredientUnitLabel(ingredient)}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                    {packagingIngredients.length === 0 && (
+                      <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 p-3 text-xs font-bold text-rose-900">
+                        包材タイプの原材料がまだありません。原材料登録で材料タイプを「包材」にして登録してください。
+                      </p>
+                    )}
+                  </aside>
+                  <div
+                    className="min-h-44 rounded-md border-2 border-dashed border-rose-300 bg-white p-3"
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={dropProductPackaging}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h4 className="font-black text-rose-950">この商品に使う包材</h4>
+                      <span className="rounded bg-rose-100 px-2 py-1 text-xs font-black text-rose-800">
+                        包材原価/個 {productFormCostSummary ? yenForSmallCost(productFormCostSummary.packagingCostPerPiece) : yenForSmallCost(0)}
+                      </span>
+                    </div>
+                    {productFormPackagingRows.length > 0 ? (
+                      <RecipeTable
+                        rows={productFormPackagingRows}
+                        ingredients={data.ingredients}
+                        products={data.products}
+                        recipeItems={data.recipeItems}
+                        onDelete={deleteRecipeItem}
+                        onAmountChange={updateRecipeItemAmount}
+                        onItemChange={updateRecipeItem}
+                      />
+                    ) : (
+                      <div className="mt-3 grid min-h-28 place-items-center rounded-md border border-rose-100 bg-rose-50 p-4 text-center text-sm font-bold text-rose-900">
+                        ここへ包材をドラッグ＆ドロップしてください。タップでも追加できます。
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-3 rounded-md border border-rose-200 bg-white p-3 text-sm font-bold text-rose-900">
+                  先に商品を保存すると、この画面で包材を追加できます。
                 </div>
               )}
             </section>
