@@ -1154,6 +1154,7 @@ export function CostNutritionApp() {
   const [productCategoryForm, setProductCategoryForm] = useState("");
   const [activeProductCategory, setActiveProductCategory] = useState("すべて");
   const [recipeProductName, setRecipeProductName] = useState("");
+  const [recipeProductSelectId, setRecipeProductSelectId] = useState("");
   const [recipeIngredientId, setRecipeIngredientId] = useState(data.ingredients[0]?.id ?? "");
   const [recipeProductIsIntermediate, setRecipeProductIsIntermediate] = useState(false);
   const [activeIngredientCategory, setActiveIngredientCategory] = useState("すべて");
@@ -1208,11 +1209,12 @@ export function CostNutritionApp() {
       const loadedStores = loadStores();
       const loadedStoreId = loadCurrentStoreId(loadedStores);
       const loadedData = loadData(loadedStoreId);
-      setStores(loadedStores);
+    setStores(loadedStores);
       setCurrentStoreId(loadedStoreId);
       setSwitchStoreId(loadedStoreId);
       setData(loadedData);
       setSelectedProductId(loadedData.products[0]?.id ?? "");
+      setRecipeProductSelectId("");
       setRecipeIngredientId(loadedData.ingredients[0]?.id ?? "");
       setImpactIngredientId(loadedData.ingredients[4]?.id ?? loadedData.ingredients[0]?.id ?? "");
       setImpactNewPrice(loadedData.ingredients[4]?.price + 100 || 0);
@@ -1236,6 +1238,7 @@ export function CostNutritionApp() {
     window.localStorage.setItem(currentStoreStorageKey, storeId);
     setData(nextData);
     setSelectedProductId(nextData.products[0]?.id ?? "");
+    setRecipeProductSelectId("");
     setRecipeIngredientId(nextData.ingredients[0]?.id ?? "");
     setImpactIngredientId(nextData.ingredients[4]?.id ?? nextData.ingredients[0]?.id ?? "");
     setImpactNewPrice(nextData.ingredients[4]?.price + 100 || 0);
@@ -1756,7 +1759,27 @@ export function CostNutritionApp() {
     });
     setProductForm(emptyProduct());
     setSelectedProductId(product.id);
+    setRecipeProductSelectId(product.id);
     setRecipeProductName("");
+  }
+
+  function deleteProductFromForm() {
+    if (!productForm.id) return;
+    const recipeUseCount = data.recipeItems.filter((item) => item.productId === productForm.id || item.intermediateProductId === productForm.id).length;
+    const message = recipeUseCount > 0
+      ? `${productForm.name} を削除しますか？\n\nこの商品は ${recipeUseCount} 件のレシピ行で使われています。削除すると関連するレシピ行も外れます。`
+      : `${productForm.name} を削除しますか？`;
+    if (!confirm(message)) return;
+    commit({
+      ...data,
+      products: data.products.filter((product) => product.id !== productForm.id),
+      recipeItems: data.recipeItems.filter((item) => item.productId !== productForm.id && item.intermediateProductId !== productForm.id),
+      setProductItems: data.setProductItems.filter((item) => item.setProductId !== productForm.id && item.childProductId !== productForm.id),
+    });
+    const nextProductId = data.products.find((product) => product.id !== productForm.id)?.id ?? "";
+    setSelectedProductId(nextProductId);
+    setRecipeProductSelectId("");
+    setProductForm(emptyProduct());
   }
 
   function saveProductCategory() {
@@ -1789,6 +1812,7 @@ export function CostNutritionApp() {
 
   function updateRecipeProductName(value: string) {
     setRecipeProductName(value);
+    if (value.trim()) setRecipeProductSelectId("");
     setProductForm((current) => ({ ...current, name: value, isIntermediateMaterial: recipeProductIsIntermediate }));
   }
 
@@ -1801,6 +1825,7 @@ export function CostNutritionApp() {
       setSelectedProductId(existingProduct.id);
       setProductForm(existingProduct);
       setRecipeProductIsIntermediate(existingProduct.isIntermediateMaterial);
+      setRecipeProductSelectId(existingProduct.id);
       setRecipeProductName("");
       return;
     }
@@ -1831,16 +1856,76 @@ export function CostNutritionApp() {
       products: [...data.products, product],
     });
     setSelectedProductId(product.id);
+    setRecipeProductSelectId(product.id);
     setProductForm(product);
     setRecipeProductIsIntermediate(false);
     setRecipeProductName("");
   }
 
+  function resolveRecipeTarget(nextRecipeItems: RecipeItem[]) {
+    const name = recipeProductName.trim();
+    if (!name) {
+      return {
+        productId: selectedProduct?.id ?? "",
+        products: data.products,
+        productCategories: data.productCategories,
+        recipeItems: nextRecipeItems,
+      };
+    }
+    const existingProduct = data.products.find((product) => product.name === name);
+    if (existingProduct) {
+      setSelectedProductId(existingProduct.id);
+      setRecipeProductSelectId(existingProduct.id);
+      setProductForm(existingProduct);
+      setRecipeProductIsIntermediate(existingProduct.isIntermediateMaterial);
+      setRecipeProductName("");
+      return {
+        productId: existingProduct.id,
+        products: data.products,
+        productCategories: data.productCategories,
+        recipeItems: nextRecipeItems,
+      };
+    }
+    const category = recipeProductIsIntermediate ? "仕込み材料" : productForm.category || productCategoryOptions[0] || "未分類";
+    const product: Product = {
+      ...emptyProduct(),
+      name,
+      isIntermediateMaterial: recipeProductIsIntermediate,
+      category,
+      id: createId("prd"),
+      sellingPrice: productForm.sellingPrice || 0,
+      taxType: productForm.taxType,
+      targetCostRate: productForm.targetCostRate || 32,
+      displayUnit: productForm.displayUnit,
+      yieldCount: productForm.yieldCount || 1,
+      beforeBakeWeightGram: productForm.beforeBakeWeightGram || 0,
+      afterBakeWeightGram: productForm.afterBakeWeightGram,
+      weightPerPieceGram: productForm.weightPerPieceGram || 0,
+      memo: productForm.memo,
+      status: productForm.status || "販売中",
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    setSelectedProductId(product.id);
+    setRecipeProductSelectId(product.id);
+    setProductForm(product);
+    setRecipeProductIsIntermediate(false);
+    setRecipeProductName("");
+    return {
+      productId: product.id,
+      products: [...data.products, product],
+      productCategories: Array.from(new Set([...(data.productCategories || []), category].filter(Boolean))),
+      recipeItems: nextRecipeItems,
+    };
+  }
+
   function addRecipeItemForIngredient(ingredientId: string, amountGram: number) {
-    if (!selectedProduct || !ingredientId) return;
+    if (!ingredientId) return;
+    const target = resolveRecipeTarget([]);
+    if (!target.productId) return;
     const item: RecipeItem = {
       id: createId("rec"),
-      productId: selectedProduct.id,
+      productId: target.productId,
       ingredientId,
       itemType: "ingredient",
       intermediateProductId: "",
@@ -1855,15 +1940,17 @@ export function CostNutritionApp() {
       createdAt: now(),
       updatedAt: now(),
     };
-    commit({ ...data, recipeItems: [...data.recipeItems, item] });
+    commit({ ...data, products: target.products, productCategories: target.productCategories, recipeItems: [...data.recipeItems, item] });
     setRecipeIngredientId(ingredientId);
   }
 
   function addRecipeItemForIntermediate(intermediateProductId: string, amountGram: number) {
-    if (!selectedProduct || !intermediateProductId || intermediateProductId === selectedProduct.id) return;
+    if (!intermediateProductId || intermediateProductId === selectedProduct?.id) return;
+    const target = resolveRecipeTarget([]);
+    if (!target.productId || intermediateProductId === target.productId) return;
     const item: RecipeItem = {
       id: createId("rec"),
-      productId: selectedProduct.id,
+      productId: target.productId,
       ingredientId: "",
       itemType: "intermediate",
       intermediateProductId,
@@ -1878,7 +1965,7 @@ export function CostNutritionApp() {
       createdAt: now(),
       updatedAt: now(),
     };
-    commit({ ...data, recipeItems: [...data.recipeItems, item] });
+    commit({ ...data, products: target.products, productCategories: target.productCategories, recipeItems: [...data.recipeItems, item] });
   }
 
   function updateRecipeItemAmount(recipeItemId: string, amountGram: number) {
@@ -3293,6 +3380,11 @@ export function CostNutritionApp() {
           <button className="mt-3 rounded-md bg-teal-700 px-4 py-2 font-bold text-white" onClick={saveProduct}>
             商品を保存
           </button>
+          {productForm.id && (
+            <button className="ml-2 mt-3 rounded-md border border-red-300 bg-red-50 px-4 py-2 font-bold text-red-700" onClick={deleteProductFromForm}>
+              この商品を削除
+            </button>
+          )}
           <button className="ml-2 mt-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-2 font-bold text-amber-900" onClick={() => setActivePage("productCategory")}>
             商品カテゴリを管理
           </button>
@@ -3427,9 +3519,20 @@ export function CostNutritionApp() {
             </button>
           </div>
           <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr]">
-            <SelectInput label="商品" value={selectedProduct?.id ?? ""} options={data.products.map((product) => product.id)} optionLabels={Object.fromEntries(data.products.map((product) => [product.id, product.name]))} onChange={setSelectedProductId} />
+            <SelectInput
+              label="商品"
+              value={recipeProductSelectId}
+              options={["", ...data.products.map((product) => product.id)]}
+              optionLabels={{ "": "以下の一覧からも選べます", ...Object.fromEntries(data.products.map((product) => [product.id, product.name])) }}
+              onChange={(value) => {
+                setRecipeProductSelectId(value);
+                if (!value) return;
+                setRecipeProductName("");
+                setSelectedProductId(value);
+              }}
+            />
             <div className="self-end rounded-md border border-neutral-200 bg-neutral-50 p-3 text-xs font-bold text-neutral-600">
-              左のパレットからドラッグして追加します。使用量は追加後に表で入力してください。
+              新しい商品名が入力されている場合は、その名前の商品登録を優先します。既存商品に追加する場合は一覧から選んでください。
             </div>
           </div>
 
