@@ -154,10 +154,16 @@ function calculateProductCostInternal(
   const materialCostPerPiece = product.yieldCount ? materialTotalCost / product.yieldCount : 0;
   const packagingCostPerPiece = product.yieldCount ? packagingTotalCost / product.yieldCount : 0;
   const costPerPiece = product.yieldCount ? totalCost / product.yieldCount : 0;
+  const totalRecipeWeightGram = totalRecipeWeightWithProducts(recipeItems, product.id, ingredients, products, visited);
+  const basisWeightGram = product.afterBakeWeightGram || totalRecipeWeightGram;
+  const displayWeightMultiplier = product.displayUnit === "100gあたり" ? 100 : product.displayUnit === "1gあたり" ? 1 : 0;
+  const materialCostForDisplayUnit = displayWeightMultiplier && basisWeightGram ? (materialTotalCost / basisWeightGram) * displayWeightMultiplier : materialCostPerPiece;
+  const packagingCostForDisplayUnit = displayWeightMultiplier && basisWeightGram ? (packagingTotalCost / basisWeightGram) * displayWeightMultiplier : packagingCostPerPiece;
+  const costForDisplayUnit = materialCostForDisplayUnit + packagingCostForDisplayUnit;
   const sellingPrice = priceWithTax(product.sellingPrice, product.taxType);
-  const materialCostRate = sellingPrice ? (materialCostPerPiece / sellingPrice) * 100 : 0;
-  const packagingCostRate = sellingPrice ? (packagingCostPerPiece / sellingPrice) * 100 : 0;
-  const costRate = sellingPrice ? (costPerPiece / sellingPrice) * 100 : 0;
+  const materialCostRate = sellingPrice ? (materialCostForDisplayUnit / sellingPrice) * 100 : 0;
+  const packagingCostRate = sellingPrice ? (packagingCostForDisplayUnit / sellingPrice) * 100 : 0;
+  const costRate = sellingPrice ? (costForDisplayUnit / sellingPrice) * 100 : 0;
 
   return {
     product,
@@ -167,10 +173,13 @@ function calculateProductCostInternal(
     materialCostPerPiece,
     packagingCostPerPiece,
     costPerPiece,
+    materialCostForDisplayUnit,
+    packagingCostForDisplayUnit,
+    costForDisplayUnit,
     materialCostRate,
     packagingCostRate,
     costRate,
-    totalRecipeWeightGram: totalRecipeWeightWithProducts(recipeItems, product.id, ingredients, products, visited),
+    totalRecipeWeightGram,
   };
 }
 

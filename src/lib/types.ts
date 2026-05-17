@@ -1,5 +1,5 @@
 export type TaxType = "税込" | "税抜";
-export type DisplayUnit = "1個あたり" | "100gあたり" | "1袋あたり" | "1本あたり" | "1台あたり";
+export type DisplayUnit = "1個あたり" | "1gあたり" | "100gあたり" | "1袋あたり" | "1本あたり" | "1台あたり";
 export type MaterialType = "PURCHASED_INGREDIENT" | "INTERMEDIATE" | "PRODUCT" | "PACKAGING";
 export type RecipeUsageType = "gram" | "count" | "fraction";
 export type RecipeItemType = "ingredient" | "intermediate";
@@ -133,6 +133,9 @@ export type ProductCostSummary = {
   materialCostPerPiece: number;
   packagingCostPerPiece: number;
   costPerPiece: number;
+  materialCostForDisplayUnit: number;
+  packagingCostForDisplayUnit: number;
+  costForDisplayUnit: number;
   materialCostRate: number;
   packagingCostRate: number;
   costRate: number;

@@ -1139,6 +1139,28 @@ const emptySetProductItem = (setProductId = "", childProductId = ""): SetProduct
   updatedAt: now(),
 });
 
+function playButtonClickSound() {
+  if (typeof window === "undefined") return;
+  const audioWindow = window as typeof window & { webkitAudioContext?: typeof AudioContext };
+  const AudioContextClass = audioWindow.AudioContext || audioWindow.webkitAudioContext;
+  if (!AudioContextClass) return;
+  const context = new AudioContextClass();
+  const oscillator = context.createOscillator();
+  const gain = context.createGain();
+  oscillator.type = "sine";
+  oscillator.frequency.setValueAtTime(680, context.currentTime);
+  gain.gain.setValueAtTime(0.0001, context.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.035, context.currentTime + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.07);
+  oscillator.connect(gain);
+  gain.connect(context.destination);
+  oscillator.start();
+  oscillator.stop(context.currentTime + 0.08);
+  window.setTimeout(() => {
+    void context.close();
+  }, 120);
+}
+
 export function CostNutritionApp() {
   const ingredientCameraInputRef = useRef<HTMLInputElement | null>(null);
   const ingredientPhotoInputRef = useRef<HTMLInputElement | null>(null);
@@ -1225,6 +1247,15 @@ export function CostNutritionApp() {
       setSelectedSetProductId(loadedData.products.find((product) => product.category === "ギフト")?.id ?? loadedData.products.find((product) => !product.isIntermediateMaterial)?.id ?? "");
       setSetProductItemForm(emptySetProductItem(loadedData.products.find((product) => product.category === "ギフト")?.id ?? "", loadedData.products.find((product) => !product.isIntermediateMaterial && product.category !== "ギフト")?.id ?? ""));
     });
+  }, []);
+
+  useEffect(() => {
+    const handleButtonClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("button")) playButtonClickSound();
+    };
+    document.addEventListener("click", handleButtonClick);
+    return () => document.removeEventListener("click", handleButtonClick);
   }, []);
 
   function commit(nextData: AppData) {
@@ -1861,6 +1892,21 @@ export function CostNutritionApp() {
     setProductForm(product);
     setRecipeProductIsIntermediate(false);
     setRecipeProductName("");
+  }
+
+  function handleRecipeProductAction() {
+    if (recipeProductName.trim()) {
+      addProductFromRecipeName();
+      return;
+    }
+    if (recipeProductSelectId) {
+      setRecipeProductSelectId("");
+      setSelectedProductId("");
+      setRecipeProductIsIntermediate(false);
+      setProductForm(emptyProduct());
+      return;
+    }
+    alert("新しい商品名を入力するか、商品一覧から商品を選んでください。");
   }
 
   function resolveRecipeTarget(nextRecipeItems: RecipeItem[]) {
@@ -3370,50 +3416,78 @@ export function CostNutritionApp() {
 
       {activePage === "product" && (
         <Panel title="商品登録">
-          <div className="grid gap-3 md:grid-cols-3">
-            <TextInput label="商品名" value={productForm.name} onChange={(value) => setProductForm({ ...productForm, name: value })} />
-            <SelectInput
-              label="商品カテゴリ"
-              value={productForm.category || productCategoryOptions[0] || ""}
-              options={productCategoryOptions.length > 0 ? productCategoryOptions : ["未分類"]}
-              onChange={(value) => setProductForm({ ...productForm, category: value })}
-            />
-            <NumberInput label="販売価格" value={productForm.sellingPrice} onChange={(value) => setProductForm({ ...productForm, sellingPrice: value })} />
-            <SelectInput label="税込/税抜" value={productForm.taxType} options={["税込", "税抜"]} onChange={(value) => setProductForm({ ...productForm, taxType: value as Product["taxType"] })} />
-            <NumberInput label="目標原価率%" value={productForm.targetCostRate} onChange={(value) => setProductForm({ ...productForm, targetCostRate: value })} />
-            <SelectInput label="表示単位" value={productForm.displayUnit} options={["1個あたり", "100gあたり", "1袋あたり", "1本あたり", "1台あたり"]} onChange={(value) => setProductForm({ ...productForm, displayUnit: value as Product["displayUnit"] })} />
-            <NumberInput label="出来上がり個数" value={productForm.yieldCount} onChange={(value) => setProductForm({ ...productForm, yieldCount: value })} />
-            <NumberInput label="焼成前総重量g" value={productForm.beforeBakeWeightGram} onChange={(value) => setProductForm({ ...productForm, beforeBakeWeightGram: value })} />
-            <NumberInput label="焼成後総重量g" value={productForm.afterBakeWeightGram ?? 0} onChange={(value) => setProductForm({ ...productForm, afterBakeWeightGram: value || null })} />
-            <NumberInput label="1個あたり重量g" value={productForm.weightPerPieceGram} onChange={(value) => setProductForm({ ...productForm, weightPerPieceGram: value })} />
-            <SelectInput label="販売状態" value={productForm.status} options={["販売中", "休止中"]} onChange={(value) => setProductForm({ ...productForm, status: value as ProductStatus })} />
+          <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
+            <section className="rounded-md border border-amber-200 bg-amber-50 p-4">
+              <h3 className="font-black text-amber-950">1. 商品の基本情報</h3>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <TextInput label="商品名" value={productForm.name} onChange={(value) => setProductForm({ ...productForm, name: value })} />
+                <SelectInput
+                  label="商品カテゴリ"
+                  value={productForm.category || productCategoryOptions[0] || ""}
+                  options={productCategoryOptions.length > 0 ? productCategoryOptions : ["未分類"]}
+                  onChange={(value) => setProductForm({ ...productForm, category: value })}
+                />
+                <SelectInput label="販売状態" value={productForm.status} options={["販売中", "休止中"]} onChange={(value) => setProductForm({ ...productForm, status: value as ProductStatus })} />
+                <label className="flex min-h-10 items-center gap-2 rounded-md border border-neutral-200 bg-white px-3 py-2 font-bold text-neutral-700">
+                  <input
+                    type="checkbox"
+                    checked={productForm.isIntermediateMaterial}
+                    onChange={(event) => setProductForm({
+                      ...productForm,
+                      isIntermediateMaterial: event.target.checked,
+                      category: event.target.checked ? "仕込み材料" : productForm.category,
+                    })}
+                  />
+                  中間材料として使う
+                </label>
+              </div>
+            </section>
+
+            <section className="rounded-md border border-teal-200 bg-teal-50 p-4">
+              <h3 className="font-black text-teal-950">2. 販売価格</h3>
+              <p className="mt-1 text-xs font-bold text-teal-900">
+                「何gでいくら」「何個でいくら」はここで決めます。選んだ表示単位あたりの価格を入力してください。
+              </p>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <SelectInput label="価格の単位" value={productForm.displayUnit} options={["1個あたり", "1gあたり", "100gあたり", "1袋あたり", "1本あたり", "1台あたり"]} onChange={(value) => setProductForm({ ...productForm, displayUnit: value as Product["displayUnit"] })} />
+                <NumberInput label={`${productForm.displayUnit}の販売価格`} value={productForm.sellingPrice} onChange={(value) => setProductForm({ ...productForm, sellingPrice: value })} />
+                <SelectInput label="税込/税抜" value={productForm.taxType} options={["税込", "税抜"]} onChange={(value) => setProductForm({ ...productForm, taxType: value as Product["taxType"] })} />
+                <NumberInput label="目標原価率%" value={productForm.targetCostRate} onChange={(value) => setProductForm({ ...productForm, targetCostRate: value })} />
+              </div>
+              <div className="mt-3 rounded-md border border-teal-200 bg-white p-3 text-xs font-bold text-teal-950">
+                例: 1個520円なら「1個あたり」520円。100g680円なら「100gあたり」680円。量り売りで1g単価なら「1gあたり」を選びます。
+              </div>
+            </section>
+
+            <section className="rounded-md border border-sky-200 bg-sky-50 p-4 lg:col-span-2">
+              <h3 className="font-black text-sky-950">3. 出来上がり・重さ</h3>
+              <p className="mt-1 text-xs font-bold text-sky-900">
+                「1回の仕込みで何個できるか」と「重さ」を入れると、1個あたり原価や100gあたり表示が計算しやすくなります。
+              </p>
+              <div className="mt-3 grid gap-3 md:grid-cols-4">
+                <NumberInput label="出来上がり個数" value={productForm.yieldCount} onChange={(value) => setProductForm({ ...productForm, yieldCount: value })} />
+                <NumberInput label="焼成前総重量g" value={productForm.beforeBakeWeightGram} onChange={(value) => setProductForm({ ...productForm, beforeBakeWeightGram: value })} />
+                <NumberInput label="焼成後総重量g" value={productForm.afterBakeWeightGram ?? 0} onChange={(value) => setProductForm({ ...productForm, afterBakeWeightGram: value || null })} />
+                <NumberInput label="1個あたり重量g" value={productForm.weightPerPieceGram} onChange={(value) => setProductForm({ ...productForm, weightPerPieceGram: value })} />
+              </div>
+            </section>
           </div>
-          <button className="mt-3 rounded-md bg-teal-700 px-4 py-2 font-bold text-white" onClick={saveProduct}>
-            商品を保存
-          </button>
-          {productForm.id && (
-            <button className="ml-2 mt-3 rounded-md border border-red-300 bg-red-50 px-4 py-2 font-bold text-red-700" onClick={deleteProductFromForm}>
-              この商品を削除
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button className="rounded-md bg-teal-700 px-4 py-2 font-bold text-white" onClick={saveProduct}>
+              商品を保存
             </button>
-          )}
-          <button className="ml-2 mt-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-2 font-bold text-amber-900" onClick={() => setActivePage("productCategory")}>
-            商品カテゴリを管理
-          </button>
-          <button className="ml-2 mt-3 rounded-md border border-orange-300 bg-orange-50 px-4 py-2 font-bold text-orange-900" onClick={() => setActivePage("productList")}>
-            商品一覧を見る
-          </button>
-          <label className="mt-3 flex w-fit items-center gap-2 rounded-md border border-neutral-200 bg-white px-3 py-2 font-bold text-neutral-700">
-            <input
-              type="checkbox"
-              checked={productForm.isIntermediateMaterial}
-              onChange={(event) => setProductForm({
-                ...productForm,
-                isIntermediateMaterial: event.target.checked,
-                category: event.target.checked ? "仕込み材料" : productForm.category,
-              })}
-            />
-            中間材料として使う
-          </label>
+            {productForm.id && (
+              <button className="rounded-md border border-red-300 bg-red-50 px-4 py-2 font-bold text-red-700" onClick={deleteProductFromForm}>
+                この商品を削除
+              </button>
+            )}
+            <button className="rounded-md border border-amber-300 bg-amber-50 px-4 py-2 font-bold text-amber-900" onClick={() => setActivePage("productCategory")}>
+              商品カテゴリを管理
+            </button>
+            <button className="rounded-md border border-orange-300 bg-orange-50 px-4 py-2 font-bold text-orange-900" onClick={() => setActivePage("productList")}>
+              商品一覧を見る
+            </button>
+          </div>
         </Panel>
       )}
 
@@ -3516,7 +3590,7 @@ export function CostNutritionApp() {
               label="新しい商品名"
               value={recipeProductName}
               onChange={updateRecipeProductName}
-              onEnter={addProductFromRecipeName}
+              onEnter={handleRecipeProductAction}
             />
             <label className="self-end flex min-h-10 items-center gap-2 rounded-md border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-bold text-teal-900">
               <input
@@ -3529,8 +3603,8 @@ export function CostNutritionApp() {
               />
               中間材料
             </label>
-            <button className="self-end rounded-md bg-teal-700 px-4 py-2 font-bold text-white" onClick={addProductFromRecipeName}>
-              商品追加
+            <button className="self-end rounded-md bg-teal-700 px-4 py-2 font-bold text-white" onClick={handleRecipeProductAction}>
+              {recipeProductName.trim() ? "商品追加" : recipeProductSelectId ? "編集完了" : "商品追加"}
             </button>
           </div>
           <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr]">
