@@ -1526,8 +1526,8 @@ export function CostNutritionApp() {
     }));
   }, [activeIngredientCategory, data.ingredients]);
   const intermediateProducts = useMemo(
-    () => data.products.filter((product) => product.isIntermediateMaterial && product.id !== selectedProduct?.id),
-    [data.products, selectedProduct?.id],
+    () => data.products.filter((product) => product.isIntermediateMaterial),
+    [data.products],
   );
   const visibleIntermediateProducts = activeIngredientCategory === "すべて" || activeIngredientCategory === "中間材料"
     ? intermediateProducts
@@ -3395,7 +3395,11 @@ export function CostNutritionApp() {
             <input
               type="checkbox"
               checked={productForm.isIntermediateMaterial}
-              onChange={(event) => setProductForm({ ...productForm, isIntermediateMaterial: event.target.checked })}
+              onChange={(event) => setProductForm({
+                ...productForm,
+                isIntermediateMaterial: event.target.checked,
+                category: event.target.checked ? "仕込み材料" : productForm.category,
+              })}
             />
             中間材料として使う
           </label>
@@ -3558,19 +3562,26 @@ export function CostNutritionApp() {
                 {visibleIntermediateProducts.map((product) => {
                   const summary = calculateProductCost(product, data.ingredients, data.recipeItems, data.products);
                   const unitCost = summary.totalRecipeWeightGram ? summary.totalCost / summary.totalRecipeWeightGram : 0;
+                  const isCurrentProduct = product.id === selectedProduct?.id;
                   return (
                     <button
                       key={product.id}
                       draggable
-                      className="relative min-h-20 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-left"
+                      className={`relative min-h-20 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-left ${isCurrentProduct ? "opacity-60" : ""}`}
                       onClick={() => setSelectedProductId(product.id)}
                       onDragStart={(event) => {
+                        if (isCurrentProduct) {
+                          event.preventDefault();
+                          return;
+                        }
                         event.dataTransfer.setData("application/json", JSON.stringify({ type: "intermediate", id: product.id }));
                         event.dataTransfer.effectAllowed = "copy";
                       }}
                     >
                       <span className="block pr-8 font-black">{product.name}</span>
-                      <span className="mt-1 inline-block rounded bg-emerald-100 px-2 py-1 text-[11px] font-bold text-emerald-700">中間材料</span>
+                      <span className="mt-1 inline-block rounded bg-emerald-100 px-2 py-1 text-[11px] font-bold text-emerald-700">
+                        {isCurrentProduct ? "編集中" : "中間材料"}
+                      </span>
                       <span className="mt-1 block text-xs text-neutral-500">{yen(unitCost)} / g</span>
                       <span
                         role="button"
