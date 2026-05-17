@@ -838,6 +838,8 @@ type OcrCrop = {
   height: number;
 };
 
+type OcrCandidateStatus = "未処理" | "反映済み" | "スキップ";
+
 const defaultOcrCrop: OcrCrop = { x: 4, y: 5, width: 92, height: 88 };
 
 async function preprocessImageForOcr(dataUrl: string, crop: OcrCrop = defaultOcrCrop): Promise<string> {
@@ -1150,6 +1152,8 @@ export function CostNutritionApp() {
   const [ingredientOcrCandidate, setIngredientOcrCandidate] = useState<Ingredient | null>(null);
   const [ingredientOcrCandidates, setIngredientOcrCandidates] = useState<Ingredient[]>([]);
   const [ingredientOcrCandidateIndex, setIngredientOcrCandidateIndex] = useState(0);
+  const [ingredientOcrCandidateStatuses, setIngredientOcrCandidateStatuses] = useState<Record<number, OcrCandidateStatus>>({});
+  const [isIngredientOcrListOpen, setIsIngredientOcrListOpen] = useState(false);
   const [selectedOcrDuplicateIngredientId, setSelectedOcrDuplicateIngredientId] = useState("");
   const [nutritionSearchText, setNutritionSearchText] = useState("");
   const [selectedStandardNutritionId, setSelectedStandardNutritionId] = useState("");
@@ -1294,6 +1298,7 @@ export function CostNutritionApp() {
         setIngredientOcrCandidate(null);
         setIngredientOcrCandidates([]);
         setIngredientOcrCandidateIndex(0);
+        setIngredientOcrCandidateStatuses({});
         setIngredientOcrStatus(rawText ? "文字は一部読めましたが、登録項目に分けられませんでした。読み取り結果を手直しして「読み込み確認」を押してください。" : "登録に必要な情報を抽出できませんでした。明るい場所で、紙を画面いっぱいに入れて撮り直してください。");
         return;
       }
@@ -1309,6 +1314,8 @@ export function CostNutritionApp() {
       setIngredientOcrCandidates(candidates);
       setIngredientOcrCandidateIndex(0);
       setIngredientOcrCandidate(candidates[0]);
+      setIngredientOcrCandidateStatuses({});
+      setIsIngredientOcrListOpen(candidates.length > 1);
       setSelectedOcrDuplicateIngredientId("");
       setIngredientOcrStatus(`読み取り完了。${candidates.length}件の候補があります。確認画面で1件ずつ反映してください。`);
     } catch (error) {
@@ -1360,8 +1367,19 @@ export function CostNutritionApp() {
     void readIngredientImageWithOcr(image, name);
   }
 
+  function openIngredientOcrCandidateFromList(index: number) {
+    const candidate = ingredientOcrCandidates[index];
+    if (!candidate) return;
+    setIngredientOcrCandidateIndex(index);
+    setIngredientOcrCandidate(candidate);
+    setSelectedOcrDuplicateIngredientId("");
+    setIsIngredientOcrListOpen(false);
+    setIngredientOcrStatus(`${index + 1}件目を確認しています。`);
+  }
+
   function applyIngredientOcrCandidate() {
     if (!ingredientOcrCandidate) return;
+    const currentIndex = ingredientOcrCandidateIndex;
     const reflectedIngredient = selectedOcrDuplicateIngredient
       ? {
         ...selectedOcrDuplicateIngredient,
@@ -1385,6 +1403,7 @@ export function CostNutritionApp() {
     setSelectedStandardNutritionId("");
     const nextIndex = ingredientOcrCandidateIndex + 1;
     setIngredientOcrCandidateIndex(nextIndex);
+    setIngredientOcrCandidateStatuses((statuses) => ({ ...statuses, [currentIndex]: "反映済み" }));
     setSelectedOcrDuplicateIngredientId("");
     setIngredientOcrCandidate(null);
     setIngredientOcrStatus(
@@ -1409,7 +1428,9 @@ export function CostNutritionApp() {
 
   function skipIngredientOcrCandidate() {
     const nextIndex = ingredientOcrCandidateIndex + 1;
+    const currentIndex = ingredientOcrCandidateIndex;
     setIngredientOcrCandidateIndex(nextIndex);
+    setIngredientOcrCandidateStatuses((statuses) => ({ ...statuses, [currentIndex]: "スキップ" }));
     setSelectedOcrDuplicateIngredientId("");
     setIngredientOcrCandidate(null);
     setIngredientOcrStatus(
@@ -2703,6 +2724,55 @@ export function CostNutritionApp() {
         </div>
       )}
 
+      {isIngredientOcrListOpen && ingredientOcrCandidates.length > 0 && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-3">
+          <section className="max-h-[92vh] w-full max-w-3xl overflow-auto rounded-md border border-neutral-200 bg-white p-4 shadow-xl">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-black">OCR読み取り候補一覧</h2>
+                <p className="mt-1 text-xs font-bold text-neutral-500">
+                  読み取った行を一覧で確認できます。残っている行は「開く」から再表示できます。
+                </p>
+              </div>
+              <button className="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm font-bold text-neutral-700" onClick={() => setIsIngredientOcrListOpen(false)}>
+                閉じる
+              </button>
+            </div>
+            <div className="mt-4 grid gap-2">
+              {ingredientOcrCandidates.map((candidate, index) => {
+                const status = ingredientOcrCandidateStatuses[index] || "未処理";
+                const statusClass = status === "未処理"
+                  ? "border-amber-300 bg-amber-50 text-amber-900"
+                  : status === "反映済み"
+                    ? "border-teal-300 bg-teal-50 text-teal-900"
+                    : "border-neutral-300 bg-neutral-50 text-neutral-600";
+                return (
+                  <div key={`${candidate.name}-${candidate.packageName}-${index}`} className="grid gap-2 rounded-md border border-neutral-200 p-3 md:grid-cols-[88px_1fr_100px] md:items-center">
+                    <span className={`rounded-md border px-2 py-1 text-center text-xs font-black ${statusClass}`}>
+                      {status}
+                    </span>
+                    <div>
+                      <p className="font-black text-neutral-900">
+                        {index + 1}. {candidate.packageName || candidate.name || "名称未取得"}
+                      </p>
+                      <p className="mt-1 text-xs font-bold text-neutral-500">
+                        原材料名: {candidate.name || "-"} / 内容量: {number(candidate.packageAmountGram)}{candidate.packageUnit} / 価格: {yen(candidate.price)}
+                      </p>
+                    </div>
+                    <button
+                      className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-bold text-white"
+                      onClick={() => openIngredientOcrCandidateFromList(index)}
+                    >
+                      開く
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        </div>
+      )}
+
       {ingredientOcrCandidate && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-3">
           <section className="w-full max-w-xl rounded-md border border-neutral-200 bg-white p-4 shadow-xl">
@@ -2754,6 +2824,11 @@ export function CostNutritionApp() {
               </div>
             )}
             <div className="mt-4 flex flex-wrap justify-end gap-2">
+              {ingredientOcrCandidates.length > 1 && (
+                <button className="rounded-md border border-neutral-300 bg-white px-4 py-2 font-bold text-neutral-700" onClick={() => setIsIngredientOcrListOpen(true)}>
+                  候補一覧
+                </button>
+              )}
               <button className="rounded-md border border-neutral-300 bg-white px-4 py-2 font-bold text-neutral-700" onClick={() => setIngredientOcrCandidate(null)}>
                 戻る
               </button>
@@ -2827,6 +2902,20 @@ export function CostNutritionApp() {
             <p className="mt-2 text-xs font-bold text-teal-900">
               {ingredientOcrStatus || "文字範囲を確認し、必要に応じて行ごと・商品ごとに分けてAI読み取りします。"}
             </p>
+            {ingredientOcrCandidates.length > 0 && (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-black text-white"
+                  onClick={() => setIsIngredientOcrListOpen(true)}
+                >
+                  OCR候補一覧を開く
+                </button>
+                <span className="text-xs font-bold text-neutral-600">
+                  未処理 {ingredientOcrCandidates.filter((_, index) => (ingredientOcrCandidateStatuses[index] || "未処理") === "未処理").length}件 /
+                  全{ingredientOcrCandidates.length}件
+                </span>
+              </div>
+            )}
           </section>
           <section className="rounded-md border border-neutral-200 bg-white p-4">
             <h3 className="font-black text-neutral-900">基本情報</h3>
