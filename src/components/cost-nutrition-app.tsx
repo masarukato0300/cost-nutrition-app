@@ -1510,6 +1510,18 @@ export function CostNutritionApp() {
     : activeIngredientCategory === "中間材料"
       ? []
     : data.ingredients.filter((ingredient) => (ingredient.category || "未分類") === activeIngredientCategory);
+  const masterIngredientGroups = useMemo(() => {
+    const rows = activeIngredientCategory === "すべて"
+      ? data.ingredients
+      : data.ingredients.filter((ingredient) => (ingredient.category || "未分類") === activeIngredientCategory);
+    const categories = Array.from(new Set(rows.map((ingredient) => ingredient.category || "未分類"))).sort((a, b) => a.localeCompare(b, "ja"));
+    return categories.map((category) => ({
+      category,
+      ingredients: rows
+        .filter((ingredient) => (ingredient.category || "未分類") === category)
+        .sort((a, b) => (a.packageName || a.name).localeCompare(b.packageName || b.name, "ja")),
+    }));
+  }, [activeIngredientCategory, data.ingredients]);
   const intermediateProducts = useMemo(
     () => data.products.filter((product) => product.isIntermediateMaterial && product.id !== selectedProduct?.id),
     [data.products, selectedProduct?.id],
@@ -4309,24 +4321,52 @@ export function CostNutritionApp() {
 
       {activePage === "master" && (
         <Panel title="原材料マスター">
-          <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
-            {data.ingredients.map((ingredient) => (
-              <div key={ingredient.id} className="rounded-md border border-neutral-200 bg-white p-3 text-left">
-                <button className="w-full text-left" onClick={() => editIngredientFromMaster(ingredient)}>
-                  <strong>{ingredient.packageName || ingredient.name}</strong>
-                  {ingredient.packageName && ingredient.packageName !== ingredient.name && <p className="text-xs font-bold text-neutral-500">{ingredient.name}</p>}
-                  <p className="text-neutral-600">{ingredient.category || "未分類"} / {number(ingredient.packageAmountGram)}{ingredientUnitLabel(ingredient)} / {yen(ingredient.price)} / {yen(pricePerGram(ingredient))} per {ingredientUnitLabel(ingredient)}</p>
-                  <p className="text-xs text-neutral-500">栄養: {hasNutrition(ingredient) ? "登録済み" : "未登録"} / アレルゲン: {ingredient.allergens.join("、") || "なし"}</p>
-                </button>
-                <button
-                  className="mt-3 w-full rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-black text-red-700"
-                  onClick={() => deleteIngredientFromMaster(ingredient)}
-                >
-                  削除
-                </button>
-              </div>
+          <div className="mb-4 flex flex-wrap gap-2">
+            {ingredientCategories.filter((category) => category !== "中間材料").map((category) => (
+              <button
+                key={category}
+                className={`rounded-md border px-3 py-2 text-sm font-black ${
+                  activeIngredientCategory === category
+                    ? "border-cyan-700 bg-cyan-600 text-white"
+                    : "border-cyan-200 bg-cyan-50 text-cyan-900"
+                }`}
+                onClick={() => setActiveIngredientCategory(category)}
+              >
+                {category}
+              </button>
             ))}
           </div>
+          <div className="grid gap-5">
+            {masterIngredientGroups.map((group) => (
+              <section key={group.category} className="rounded-md border border-cyan-100 bg-cyan-50/50 p-3">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h3 className="text-lg font-black text-cyan-950">{group.category}</h3>
+                  <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-cyan-800">{group.ingredients.length}件</span>
+                </div>
+                <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+                  {group.ingredients.map((ingredient) => (
+                    <div key={ingredient.id} className="rounded-md border border-neutral-200 bg-white p-3 text-left">
+                      <button className="w-full text-left" onClick={() => editIngredientFromMaster(ingredient)}>
+                        <strong>{ingredient.packageName || ingredient.name}</strong>
+                        {ingredient.packageName && ingredient.packageName !== ingredient.name && <p className="text-xs font-bold text-neutral-500">{ingredient.name}</p>}
+                        <p className="text-neutral-600">{number(ingredient.packageAmountGram)}{ingredientUnitLabel(ingredient)} / {yen(ingredient.price)} / {yen(pricePerGram(ingredient))} per {ingredientUnitLabel(ingredient)}</p>
+                        <p className="text-xs text-neutral-500">栄養: {hasNutrition(ingredient) ? "登録済み" : "未登録"} / アレルゲン: {ingredient.allergens.join("、") || "なし"}</p>
+                      </button>
+                      <button
+                        className="mt-3 w-full rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-black text-red-700"
+                        onClick={() => deleteIngredientFromMaster(ingredient)}
+                      >
+                        削除
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+          {masterIngredientGroups.length === 0 && (
+            <p className="rounded-md border border-neutral-200 bg-neutral-50 p-3 text-sm font-bold text-neutral-600">このカテゴリの原材料はまだありません。</p>
+          )}
         </Panel>
       )}
     </main>
