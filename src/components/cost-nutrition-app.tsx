@@ -822,16 +822,24 @@ async function preprocessImageForOcr(file: File): Promise<string> {
 }
 
 function ingredientFromVisionResult(result: IngredientVisionOcrResult, base: Ingredient): Ingredient {
+  const exactName = result.name.trim();
+  const exactPackageName = result.packageName.trim();
+  const exactSupplier = result.supplier.trim();
   const generatedText = [
-    result.name ? `原材料名: ${result.name}` : "",
-    result.packageName ? `製品名: ${result.packageName}` : "",
-    result.supplier ? `仕入先: ${result.supplier}` : "",
+    exactName ? `原材料名: ${exactName}` : "",
+    exactPackageName ? `製品名: ${exactPackageName}` : "",
+    exactSupplier ? `仕入先: ${exactSupplier}` : "",
     result.packageAmount ? `内容量: ${result.packageAmount}${result.packageUnit}` : "",
     result.price ? `単価: ${result.price}円` : "",
     result.rawText ? `読み取り文字:\n${result.rawText}` : "",
   ].filter(Boolean).join("\n");
+  const parsed = parseIngredientOcrText(generatedText, base);
   return {
-    ...parseIngredientOcrText(generatedText, base),
+    ...parsed,
+    name: exactName || parsed.name,
+    packageName: exactPackageName || parsed.packageName || exactName || parsed.name,
+    supplier: exactSupplier || parsed.supplier,
+    labelName: base.labelName || exactName || parsed.labelName,
     memo: [base.memo, result.memo, `AI OCR信頼度: ${result.confidence}`].filter(Boolean).join("\n"),
   };
 }
@@ -1210,6 +1218,7 @@ export function CostNutritionApp() {
     [ingredientForm.name, ingredientForm.packageName, nutritionSearchText],
   );
   const selectedStandardNutrition = standardNutritionFoods.find((food) => food.id === selectedStandardNutritionId) ?? standardNutritionMatches[0];
+  const isPackagingForm = ingredientForm.type === "PACKAGING";
   const productionPlanItems = useMemo(
     () => Object.entries(productionPlan).map(([productId, quantity]) => ({ productId, quantity: Number(quantity) || 0 })),
     [productionPlan],
@@ -1294,8 +1303,20 @@ export function CostNutritionApp() {
       createdAt: ingredientForm.createdAt || now(),
       updatedAt: now(),
     };
+    if (ingredient.type === "PACKAGING") {
+      ingredient = {
+        ...ingredient,
+        caloriesPer100g: 0,
+        proteinPer100g: 0,
+        fatPer100g: 0,
+        carbsPer100g: 0,
+        saltPer100g: 0,
+        allergens: [],
+        otherAllergen: "",
+      };
+    }
     const nutritionCandidate = findNutritionCandidate(ingredient, data.ingredients);
-    if (isNutritionEmpty(ingredient) && nutritionCandidate) {
+    if (ingredient.type !== "PACKAGING" && isNutritionEmpty(ingredient) && nutritionCandidate) {
       const shouldCopy = confirm(
         `栄養成分が未入力です。\n「${nutritionCandidate.name}」の栄養成分を反映して登録しますか？\n\n反映後も原材料登録画面で修正できます。`,
       );
@@ -1303,7 +1324,7 @@ export function CostNutritionApp() {
         ingredient = copyNutrition(ingredient, nutritionCandidate);
       }
     }
-    if (isNutritionEmpty(ingredient) && selectedStandardNutrition) {
+    if (ingredient.type !== "PACKAGING" && isNutritionEmpty(ingredient) && selectedStandardNutrition) {
       const shouldCopyFromDb = confirm(
         `栄養成分が未入力です。\n食品成分表の「${selectedStandardNutrition.name}」を反映して登録しますか？\n\n反映後も原材料登録画面で修正できます。`,
       );
@@ -2441,7 +2462,21 @@ export function CostNutritionApp() {
                 value={ingredientForm.type}
                 options={materialTypeOptions}
                 optionLabels={materialTypeLabels}
-                onChange={(value) => setIngredientForm({ ...ingredientForm, type: value as MaterialType, category: value === "PACKAGING" ? "包材" : ingredientForm.category })}
+                onChange={(value) => {
+                  const nextType = value as MaterialType;
+                  setIngredientForm({
+                    ...ingredientForm,
+                    type: nextType,
+                    category: nextType === "PACKAGING" ? "包材" : ingredientForm.category,
+                    caloriesPer100g: nextType === "PACKAGING" ? 0 : ingredientForm.caloriesPer100g,
+                    proteinPer100g: nextType === "PACKAGING" ? 0 : ingredientForm.proteinPer100g,
+                    fatPer100g: nextType === "PACKAGING" ? 0 : ingredientForm.fatPer100g,
+                    carbsPer100g: nextType === "PACKAGING" ? 0 : ingredientForm.carbsPer100g,
+                    saltPer100g: nextType === "PACKAGING" ? 0 : ingredientForm.saltPer100g,
+                    allergens: nextType === "PACKAGING" ? [] : ingredientForm.allergens,
+                    otherAllergen: nextType === "PACKAGING" ? "" : ingredientForm.otherAllergen,
+                  });
+                }}
               />
               <CategoryInput
                 label="カテゴリ"
@@ -2464,16 +2499,18 @@ export function CostNutritionApp() {
             <p className="mt-2 text-xs font-bold text-neutral-500">kgは保存時にgへ変換されます。税抜が標準です。</p>
           </section>
 
-          <section className="mt-5 rounded-md border border-neutral-200 bg-white p-5">
-            <h3 className="border-b border-neutral-100 pb-2 text-lg font-black text-neutral-900">栄養成分 100gあたり</h3>
-            <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-              <NumberInput label="エネルギー kcal" value={ingredientForm.caloriesPer100g ?? 0} onChange={(value) => setIngredientForm({ ...ingredientForm, caloriesPer100g: value })} />
-              <NumberInput label="たんぱく質 g" value={ingredientForm.proteinPer100g ?? 0} onChange={(value) => setIngredientForm({ ...ingredientForm, proteinPer100g: value })} />
-              <NumberInput label="脂質 g" value={ingredientForm.fatPer100g ?? 0} onChange={(value) => setIngredientForm({ ...ingredientForm, fatPer100g: value })} />
-              <NumberInput label="炭水化物 g" value={ingredientForm.carbsPer100g ?? 0} onChange={(value) => setIngredientForm({ ...ingredientForm, carbsPer100g: value })} />
-              <NumberInput label="食塩相当量 g" value={ingredientForm.saltPer100g ?? 0} onChange={(value) => setIngredientForm({ ...ingredientForm, saltPer100g: value })} />
-            </div>
-          </section>
+          {!isPackagingForm && (
+            <section className="mt-5 rounded-md border border-neutral-200 bg-white p-5">
+              <h3 className="border-b border-neutral-100 pb-2 text-lg font-black text-neutral-900">栄養成分 100gあたり</h3>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+                <NumberInput label="エネルギー kcal" value={ingredientForm.caloriesPer100g ?? 0} onChange={(value) => setIngredientForm({ ...ingredientForm, caloriesPer100g: value })} />
+                <NumberInput label="たんぱく質 g" value={ingredientForm.proteinPer100g ?? 0} onChange={(value) => setIngredientForm({ ...ingredientForm, proteinPer100g: value })} />
+                <NumberInput label="脂質 g" value={ingredientForm.fatPer100g ?? 0} onChange={(value) => setIngredientForm({ ...ingredientForm, fatPer100g: value })} />
+                <NumberInput label="炭水化物 g" value={ingredientForm.carbsPer100g ?? 0} onChange={(value) => setIngredientForm({ ...ingredientForm, carbsPer100g: value })} />
+                <NumberInput label="食塩相当量 g" value={ingredientForm.saltPer100g ?? 0} onChange={(value) => setIngredientForm({ ...ingredientForm, saltPer100g: value })} />
+              </div>
+            </section>
+          )}
           {learnedIngredientAlias && (
             <section className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -2489,70 +2526,76 @@ export function CostNutritionApp() {
               </div>
             </section>
           )}
-          <section className="mt-3 rounded-md border border-sky-200 bg-sky-50 p-3">
-            <h3 className="font-black text-sky-950">栄養成分データベースから反映</h3>
-            <div className="mt-2 grid gap-2 md:grid-cols-[1fr_1fr_160px]">
-              <TextInput
-                label="食品名検索"
-                value={nutritionSearchText}
-                onChange={(value) => {
-                  setNutritionSearchText(value);
-                  setSelectedStandardNutritionId("");
-                }}
-              />
-              <SelectInput
-                label="候補"
-                value={selectedStandardNutrition?.id ?? ""}
-                options={standardNutritionMatches.map((food) => food.id)}
-                optionLabels={Object.fromEntries(standardNutritionMatches.map((food) => [food.id, `${food.name}（${food.foodNumber}）`]))}
-                onChange={setSelectedStandardNutritionId}
-              />
-              <button
-                className="self-end rounded-md bg-sky-700 px-4 py-2 font-bold text-white disabled:bg-neutral-300"
-                disabled={!selectedStandardNutrition}
-                onClick={() => applyStandardNutrition()}
-              >
-                栄養を反映
-              </button>
-            </div>
-            {selectedStandardNutrition && (
-              <p className="mt-2 text-xs font-bold text-sky-950">
-                {selectedStandardNutrition.name}: {number(selectedStandardNutrition.caloriesPer100g, 0)}kcal /
-                P {number(selectedStandardNutrition.proteinPer100g)}g /
-                F {number(selectedStandardNutrition.fatPer100g)}g /
-                C {number(selectedStandardNutrition.carbsPer100g)}g /
-                食塩 {number(selectedStandardNutrition.saltPer100g, 2)}g
+          {!isPackagingForm && (
+            <section className="mt-3 rounded-md border border-sky-200 bg-sky-50 p-3">
+              <h3 className="font-black text-sky-950">栄養成分データベースから反映</h3>
+              <div className="mt-2 grid gap-2 md:grid-cols-[1fr_1fr_160px]">
+                <TextInput
+                  label="食品名検索"
+                  value={nutritionSearchText}
+                  onChange={(value) => {
+                    setNutritionSearchText(value);
+                    setSelectedStandardNutritionId("");
+                  }}
+                />
+                <SelectInput
+                  label="候補"
+                  value={selectedStandardNutrition?.id ?? ""}
+                  options={standardNutritionMatches.map((food) => food.id)}
+                  optionLabels={Object.fromEntries(standardNutritionMatches.map((food) => [food.id, `${food.name}（${food.foodNumber}）`]))}
+                  onChange={setSelectedStandardNutritionId}
+                />
+                <button
+                  className="self-end rounded-md bg-sky-700 px-4 py-2 font-bold text-white disabled:bg-neutral-300"
+                  disabled={!selectedStandardNutrition}
+                  onClick={() => applyStandardNutrition()}
+                >
+                  栄養を反映
+                </button>
+              </div>
+              {selectedStandardNutrition && (
+                <p className="mt-2 text-xs font-bold text-sky-950">
+                  {selectedStandardNutrition.name}: {number(selectedStandardNutrition.caloriesPer100g, 0)}kcal /
+                  P {number(selectedStandardNutrition.proteinPer100g)}g /
+                  F {number(selectedStandardNutrition.fatPer100g)}g /
+                  C {number(selectedStandardNutrition.carbsPer100g)}g /
+                  食塩 {number(selectedStandardNutrition.saltPer100g, 2)}g
+                </p>
+              )}
+              <p className="mt-1 text-xs font-bold text-sky-900">
+                文科省食品成分表Excelから取り込んだ100gあたり値です。正式表示では原材料仕様書などで最終確認してください。
               </p>
-            )}
-            <p className="mt-1 text-xs font-bold text-sky-900">
-              文科省食品成分表Excelから取り込んだ100gあたり値です。正式表示では原材料仕様書などで最終確認してください。
-            </p>
-          </section>
+            </section>
+          )}
           <section className="mt-3 rounded-md border border-neutral-200 bg-white p-4">
-            <h3 className="font-black text-neutral-900">表示・アレルゲン</h3>
+            <h3 className="font-black text-neutral-900">{isPackagingForm ? "表示名" : "表示・アレルゲン"}</h3>
             <div className="mt-3 grid gap-3 md:grid-cols-2">
               <TextInput label="原材料表示名" value={ingredientForm.labelName} onChange={(value) => setIngredientForm({ ...ingredientForm, labelName: value })} />
-              <TextInput label="その他アレルゲン" value={ingredientForm.otherAllergen} onChange={(value) => setIngredientForm({ ...ingredientForm, otherAllergen: value })} />
+              {!isPackagingForm && <TextInput label="その他アレルゲン" value={ingredientForm.otherAllergen} onChange={(value) => setIngredientForm({ ...ingredientForm, otherAllergen: value })} />}
             </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {allergenOptions.map((allergen) => (
-                <label key={allergen} className="flex items-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 font-bold text-neutral-700">
-                  <input
-                    type="checkbox"
-                    checked={ingredientForm.allergens.includes(allergen)}
-                    onChange={(event) =>
-                      setIngredientForm({
-                        ...ingredientForm,
-                        allergens: event.target.checked
-                          ? [...ingredientForm.allergens, allergen]
-                          : ingredientForm.allergens.filter((item) => item !== allergen),
-                      })
-                    }
-                  />
-                  {allergen}
-                </label>
-              ))}
-            </div>
+            {isPackagingForm ? (
+              <p className="mt-2 text-xs font-bold text-neutral-500">包材は栄養成分・アレルゲン入力を省略します。</p>
+            ) : (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {allergenOptions.map((allergen) => (
+                  <label key={allergen} className="flex items-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 font-bold text-neutral-700">
+                    <input
+                      type="checkbox"
+                      checked={ingredientForm.allergens.includes(allergen)}
+                      onChange={(event) =>
+                        setIngredientForm({
+                          ...ingredientForm,
+                          allergens: event.target.checked
+                            ? [...ingredientForm.allergens, allergen]
+                            : ingredientForm.allergens.filter((item) => item !== allergen),
+                        })
+                      }
+                    />
+                    {allergen}
+                  </label>
+                ))}
+              </div>
+            )}
           </section>
           {possibleDuplicateIngredients.length > 0 && (
             <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900">
