@@ -951,19 +951,20 @@ async function splitOcrImageIntoRows(dataUrl: string): Promise<string[]> {
   }
   if (start !== -1) bands.push({ start, end: previous });
   const rowBands = bands
-    .map((band) => ({ start: Math.max(0, band.start - 22), end: Math.min(height, band.end + 22) }))
-    .filter((band) => band.end - band.start >= 28)
-    .slice(0, 14);
+    .map((band) => ({ start: Math.max(0, band.start - 34), end: Math.min(height, band.end + 34) }))
+    .filter((band) => band.end - band.start >= 48);
+  if (rowBands.length > 10) return [dataUrl];
   if (rowBands.length < 2) return [dataUrl];
   return rowBands.map((band) => {
     const rowCanvas = document.createElement("canvas");
     rowCanvas.width = width;
-    rowCanvas.height = band.end - band.start;
+    rowCanvas.height = Math.max(140, band.end - band.start);
     const rowContext = rowCanvas.getContext("2d");
     if (!rowContext) return dataUrl;
     rowContext.fillStyle = "#ffffff";
     rowContext.fillRect(0, 0, rowCanvas.width, rowCanvas.height);
-    rowContext.drawImage(canvas, 0, band.start, width, rowCanvas.height, 0, 0, width, rowCanvas.height);
+    const drawTop = Math.max(0, Math.round((rowCanvas.height - (band.end - band.start)) / 2));
+    rowContext.drawImage(canvas, 0, band.start, width, band.end - band.start, 0, drawTop, width, band.end - band.start);
     return rowCanvas.toDataURL("image/jpeg", 0.95);
   });
 }
@@ -1289,7 +1290,11 @@ export function CostNutritionApp() {
           ? `文字範囲を${rowImages.length}行に分けてAI解析中...`
           : "OpenAI Visionで読み取り中...",
       );
-      const parsedResults = await Promise.all(rowImages.map((rowImage) => fetchIngredientOcr(rowImage)));
+      let parsedResults = await fetchIngredientOcrImages(rowImages);
+      if (parsedResults.length === 0 && rowImages.length > 1) {
+        setIngredientOcrStatus("行ごとの解析に失敗したため、1枚全体で再解析しています...");
+        parsedResults = await fetchIngredientOcrImages([preprocessedImage]);
+      }
       const rawText = parsedResults.map((result) => ("ingredients" in result ? result.rawText : result.rawText || "")).filter(Boolean).join("\n");
       const results = parsedResults.flatMap((result) => ("ingredients" in result ? result.ingredients : [result]));
       const validResults = results.filter((item) => item.name || item.packageName || item.price);
@@ -1323,6 +1328,21 @@ export function CostNutritionApp() {
     } finally {
       setIsIngredientOcrReading(false);
     }
+  }
+
+  async function fetchIngredientOcrImages(imageDataUrls: string[]) {
+    const settledResults = await Promise.allSettled(imageDataUrls.map((imageDataUrl) => fetchIngredientOcr(imageDataUrl)));
+    const successfulResults = settledResults
+      .filter((result): result is PromiseFulfilledResult<IngredientVisionOcrResponse | IngredientVisionOcrResult> => result.status === "fulfilled")
+      .map((result) => result.value);
+    const failedCount = settledResults.length - successfulResults.length;
+    if (failedCount > 0 && successfulResults.length > 0) {
+      setIngredientOcrStatus(`${successfulResults.length}件を解析できました。${failedCount}件は文字が少ないためスキップしました。`);
+    }
+    if (successfulResults.length === 0 && settledResults[0]?.status === "rejected") {
+      throw settledResults[0].reason instanceof Error ? settledResults[0].reason : new Error("OCR解析に失敗しました。");
+    }
+    return successfulResults;
   }
 
   async function fetchIngredientOcr(imageDataUrl: string) {
