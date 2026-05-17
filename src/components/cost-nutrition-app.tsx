@@ -1127,6 +1127,7 @@ export function CostNutritionApp() {
   const [data, setData] = useState<AppData>(sampleData);
   const [selectedProductId, setSelectedProductId] = useState(sampleData.products[0]?.id ?? "");
   const [ingredientForm, setIngredientForm] = useState<Ingredient>(() => emptyIngredient());
+  const [showIngredientUnitConversion, setShowIngredientUnitConversion] = useState(false);
   const [productForm, setProductForm] = useState<Product>(() => emptyProduct());
   const [recipeProductName, setRecipeProductName] = useState("");
   const [recipeIngredientId, setRecipeIngredientId] = useState(data.ingredients[0]?.id ?? "");
@@ -1512,6 +1513,10 @@ export function CostNutritionApp() {
   const selectedStandardNutrition = standardNutritionFoods.find((food) => food.id === selectedStandardNutritionId) ?? standardNutritionMatches[0];
   const appliedStandardNutrition = standardNutritionFoods.find((food) => food.id === appliedStandardNutritionId) ?? null;
   const isPackagingForm = ingredientForm.type === "PACKAGING";
+  const usesIngredientUnitConversion = showIngredientUnitConversion || (ingredientForm.gramPerUnit || 1) > 1;
+  const ingredientUnitCount = usesIngredientUnitConversion && ingredientForm.gramPerUnit
+    ? Math.round((ingredientForm.packageAmountGram || 0) / ingredientForm.gramPerUnit)
+    : 0;
   const productionPlanItems = useMemo(
     () => Object.entries(productionPlan).map(([productId, quantity]) => ({ productId, quantity: Number(quantity) || 0 })),
     [productionPlan],
@@ -1591,7 +1596,7 @@ export function CostNutritionApp() {
       labelName: ingredientForm.labelName || ingredientForm.name,
       packageAmountGram: normalizedAmount.amount,
       packageUnit: normalizedAmount.unit,
-      gramPerUnit: normalizedAmount.gramPerUnit || ingredientForm.gramPerUnit || 1,
+      gramPerUnit: (ingredientForm.gramPerUnit || 1) > 1 ? ingredientForm.gramPerUnit : normalizedAmount.gramPerUnit || 1,
       id: ingredientForm.id || createId("ing"),
       createdAt: ingredientForm.createdAt || now(),
       updatedAt: now(),
@@ -1642,6 +1647,7 @@ export function CostNutritionApp() {
       ingredientAliases: nextAliases,
     });
     setIngredientForm(emptyIngredient());
+    setShowIngredientUnitConversion(false);
     setAppliedStandardNutritionId("");
     setSelectedStandardNutritionId("");
     if (!recipeIngredientId) setRecipeIngredientId(ingredient.id);
@@ -1653,6 +1659,7 @@ export function CostNutritionApp() {
 
   function skipIngredientForm() {
     setIngredientForm(emptyIngredient());
+    setShowIngredientUnitConversion(false);
     setAppliedStandardNutritionId("");
     setSelectedStandardNutritionId("");
     if (ingredientOcrCandidateIndex < ingredientOcrCandidates.length) {
@@ -1809,7 +1816,15 @@ export function CostNutritionApp() {
       ...data,
       recipeItems: data.recipeItems.map((item) => {
         if (item.id !== recipeItemId) return item;
-        const nextItem = normalizeRecipeItem({ ...item, ...patch, updatedAt: now() });
+        const ingredient = data.ingredients.find((candidate) => candidate.id === item.ingredientId);
+        const countPatch = patch.usageType === "count" && ingredient && (ingredient.gramPerUnit || 1) > 1
+          ? {
+            baseAmountGram: ingredient.packageAmountGram,
+            totalCount: Math.max(1, Math.round(ingredient.packageAmountGram / ingredient.gramPerUnit)),
+            usedCount: patch.usedCount || item.usedCount || 1,
+          }
+          : {};
+        const nextItem = normalizeRecipeItem({ ...item, ...patch, ...countPatch, updatedAt: now() });
         return nextItem;
       }),
     });
@@ -2992,6 +3007,57 @@ export function CostNutritionApp() {
               <SelectInput label="税込/税抜" value={ingredientForm.taxType} options={["税抜", "税込"]} onChange={(value) => setIngredientForm({ ...ingredientForm, taxType: value as Ingredient["taxType"] })} />
             </div>
             <p className="mt-2 text-xs font-bold text-neutral-500">kgは保存時にgへ変換されます。税抜が標準です。</p>
+            {!isPackagingForm && (
+              <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3">
+                <label className="flex items-center gap-2 text-sm font-black text-amber-950">
+                  <input
+                    type="checkbox"
+                    checked={usesIngredientUnitConversion}
+                    onChange={(event) => {
+                      setShowIngredientUnitConversion(event.target.checked);
+                      if (!event.target.checked) {
+                        setIngredientForm({ ...ingredientForm, gramPerUnit: 1 });
+                      }
+                    }}
+                  />
+                  個数でもgでも使う材料として登録する
+                </label>
+                {usesIngredientUnitConversion && (
+                  <div className="mt-3 grid gap-3 md:grid-cols-3">
+                    <NumberInput
+                      label="可食・使用可能量g"
+                      value={ingredientForm.packageAmountGram}
+                      onChange={(value) => {
+                        const count = ingredientUnitCount || 1;
+                        setIngredientForm({
+                          ...ingredientForm,
+                          packageAmountGram: value,
+                          packageUnit: "g",
+                          gramPerUnit: count ? value / count : ingredientForm.gramPerUnit,
+                        });
+                      }}
+                    />
+                    <NumberInput
+                      label="仕入個数"
+                      value={ingredientUnitCount || 1}
+                      onChange={(value) =>
+                        setIngredientForm({
+                          ...ingredientForm,
+                          packageUnit: "g",
+                          gramPerUnit: value ? ingredientForm.packageAmountGram / value : 1,
+                        })
+                      }
+                    />
+                    <div className="rounded-md border border-amber-200 bg-white p-3 text-sm font-black text-amber-950">
+                      1個あたり {number(ingredientForm.gramPerUnit || 0)}g
+                      <span className="mt-1 block text-xs font-bold text-amber-800">
+                        例: 玉子 144個 / 可食量7200g / 6500円なら、1個50gで計算します。
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </section>
 
           {!isPackagingForm && (
@@ -4573,7 +4639,7 @@ function RecipeTable({
                 </td>
                 <td className="p-3 text-right">
                   {onAmountChange ? (
-                    <RecipeAmountEditor item={normalizedItem} onAmountChange={onAmountChange} onItemChange={onItemChange} />
+                    <RecipeAmountEditor item={normalizedItem} ingredient={ingredient} onAmountChange={onAmountChange} onItemChange={onItemChange} />
                   ) : (
                     usageDescription(normalizedItem)
                   )}
@@ -4608,19 +4674,27 @@ function RecipeTable({
 
 function RecipeAmountEditor({
   item,
+  ingredient,
   onAmountChange,
   onItemChange,
 }: {
   item: RecipeItem;
+  ingredient?: Ingredient;
   onAmountChange: (recipeItemId: string, amountGram: number) => void;
   onItemChange?: (recipeItemId: string, patch: Partial<RecipeItem>) => void;
 }) {
   if (item.usageType === "count") {
+    const unitGram = ingredient?.gramPerUnit || 0;
     return (
-      <div className="flex justify-end gap-1">
-        <SmallNumberInput label="元量" value={item.baseAmountGram} onChange={(value) => onItemChange?.(item.id, { baseAmountGram: value })} />
-        <SmallNumberInput label="全" value={item.totalCount} onChange={(value) => onItemChange?.(item.id, { totalCount: value })} />
-        <SmallNumberInput label="使" value={item.usedCount} onChange={(value) => onItemChange?.(item.id, { usedCount: value })} />
+      <div className="grid justify-items-end gap-1">
+        {unitGram > 1 && (
+          <span className="text-[11px] font-bold text-amber-700">1個={number(unitGram)}g</span>
+        )}
+        <div className="flex justify-end gap-1">
+          <SmallNumberInput label="元量" value={item.baseAmountGram} onChange={(value) => onItemChange?.(item.id, { baseAmountGram: value })} />
+          <SmallNumberInput label="全" value={item.totalCount} onChange={(value) => onItemChange?.(item.id, { totalCount: value })} />
+          <SmallNumberInput label="使" value={item.usedCount} onChange={(value) => onItemChange?.(item.id, { usedCount: value })} />
+        </div>
       </div>
     );
   }
