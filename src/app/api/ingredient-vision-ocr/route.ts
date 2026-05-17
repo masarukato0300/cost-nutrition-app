@@ -27,8 +27,8 @@ const schema = {
           type: "object",
           additionalProperties: false,
           properties: {
-            name: { type: "string", description: "原材料名。画像内の品名・商品名・摘要にある短い名前を、推測で言い換えずできるだけ原文どおり入れる。判読不能なら空文字" },
-            packageName: { type: "string", description: "製品名または商品名。袋、ラベル、伝票の商品名欄・品名欄・規格欄の文字を、略さず原文に近く入れる。判読不能なら空文字" },
+            name: { type: "string", description: "原材料名。画像内の品名・商品名・摘要にある短い名前を、推測で言い換えず入れる。半角カタカナは全角カタカナとして読む。判読不能なら空文字" },
+            packageName: { type: "string", description: "製品名または商品名。袋、ラベル、伝票の商品名欄・品名欄・規格欄の文字を略さず入れる。半角カタカナは全角カタカナとして読む。判読不能なら空文字" },
             supplier: { type: "string", description: "仕入先、メーカー、供給元。不明なら空文字" },
             packageAmount: { type: ["number", "null"], description: "内容量の数値部分。不明ならnull" },
             packageUnit: { type: "string", description: "内容量の単位。例: g, kg, ml, L, 個, 枚, 本。不明なら空文字" },
@@ -71,7 +71,7 @@ export async function POST(request: Request) {
         {
           role: "system",
           content:
-            "あなたは洋菓子店・飲食店向けの原材料ラベル、納品書、価格表、価格改定通知を読むOCR補助です。まず画像内の文字をできるだけ読み取り、その中から原材料登録に必要な情報を抽出してください。原材料名と製品名は、画像に写っている文字を最優先し、食品カテゴリ名や一般名へ勝手に言い換えないでください。例: 「フレッシュクリーム35」「特宝笠」「赤玉L」などはその表記を維持します。判読できない文字は推測で補完しすぎず、memoに曖昧な点を書いてください。複数の原材料・商品行が写っている場合は、先頭だけでなく読み取れる候補を順番にすべてingredientsへ入れてください。価格は単価、新価格、改定後価格、売単価、単価(税込)の列を最優先し、数量×単価の合計金額、小計、請求金額、伝票合計はpriceに入れないでください。",
+            "あなたは洋菓子店・飲食店向けの原材料ラベル、納品書、価格表、価格改定通知を読むOCR補助です。まず画像内の文字をできるだけ読み取り、その中から原材料登録に必要な情報を抽出してください。原材料名と製品名は、画像に写っている文字を最優先し、食品カテゴリ名や一般名へ勝手に言い換えないでください。半角カタカナは全角カタカナとして慎重に読んでください。例: 「ﾌﾚｯｼｭｸﾘｰﾑ35」は「フレッシュクリーム35」、「ｸﾞﾗﾆｭｰ糖」は「グラニュー糖」、「ｶｽﾀｰﾄﾞ」は「カスタード」として扱います。例: 「フレッシュクリーム35」「特宝笠」「赤玉L」などはその表記を維持します。判読できない文字は推測で補完しすぎず、memoに曖昧な点を書いてください。複数の原材料・商品行が写っている場合は、先頭だけでなく読み取れる候補を順番にすべてingredientsへ入れてください。価格は単価、新価格、改定後価格、売単価、単価(税込)の列を最優先し、数量×単価の合計金額、小計、請求金額、伝票合計はpriceに入れないでください。",
         },
         {
           role: "user",
@@ -79,7 +79,7 @@ export async function POST(request: Request) {
             {
               type: "text",
               text:
-                "この画像から原材料登録用の情報を抽出してください。rawTextには見える文字を行ごとにできるだけ原文どおり転記してください。ingredientsには、価格表や納品書の各行、複数ラベル、複数商品をできるだけ分けて入れてください。nameには商品行の主語になる短い品名を入れてください。packageNameには袋や伝票の商品名・品名・規格・摘要に書かれた製品名を、文字を置き換えずできるだけそのまま入れてください。原材料名と製品名は、似た別の商品名へ補正しないでください。仕入先名、日付、合計行、伝票番号はname/packageNameにしないでください。priceは必ず単価、新価格、改定後価格、売単価、単価(税込)の列や近くの数値を優先してください。合計、金額、小計、請求金額、伝票合計、総額、数量×単価の結果はpriceに使わないでください。価格が複数ある場合は、新価格または改定後価格を選び、迷った理由をmemoに書いてください。返答は指定JSON schemaのみ。",
+                "この画像から原材料登録用の情報を抽出してください。rawTextには見える文字を行ごとにできるだけ原文どおり転記してください。ingredientsには、価格表や納品書の各行、複数ラベル、複数商品をできるだけ分けて入れてください。nameには商品行の主語になる短い品名を入れてください。packageNameには袋や伝票の商品名・品名・規格・摘要に書かれた製品名を入れてください。半角カタカナの商品名は全角カタカナへ直して読んでください。特に濁点・半濁点・小さいッャュョ・長音ーを落とさないでください。原材料名と製品名は、似た別の商品名へ補正しないでください。仕入先名、日付、合計行、伝票番号はname/packageNameにしないでください。priceは必ず単価、新価格、改定後価格、売単価、単価(税込)の列や近くの数値を優先してください。合計、金額、小計、請求金額、伝票合計、総額、数量×単価の結果はpriceに使わないでください。価格が複数ある場合は、新価格または改定後価格を選び、迷った理由をmemoに書いてください。返答は指定JSON schemaのみ。",
             },
             {
               type: "image_url",
@@ -115,10 +115,27 @@ export async function POST(request: Request) {
 
   try {
     const result = JSON.parse(content) as { rawText: string; memo: string; ingredients: IngredientOcrResult[] };
-    return NextResponse.json({ result });
+    return NextResponse.json({ result: normalizeIngredientOcrResult(result) });
   } catch {
     return NextResponse.json({ error: "OCR結果JSONを解析できませんでした。", raw: content }, { status: 502 });
   }
+}
+
+function normalizeIngredientOcrResult(result: { rawText: string; memo: string; ingredients: IngredientOcrResult[] }) {
+  return {
+    ...result,
+    ingredients: result.ingredients.map((ingredient) => ({
+      ...ingredient,
+      name: normalizeOcrField(ingredient.name),
+      packageName: normalizeOcrField(ingredient.packageName),
+      supplier: normalizeOcrField(ingredient.supplier),
+      packageUnit: normalizeOcrField(ingredient.packageUnit),
+    })),
+  };
+}
+
+function normalizeOcrField(value: string) {
+  return value.normalize("NFKC").replace(/\s+/g, " ").trim();
 }
 
 function shortenError(errorText: string) {
