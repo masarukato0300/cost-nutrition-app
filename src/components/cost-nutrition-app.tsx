@@ -1490,6 +1490,7 @@ export function CostNutritionApp() {
   }
 
   const selectedProduct = data.products.find((product) => product.id === selectedProductId) ?? data.products[0];
+  const recipeEditingProduct = data.products.find((product) => product.id === recipeProductSelectId) ?? null;
   const costSummary = selectedProduct
     ? calculateProductCost(selectedProduct, data.ingredients, data.recipeItems, data.products)
     : null;
@@ -1866,7 +1867,7 @@ export function CostNutritionApp() {
     const name = recipeProductName.trim();
     if (!name) {
       return {
-        productId: selectedProduct?.id ?? "",
+        productId: recipeProductSelectId,
         products: data.products,
         productCategories: data.productCategories,
         recipeItems: nextRecipeItems,
@@ -1922,7 +1923,10 @@ export function CostNutritionApp() {
   function addRecipeItemForIngredient(ingredientId: string, amountGram: number) {
     if (!ingredientId) return;
     const target = resolveRecipeTarget([]);
-    if (!target.productId) return;
+    if (!target.productId) {
+      alert("先に新しい商品名を入力するか、商品一覧から商品を選んでください。");
+      return;
+    }
     const item: RecipeItem = {
       id: createId("rec"),
       productId: target.productId,
@@ -1945,9 +1949,16 @@ export function CostNutritionApp() {
   }
 
   function addRecipeItemForIntermediate(intermediateProductId: string, amountGram: number) {
-    if (!intermediateProductId || intermediateProductId === selectedProduct?.id) return;
+    if (!intermediateProductId) return;
     const target = resolveRecipeTarget([]);
-    if (!target.productId || intermediateProductId === target.productId) return;
+    if (!target.productId) {
+      alert("先に新しい商品名を入力するか、商品一覧から商品を選んでください。");
+      return;
+    }
+    if (intermediateProductId === target.productId) {
+      alert("同じ中間材料を自分自身のレシピには追加できません。");
+      return;
+    }
     const item: RecipeItem = {
       id: createId("rec"),
       productId: target.productId,
@@ -2561,7 +2572,7 @@ export function CostNutritionApp() {
     ? buildLabelText(selectedProduct, costSummary.materialCostPerPiece, costSummary.costPerPiece, costSummary.costRate, nutritionSummary, data)
     : "";
 
-  const recipeRows = data.recipeItems.filter((item) => item.productId === selectedProduct?.id);
+  const recipeRows = data.recipeItems.filter((item) => item.productId === recipeEditingProduct?.id);
   const currentTone = activePage === "ocr" ? pageTones.ingredient : pageTone(activePage);
   const activeNavGroup = activePage === "ocr" ? null : navGroups.find((group) => (group.pages as readonly PageNavKey[]).includes(activePage)) ?? null;
   const visibleNavGroup = openNavGroup
@@ -3562,25 +3573,22 @@ export function CostNutritionApp() {
                 {visibleIntermediateProducts.map((product) => {
                   const summary = calculateProductCost(product, data.ingredients, data.recipeItems, data.products);
                   const unitCost = summary.totalRecipeWeightGram ? summary.totalCost / summary.totalRecipeWeightGram : 0;
-                  const isCurrentProduct = product.id === selectedProduct?.id;
                   return (
                     <button
                       key={product.id}
                       draggable
-                      className={`relative min-h-20 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-left ${isCurrentProduct ? "opacity-60" : ""}`}
-                      onClick={() => setSelectedProductId(product.id)}
+                      className="relative min-h-20 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-left"
+                      onClick={() => {
+                        addRecipeItemForIntermediate(product.id, 0);
+                      }}
                       onDragStart={(event) => {
-                        if (isCurrentProduct) {
-                          event.preventDefault();
-                          return;
-                        }
                         event.dataTransfer.setData("application/json", JSON.stringify({ type: "intermediate", id: product.id }));
                         event.dataTransfer.effectAllowed = "copy";
                       }}
                     >
                       <span className="block pr-8 font-black">{product.name}</span>
                       <span className="mt-1 inline-block rounded bg-emerald-100 px-2 py-1 text-[11px] font-bold text-emerald-700">
-                        {isCurrentProduct ? "編集中" : "中間材料"}
+                        中間材料
                       </span>
                       <span className="mt-1 block text-xs text-neutral-500">{yen(unitCost)} / g</span>
                       <span
