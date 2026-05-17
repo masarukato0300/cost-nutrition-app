@@ -246,6 +246,15 @@ function yen(value: number) {
   return new Intl.NumberFormat("ja-JP", { style: "currency", currency: "JPY", maximumFractionDigits: 1 }).format(value || 0);
 }
 
+function yenForSmallCost(value: number) {
+  return new Intl.NumberFormat("ja-JP", {
+    style: "currency",
+    currency: "JPY",
+    minimumFractionDigits: Math.abs(value || 0) < 100 ? 2 : 0,
+    maximumFractionDigits: Math.abs(value || 0) < 100 ? 2 : 0,
+  }).format(value || 0);
+}
+
 function number(value: number, digits = 1) {
   return new Intl.NumberFormat("ja-JP", { maximumFractionDigits: digits }).format(value || 0);
 }
@@ -1599,6 +1608,15 @@ export function CostNutritionApp() {
       .sort((a, b) => Number(a.isIntermediateMaterial) - Number(b.isIntermediateMaterial) || a.category.localeCompare(b.category, "ja") || a.name.localeCompare(b.name, "ja")),
     [activeProductCategory, data.products],
   );
+  const productFormCostSummary = useMemo(
+    () => productForm.id
+      ? calculateProductCost(productForm, data.ingredients, data.recipeItems, data.products)
+      : null,
+    [data.ingredients, data.products, data.recipeItems, productForm],
+  );
+  const productFormRecommendedPrice = productFormCostSummary && productForm.targetCostRate
+    ? productFormCostSummary.costForDisplayUnit / (productForm.targetCostRate / 100)
+    : 0;
   const productionPlanItems = useMemo(
     () => Object.entries(productionPlan).map(([productId, quantity]) => ({ productId, quantity: Number(quantity) || 0 })),
     [productionPlan],
@@ -3471,6 +3489,46 @@ export function CostNutritionApp() {
                 <NumberInput label="1個あたり重量g" value={productForm.weightPerPieceGram} onChange={(value) => setProductForm({ ...productForm, weightPerPieceGram: value })} />
               </div>
             </section>
+
+            <section className="rounded-md border border-violet-200 bg-violet-50 p-4 lg:col-span-2">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-black text-violet-950">4. レシピから見た原価の目安</h3>
+                  <p className="mt-1 text-xs font-bold text-violet-900">
+                    レシピ登録済みの商品は、ここに使用量・原価・推奨価格の参考値が出ます。販売価格を決める時の確認に使ってください。
+                  </p>
+                </div>
+                {productFormCostSummary && (
+                  <button
+                    className="rounded-md border border-violet-300 bg-white px-3 py-2 text-xs font-black text-violet-800"
+                    onClick={() => setProductForm({ ...productForm, beforeBakeWeightGram: Math.round(productFormCostSummary.totalRecipeWeightGram * 10) / 10 })}
+                  >
+                    レシピ重量を焼成前総重量へ入れる
+                  </button>
+                )}
+              </div>
+              {productFormCostSummary ? (
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  <Metric label="レシピ合計使用量" value={`${number(productFormCostSummary.totalRecipeWeightGram, 1)}g`} compact />
+                  <Metric label="材料原価/個" value={yenForSmallCost(productFormCostSummary.materialCostPerPiece)} compact />
+                  <Metric label="包材込み原価/個" value={yenForSmallCost(productFormCostSummary.costPerPiece)} compact />
+                  <Metric
+                    label={`${productForm.displayUnit}の原価率`}
+                    value={percent(productFormCostSummary.costRate)}
+                    tone={productFormCostSummary.costRate >= 40 ? "danger" : productFormCostSummary.costRate >= 35 ? "warn" : "normal"}
+                    compact
+                  />
+                  <Metric label={`${productForm.displayUnit}の材料原価`} value={yenForSmallCost(productFormCostSummary.materialCostForDisplayUnit)} compact />
+                  <Metric label={`${productForm.displayUnit}の包材込み原価`} value={yenForSmallCost(productFormCostSummary.costForDisplayUnit)} compact />
+                  <Metric label={`目標${number(productForm.targetCostRate)}%の推奨価格`} value={yenForSmallCost(productFormRecommendedPrice)} compact />
+                  <Metric label="現在の販売価格" value={yenForSmallCost(productForm.sellingPrice)} compact />
+                </div>
+              ) : (
+                <div className="mt-3 rounded-md border border-violet-200 bg-white p-3 text-sm font-bold text-violet-900">
+                  商品を保存してからレシピ登録すると、ここに原価の目安が表示されます。
+                </div>
+              )}
+            </section>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <button className="rounded-md bg-teal-700 px-4 py-2 font-bold text-white" onClick={saveProduct}>
@@ -3559,7 +3617,7 @@ export function CostNutritionApp() {
                       </td>
                       <td className="p-3">{product.category || "未分類"}</td>
                       <td className="p-3 text-right">{yen(product.sellingPrice)}</td>
-                      <td className="p-3 text-right">{yen(summary.costPerPiece)}</td>
+                      <td className="p-3 text-right">{yenForSmallCost(summary.costPerPiece)}</td>
                       <td className={`p-3 text-right font-black ${summary.costRate >= 40 ? "text-red-700" : summary.costRate >= 35 ? "text-amber-700" : "text-neutral-800"}`}>
                         {number(summary.costRate)}%
                       </td>
