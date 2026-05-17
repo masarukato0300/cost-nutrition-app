@@ -805,7 +805,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 async function preprocessImageForOcr(file: File): Promise<string> {
   const dataUrl = await fileToImageDataUrl(file);
   const image = await loadImage(dataUrl);
-  const maxSize = 2400;
+  const maxSize = 3200;
   const scale = Math.min(1, maxSize / Math.max(image.naturalWidth, image.naturalHeight));
   const width = Math.max(1, Math.round(image.naturalWidth * scale));
   const height = Math.max(1, Math.round(image.naturalHeight * scale));
@@ -815,10 +815,51 @@ async function preprocessImageForOcr(file: File): Promise<string> {
   const context = canvas.getContext("2d");
   if (!context) return dataUrl;
 
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
   context.fillStyle = "#ffffff";
   context.fillRect(0, 0, width, height);
   context.drawImage(image, 0, 0, width, height);
-  return canvas.toDataURL("image/jpeg", 0.9);
+  enhanceCanvasForOcr(context, width, height);
+  return canvas.toDataURL("image/jpeg", 0.95);
+}
+
+function enhanceCanvasForOcr(context: CanvasRenderingContext2D, width: number, height: number) {
+  const imageData = context.getImageData(0, 0, width, height);
+  const source = new Uint8ClampedArray(imageData.data);
+  const data = imageData.data;
+  const contrast = 1.35;
+  const brightness = 8;
+
+  for (let index = 0; index < data.length; index += 4) {
+    const gray = source[index] * 0.299 + source[index + 1] * 0.587 + source[index + 2] * 0.114;
+    const boosted = Math.max(0, Math.min(255, (gray - 128) * contrast + 128 + brightness));
+    data[index] = boosted;
+    data[index + 1] = boosted;
+    data[index + 2] = boosted;
+  }
+
+  const sharpened = new Uint8ClampedArray(data);
+  const kernel = [0, -1, 0, -1, 5, -1, 0, -1, 0];
+  for (let y = 1; y < height - 1; y += 1) {
+    for (let x = 1; x < width - 1; x += 1) {
+      const pixelIndex = (y * width + x) * 4;
+      let sum = 0;
+      let kernelIndex = 0;
+      for (let ky = -1; ky <= 1; ky += 1) {
+        for (let kx = -1; kx <= 1; kx += 1) {
+          const neighborIndex = ((y + ky) * width + x + kx) * 4;
+          sum += sharpened[neighborIndex] * kernel[kernelIndex];
+          kernelIndex += 1;
+        }
+      }
+      const value = Math.max(0, Math.min(255, sum));
+      data[pixelIndex] = value;
+      data[pixelIndex + 1] = value;
+      data[pixelIndex + 2] = value;
+    }
+  }
+  context.putImageData(imageData, 0, 0);
 }
 
 function ingredientFromVisionResult(result: IngredientVisionOcrResult, base: Ingredient): Ingredient {
