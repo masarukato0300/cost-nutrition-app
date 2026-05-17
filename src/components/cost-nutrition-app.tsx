@@ -456,13 +456,41 @@ function copyNutrition(target: Ingredient, source: Ingredient): Ingredient {
 function findDuplicateIngredients(target: Ingredient, ingredients: Ingredient[]) {
   const targetNames = [target.name, target.packageName, target.labelName].map((value) => normalizeText(value || "")).filter(Boolean);
   if (targetNames.length === 0) return [];
-  return ingredients.filter((ingredient) => {
-    if (ingredient.id && ingredient.id === target.id) return false;
-    const names = [ingredient.name, ingredient.packageName, ingredient.labelName].map((value) => normalizeText(value || "")).filter(Boolean);
-    return targetNames.some((targetName) =>
-      names.some((name) => name === targetName || (targetName.length >= 3 && name.includes(targetName)) || (name.length >= 3 && targetName.includes(name))),
-    );
-  });
+  return ingredients
+    .map((ingredient) => {
+      if (ingredient.id && ingredient.id === target.id) return { ingredient, score: 0 };
+      const names = [ingredient.name, ingredient.packageName, ingredient.labelName].map((value) => normalizeText(value || "")).filter(Boolean);
+      const score = targetNames.reduce((maxScore, targetName) => Math.max(
+        maxScore,
+        ...names.map((name) => ingredientNameMatchScore(targetName, name)),
+      ), 0);
+      const supplierScore = target.supplier && ingredient.supplier && normalizeText(target.supplier) === normalizeText(ingredient.supplier) ? 8 : 0;
+      return { ingredient, score: score + supplierScore };
+    })
+    .filter((item) => item.score >= 16)
+    .sort((a, b) => b.score - a.score)
+    .map((item) => item.ingredient);
+}
+
+function ingredientNameMatchScore(targetName: string, name: string) {
+  if (!targetName || !name) return 0;
+  if (targetName === name) return 100;
+  if (targetName.length >= 3 && name.includes(targetName)) return 70 + targetName.length;
+  if (name.length >= 3 && targetName.includes(name)) return 60 + name.length;
+  const targetChars = Array.from(new Set(targetName.split("")));
+  const nameChars = Array.from(new Set(name.split("")));
+  const commonChars = targetChars.filter((char) => nameChars.includes(char)).length;
+  const overlap = commonChars / Math.max(targetChars.length, nameChars.length, 1);
+  const targetBigrams = bigrams(targetName);
+  const nameBigrams = bigrams(name);
+  const commonBigrams = targetBigrams.filter((gram) => nameBigrams.includes(gram)).length;
+  const bigramOverlap = commonBigrams / Math.max(targetBigrams.length, nameBigrams.length, 1);
+  return Math.round(overlap * 22 + bigramOverlap * 36);
+}
+
+function bigrams(value: string) {
+  if (value.length <= 1) return [value];
+  return Array.from({ length: value.length - 1 }, (_, index) => value.slice(index, index + 2));
 }
 
 function aliasSourceTexts(ingredient: Ingredient) {
@@ -599,9 +627,10 @@ function topPageDescription(pageKey: PageKey) {
 
 function normalizeText(value: string) {
   return value
+    .normalize("NFKC")
     .toLowerCase()
     .replace(/[Ａ-Ｚａ-ｚ０-９]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xfee0))
-    .replace(/\s/g, "");
+    .replace(/[・･\s\-ーｰ]/g, "");
 }
 
 function csvCell(value: string | number | null | undefined) {
@@ -802,26 +831,139 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
-async function preprocessImageForOcr(file: File): Promise<string> {
-  const dataUrl = await fileToImageDataUrl(file);
+type OcrCrop = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+const defaultOcrCrop: OcrCrop = { x: 4, y: 5, width: 92, height: 88 };
+
+async function preprocessImageForOcr(dataUrl: string, crop: OcrCrop = defaultOcrCrop): Promise<string> {
   const image = await loadImage(dataUrl);
   const maxSize = 3200;
   const scale = Math.min(1, maxSize / Math.max(image.naturalWidth, image.naturalHeight));
   const width = Math.max(1, Math.round(image.naturalWidth * scale));
   const height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const sourceX = Math.max(0, Math.round((image.naturalWidth * crop.x) / 100));
+  const sourceY = Math.max(0, Math.round((image.naturalHeight * crop.y) / 100));
+  const sourceWidth = Math.max(1, Math.round((image.naturalWidth * crop.width) / 100));
+  const sourceHeight = Math.max(1, Math.round((image.naturalHeight * crop.height) / 100));
+  const croppedWidth = Math.min(sourceWidth, image.naturalWidth - sourceX);
+  const croppedHeight = Math.min(sourceHeight, image.naturalHeight - sourceY);
+  const croppedMax = Math.max(croppedWidth, croppedHeight);
+  const croppedScale = Math.min(1, maxSize / croppedMax);
+  const outputWidth = Math.max(1, Math.round(croppedWidth * croppedScale));
+  const outputHeight = Math.max(1, Math.round(croppedHeight * croppedScale));
   const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
+  canvas.width = outputWidth || width;
+  canvas.height = outputHeight || height;
   const context = canvas.getContext("2d");
   if (!context) return dataUrl;
 
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = "high";
   context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(image, sourceX, sourceY, croppedWidth, croppedHeight, 0, 0, canvas.width, canvas.height);
+  enhanceCanvasForOcr(context, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.95);
+}
+
+async function autoDetectOcrCrop(dataUrl: string): Promise<OcrCrop> {
+  const image = await loadImage(dataUrl);
+  const maxScanWidth = 900;
+  const scale = Math.min(1, maxScanWidth / image.naturalWidth);
+  const width = Math.max(1, Math.round(image.naturalWidth * scale));
+  const height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) return defaultOcrCrop;
+  context.fillStyle = "#ffffff";
   context.fillRect(0, 0, width, height);
   context.drawImage(image, 0, 0, width, height);
-  enhanceCanvasForOcr(context, width, height);
-  return canvas.toDataURL("image/jpeg", 0.95);
+  const imageData = context.getImageData(0, 0, width, height).data;
+  let minX = width;
+  let minY = height;
+  let maxX = 0;
+  let maxY = 0;
+  for (let y = 0; y < height; y += 2) {
+    for (let x = 0; x < width; x += 2) {
+      const index = (y * width + x) * 4;
+      const gray = imageData[index] * 0.299 + imageData[index + 1] * 0.587 + imageData[index + 2] * 0.114;
+      if (gray < 210) {
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+      }
+    }
+  }
+  if (minX >= maxX || minY >= maxY) return defaultOcrCrop;
+  const padX = width * 0.03;
+  const padY = height * 0.04;
+  const x = Math.max(0, ((minX - padX) / width) * 100);
+  const y = Math.max(0, ((minY - padY) / height) * 100);
+  const right = Math.min(100, ((maxX + padX) / width) * 100);
+  const bottom = Math.min(100, ((maxY + padY) / height) * 100);
+  return {
+    x: Math.round(x),
+    y: Math.round(y),
+    width: Math.max(20, Math.round(right - x)),
+    height: Math.max(20, Math.round(bottom - y)),
+  };
+}
+
+async function splitOcrImageIntoRows(dataUrl: string): Promise<string[]> {
+  const image = await loadImage(dataUrl);
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+  const context = canvas.getContext("2d");
+  if (!context) return [dataUrl];
+  context.drawImage(image, 0, 0);
+  const { width, height } = canvas;
+  const imageData = context.getImageData(0, 0, width, height).data;
+  const darkRows: number[] = [];
+  for (let y = 0; y < height; y += 1) {
+    let darkPixels = 0;
+    for (let x = 0; x < width; x += 6) {
+      const index = (y * width + x) * 4;
+      if (imageData[index] < 175) darkPixels += 1;
+    }
+    if (darkPixels > width / 180) darkRows.push(y);
+  }
+  const bands: Array<{ start: number; end: number }> = [];
+  let start = -1;
+  let previous = -1;
+  for (const row of darkRows) {
+    if (start === -1) start = row;
+    if (previous !== -1 && row - previous > 18) {
+      bands.push({ start, end: previous });
+      start = row;
+    }
+    previous = row;
+  }
+  if (start !== -1) bands.push({ start, end: previous });
+  const rowBands = bands
+    .map((band) => ({ start: Math.max(0, band.start - 22), end: Math.min(height, band.end + 22) }))
+    .filter((band) => band.end - band.start >= 28)
+    .slice(0, 14);
+  if (rowBands.length < 2) return [dataUrl];
+  return rowBands.map((band) => {
+    const rowCanvas = document.createElement("canvas");
+    rowCanvas.width = width;
+    rowCanvas.height = band.end - band.start;
+    const rowContext = rowCanvas.getContext("2d");
+    if (!rowContext) return dataUrl;
+    rowContext.fillStyle = "#ffffff";
+    rowContext.fillRect(0, 0, rowCanvas.width, rowCanvas.height);
+    rowContext.drawImage(canvas, 0, band.start, width, rowCanvas.height, 0, 0, width, rowCanvas.height);
+    return rowCanvas.toDataURL("image/jpeg", 0.95);
+  });
 }
 
 function enhanceCanvasForOcr(context: CanvasRenderingContext2D, width: number, height: number) {
@@ -1001,6 +1143,10 @@ export function CostNutritionApp() {
   const [ingredientOcrImageName, setIngredientOcrImageName] = useState("");
   const [ingredientOcrStatus, setIngredientOcrStatus] = useState("");
   const [isIngredientOcrReading, setIsIngredientOcrReading] = useState(false);
+  const [pendingIngredientOcrImage, setPendingIngredientOcrImage] = useState("");
+  const [pendingIngredientOcrImageName, setPendingIngredientOcrImageName] = useState("");
+  const [ingredientOcrCrop, setIngredientOcrCrop] = useState<OcrCrop>(defaultOcrCrop);
+  const [splitIngredientOcrByRows, setSplitIngredientOcrByRows] = useState(true);
   const [ingredientOcrCandidate, setIngredientOcrCandidate] = useState<Ingredient | null>(null);
   const [ingredientOcrCandidates, setIngredientOcrCandidates] = useState<Ingredient[]>([]);
   const [ingredientOcrCandidateIndex, setIngredientOcrCandidateIndex] = useState(0);
@@ -1127,27 +1273,21 @@ export function CostNutritionApp() {
     saveStores(nextStores);
   }
 
-  async function readIngredientFileWithOcr(file: File) {
-    setIngredientOcrImageName(file.name);
+  async function readIngredientImageWithOcr(imageDataUrl: string, imageName: string) {
+    setIngredientOcrImageName(imageName);
     setIsIngredientOcrReading(true);
     setIngredientOcrStatus("画像を圧縮中...");
     try {
-      const preprocessedImage = await preprocessImageForOcr(file);
-      setIngredientOcrStatus("OpenAI Visionで読み取り中... 撮影1回につき1リクエストです。");
-      const response = await fetch("/api/ingredient-vision-ocr", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageDataUrl: preprocessedImage }),
-      });
-
-      const json = await response.json();
-      if (!response.ok) {
-        throw new Error(json.error || "OpenAI Vision OCRに失敗しました。");
-      }
-
-      const result = json.result as IngredientVisionOcrResponse | IngredientVisionOcrResult;
-      const rawText = "ingredients" in result ? result.rawText : result.rawText || "";
-      const results = "ingredients" in result ? result.ingredients : [result];
+      const preprocessedImage = await preprocessImageForOcr(imageDataUrl, ingredientOcrCrop);
+      const rowImages = splitIngredientOcrByRows ? await splitOcrImageIntoRows(preprocessedImage) : [preprocessedImage];
+      setIngredientOcrStatus(
+        rowImages.length > 1
+          ? `文字範囲を${rowImages.length}行に分けてAI解析中...`
+          : "OpenAI Visionで読み取り中...",
+      );
+      const parsedResults = await Promise.all(rowImages.map((rowImage) => fetchIngredientOcr(rowImage)));
+      const rawText = parsedResults.map((result) => ("ingredients" in result ? result.rawText : result.rawText || "")).filter(Boolean).join("\n");
+      const results = parsedResults.flatMap((result) => ("ingredients" in result ? result.ingredients : [result]));
       const validResults = results.filter((item) => item.name || item.packageName || item.price);
 
       if (validResults.length === 0) {
@@ -1178,9 +1318,46 @@ export function CostNutritionApp() {
     }
   }
 
+  async function fetchIngredientOcr(imageDataUrl: string) {
+    const response = await fetch("/api/ingredient-vision-ocr", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ imageDataUrl }),
+    });
+    const json = await response.json();
+    if (!response.ok) {
+      throw new Error(json.error || "OpenAI Vision OCRに失敗しました。");
+    }
+    return json.result as IngredientVisionOcrResponse | IngredientVisionOcrResult;
+  }
+
   function handleIngredientOcrFile(file: File | null) {
     if (!file) return;
-    void readIngredientFileWithOcr(file);
+    void prepareIngredientOcrImage(file);
+  }
+
+  async function prepareIngredientOcrImage(file: File) {
+    setIngredientOcrImageName(file.name);
+    setIngredientOcrStatus("撮影画像から文字範囲を探しています...");
+    try {
+      const dataUrl = await fileToImageDataUrl(file);
+      const detectedCrop = await autoDetectOcrCrop(dataUrl);
+      setPendingIngredientOcrImage(dataUrl);
+      setPendingIngredientOcrImageName(file.name);
+      setIngredientOcrCrop(detectedCrop);
+      setIngredientOcrStatus("文字範囲を確認してからAI解析してください。");
+    } catch (error) {
+      setIngredientOcrStatus(error instanceof Error ? error.message : "画像を読み込めませんでした。");
+    }
+  }
+
+  function runPreparedIngredientOcr() {
+    if (!pendingIngredientOcrImage) return;
+    const image = pendingIngredientOcrImage;
+    const name = pendingIngredientOcrImageName || ingredientOcrImageName || "撮影画像";
+    setPendingIngredientOcrImage("");
+    setPendingIngredientOcrImageName("");
+    void readIngredientImageWithOcr(image, name);
   }
 
   function applyIngredientOcrCandidate() {
@@ -2435,6 +2612,97 @@ export function CostNutritionApp() {
         </div>
       )}
 
+      {pendingIngredientOcrImage && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-3">
+          <section className="max-h-[92vh] w-full max-w-3xl overflow-auto rounded-md border border-neutral-200 bg-white p-4 shadow-xl">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-black">文字範囲を確認</h2>
+                <p className="mt-1 text-xs font-bold text-neutral-500">
+                  赤枠の中だけをAI解析します。伝票の余白や机が多い時は、ここで文字部分に寄せてください。
+                </p>
+              </div>
+              <button
+                className="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm font-bold text-neutral-700"
+                onClick={() => {
+                  setPendingIngredientOcrImage("");
+                  setPendingIngredientOcrImageName("");
+                  setIngredientOcrStatus("OCRをキャンセルしました。");
+                }}
+              >
+                閉じる
+              </button>
+            </div>
+            <div className="mt-4 grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+              <div className="relative overflow-hidden rounded-md border border-neutral-200 bg-neutral-100">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={pendingIngredientOcrImage} alt="OCR読み取り範囲" className="max-h-[52vh] w-full object-contain" />
+                <div
+                  className="pointer-events-none absolute border-4 border-red-500 bg-red-500/10"
+                  style={{
+                    left: `${ingredientOcrCrop.x}%`,
+                    top: `${ingredientOcrCrop.y}%`,
+                    width: `${ingredientOcrCrop.width}%`,
+                    height: `${ingredientOcrCrop.height}%`,
+                  }}
+                />
+              </div>
+              <div className="grid content-start gap-3">
+                <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-900">
+                  文字が小さい伝票は、赤枠を商品行の表だけに寄せると読み取り精度が上がります。
+                </div>
+                <button
+                  className="rounded-md border border-neutral-300 bg-white px-4 py-2 text-sm font-bold text-neutral-700"
+                  onClick={() => {
+                    void autoDetectOcrCrop(pendingIngredientOcrImage).then(setIngredientOcrCrop);
+                  }}
+                >
+                  文字範囲を自動調整
+                </button>
+                {([
+                  ["左", "x"],
+                  ["上", "y"],
+                  ["幅", "width"],
+                  ["高さ", "height"],
+                ] as Array<[string, keyof OcrCrop]>).map(([label, key]) => (
+                  <label key={key} className="grid gap-1 text-sm font-bold text-neutral-700">
+                    {label}: {ingredientOcrCrop[key]}%
+                    <input
+                      type="range"
+                      min={key === "width" || key === "height" ? 20 : 0}
+                      max={key === "width" || key === "height" ? 100 : 80}
+                      value={ingredientOcrCrop[key]}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        setIngredientOcrCrop((crop) => ({
+                          ...crop,
+                          [key]: value,
+                        }));
+                      }}
+                    />
+                  </label>
+                ))}
+                <label className="flex items-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 p-3 text-sm font-bold text-neutral-700">
+                  <input
+                    type="checkbox"
+                    checked={splitIngredientOcrByRows}
+                    onChange={(event) => setSplitIngredientOcrByRows(event.target.checked)}
+                  />
+                  表を行ごと・商品ごとに分けてAI解析する
+                </label>
+                <button
+                  className="rounded-md bg-red-600 px-5 py-3 text-base font-black text-white"
+                  disabled={isIngredientOcrReading}
+                  onClick={runPreparedIngredientOcr}
+                >
+                  この範囲でAI解析
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
+
       {ingredientOcrCandidate && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-3">
           <section className="w-full max-w-xl rounded-md border border-neutral-200 bg-white p-4 shadow-xl">
@@ -2544,20 +2812,20 @@ export function CostNutritionApp() {
                   写真
                 </button>
                 <span className="text-xs font-bold text-neutral-500">
-                  {ingredientOcrImageName ? `選択中: ${ingredientOcrImageName}` : "撮影・選択後に自動でAI読み取りします。"}
+                  {ingredientOcrImageName ? `選択中: ${ingredientOcrImageName}` : "撮影・選択後に文字範囲を確認します。"}
                 </span>
               </div>
               <div className="grid content-center gap-2 rounded-md border border-teal-200 bg-white p-4">
                 <p className="text-lg font-black text-teal-900">
-                  {isIngredientOcrReading ? "AI読み取り中" : "撮影すると自動で読み取ります"}
+                  {isIngredientOcrReading ? "AI読み取り中" : "撮影後に範囲確認して読み取ります"}
                 </p>
                 <p className="text-sm font-bold text-neutral-600">
-                  読み取り後は確認POPUPで原材料名、製品名、内容量、価格を確認してからフォームへ反映します。
+                  文字部分だけ切り抜き、表は行ごとに分けて解析できます。読み取り後は確認POPUPで反映します。
                 </p>
               </div>
             </div>
             <p className="mt-2 text-xs font-bold text-teal-900">
-              {ingredientOcrStatus || "画像を圧縮し、gpt-4oで1回だけ読み取ります。確認POPUPで内容を確認してからフォームへ反映します。"}
+              {ingredientOcrStatus || "文字範囲を確認し、必要に応じて行ごと・商品ごとに分けてAI読み取りします。"}
             </p>
           </section>
           <section className="rounded-md border border-neutral-200 bg-white p-4">
