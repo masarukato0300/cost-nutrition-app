@@ -405,6 +405,26 @@ function pageTone(pageKey: PageNavKey) {
   return pageTones[pageKey];
 }
 
+function mainNavButtonTone(pageKey: PageNavKey, isActive: boolean, fallback: { navActive: string; navIdle: string }) {
+  const standout: Partial<Record<PageNavKey, { active: string; idle: string }>> = {
+    ingredient: {
+      idle: "border-red-700 bg-red-600 text-white shadow-md hover:bg-red-700",
+      active: "border-blue-800 bg-blue-600 text-white shadow-md ring-2 ring-blue-200",
+    },
+    product: {
+      idle: "border-yellow-600 bg-yellow-400 text-neutral-950 shadow-md hover:bg-yellow-300",
+      active: "border-green-800 bg-green-600 text-white shadow-md ring-2 ring-green-200",
+    },
+    recipe: {
+      idle: "border-fuchsia-800 bg-fuchsia-600 text-white shadow-md hover:bg-fuchsia-700",
+      active: "border-orange-800 bg-orange-600 text-white shadow-md ring-2 ring-orange-200",
+    },
+  };
+  const tone = standout[pageKey];
+  if (!tone) return isActive ? fallback.navActive : fallback.navIdle;
+  return isActive ? tone.active : tone.idle;
+}
+
 function pageLabel(pageKey: PageNavKey) {
   return pages.find((page) => page.key === pageKey)?.label ?? pageKey;
 }
@@ -2836,7 +2856,7 @@ export function CostNutritionApp() {
               <button
                 key={pageKey}
                 className={`flex min-h-12 items-center gap-2 rounded-md border-2 px-2 py-2 text-left font-black transition-colors ${
-                  isActive ? tone.navActive : tone.navIdle
+                  mainNavButtonTone(pageKey, isActive, tone)
                 }`}
                 onClick={() => {
                   setOpenNavGroup(null);
