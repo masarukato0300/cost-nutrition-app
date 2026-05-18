@@ -26,7 +26,7 @@ import {
 import { sampleData } from "@/lib/sample-data";
 import { standardNutritionFoods } from "@/lib/standard-nutrition";
 import type { StandardNutritionFood } from "@/lib/standard-nutrition";
-import type { ActualCostRecord, AppData, EventPlan, EventSimulationRow, Ingredient, IngredientAlias, LaborCost, MaterialType, MonthlyTheoryRow, Product, ProductLaborCostSummary, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow, SalesRecord, SetProductCostSummary, SetProductItem, WasteItemType, WasteMonthlySummary, WasteReason, WasteRecord } from "@/lib/types";
+import type { ActualCostRecord, AppData, EventPlan, EventSimulationRow, Ingredient, IngredientAlias, LaborCost, MaterialType, MonthlyTheoryRow, PriceImpactRow, Product, ProductLaborCostSummary, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow, SalesRecord, SetProductCostSummary, SetProductItem, WasteItemType, WasteMonthlySummary, WasteReason, WasteRecord } from "@/lib/types";
 
 const defaultStoreId = "デモ店舗";
 const legacyStorageKey = "cost-nutrition-label-mvp-v1";
@@ -244,6 +244,12 @@ type IngredientVisionOcrResponse = {
   memo: string;
   ingredients: IngredientVisionOcrResult[];
 };
+type RecentPriceImpact = {
+  ingredientName: string;
+  oldPrice: number;
+  newPrice: number;
+  rows: PriceImpactRow[];
+};
 
 function yen(value: number) {
   return new Intl.NumberFormat("ja-JP", { style: "currency", currency: "JPY", maximumFractionDigits: 1 }).format(value || 0);
@@ -264,6 +270,10 @@ function number(value: number, digits = 1) {
 
 function percent(value: number) {
   return `${number(value, 1)}%`;
+}
+
+function keepCurrentRatePrice(row: PriceImpactRow) {
+  return row.oldCostRate ? row.newCost / (row.oldCostRate / 100) : 0;
 }
 
 function now() {
@@ -1236,6 +1246,7 @@ export function CostNutritionApp() {
   const [laborForm, setLaborForm] = useState<LaborCost>(() => emptyLaborCost(sampleData.products.find((product) => !product.isIntermediateMaterial)?.id ?? ""));
   const [selectedSetProductId, setSelectedSetProductId] = useState(sampleData.products.find((product) => product.id === "prd-gift")?.id ?? sampleData.products.find((product) => !product.isIntermediateMaterial)?.id ?? "");
   const [setProductItemForm, setSetProductItemForm] = useState<SetProductItem>(() => emptySetProductItem(sampleData.products.find((product) => product.id === "prd-gift")?.id ?? "", sampleData.products.find((product) => product.id === "prd-madeleine")?.id ?? ""));
+  const [recentPriceImpact, setRecentPriceImpact] = useState<RecentPriceImpact | null>(null);
   const [productionPlan, setProductionPlan] = useState<Record<string, number>>({
     "prd-shortcake": 50,
     "prd-madeleine": 100,
@@ -1756,6 +1767,7 @@ export function CostNutritionApp() {
   function saveIngredient() {
     if (!ingredientForm.name.trim()) return;
     const isEdit = Boolean(ingredientForm.id);
+    const oldIngredient = isEdit ? data.ingredients.find((item) => item.id === ingredientForm.id) : null;
     const inferredCategory = inferIngredientCategory(`${ingredientForm.name} ${ingredientForm.packageName}`);
     const normalizedAmount = normalizePackageAmount(ingredientForm.packageAmountGram, ingredientForm.packageUnit || "g");
     let ingredient: Ingredient = {
@@ -1808,13 +1820,42 @@ export function CostNutritionApp() {
       }
     }
     const nextAliases = learnIngredientAliases(data.ingredientAliases, ingredient);
+    const priceChanged = Boolean(oldIngredient && Math.abs(oldIngredient.price - ingredient.price) > 0.0001);
+    const changedAt = now();
+    const priceImpactRows = priceChanged ? calculatePriceImpact(data, ingredient.id, ingredient.price) : [];
     commit({
       ...data,
       ingredients: isEdit
         ? data.ingredients.map((item) => (item.id === ingredient.id ? ingredient : item))
         : [...data.ingredients, ingredient],
       ingredientAliases: nextAliases,
+      priceHistories: priceChanged && oldIngredient
+        ? [
+          ...data.priceHistories,
+          {
+            id: createId("hist"),
+            ingredientId: ingredient.id,
+            oldPrice: oldIngredient.price,
+            newPrice: ingredient.price,
+            changedAt,
+            supplier: ingredient.supplier,
+            reason: "原材料再登録による価格改定",
+            sourceType: "manual" as const,
+            memo: "原材料登録画面で価格変更",
+          },
+        ]
+        : data.priceHistories,
     });
+    if (priceChanged && oldIngredient) {
+      setImpactIngredientId(ingredient.id);
+      setImpactNewPrice(ingredient.price);
+      setRecentPriceImpact({
+        ingredientName: ingredientOptionLabel(ingredient),
+        oldPrice: oldIngredient.price,
+        newPrice: ingredient.price,
+        rows: priceImpactRows,
+      });
+    }
     setIngredientForm(emptyIngredient());
     setShowIngredientUnitConversion(false);
     setAppliedStandardNutritionId("");
@@ -2987,6 +3028,82 @@ export function CostNutritionApp() {
             <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-900">
               現在はMVP用の簡易PINです。正式リリース時はクラウドDBとログイン機能に移行する想定です。
             </div>
+          </section>
+        </div>
+      )}
+
+      {recentPriceImpact && (
+        <div className="fixed inset-0 z-[55] grid place-items-center bg-black/45 p-3">
+          <section className="max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-md border border-neutral-200 bg-white p-4 shadow-2xl">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black text-red-700">価格改定の影響</p>
+                <h2 className="mt-1 text-xl font-black text-neutral-950">{recentPriceImpact.ingredientName}</h2>
+                <p className="mt-1 text-sm font-bold text-neutral-600">
+                  仕入価格 {yen(recentPriceImpact.oldPrice)} → {yen(recentPriceImpact.newPrice)}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  className="rounded-md border border-teal-300 bg-teal-50 px-3 py-2 font-black text-teal-800"
+                  onClick={() => {
+                    setRecentPriceImpact(null);
+                    setActivePage("impact");
+                  }}
+                >
+                  影響分析で詳しく見る
+                </button>
+                <button className="rounded-md border border-neutral-300 bg-white px-3 py-2 font-black text-neutral-700" onClick={() => setRecentPriceImpact(null)}>
+                  閉じる
+                </button>
+              </div>
+            </div>
+            {recentPriceImpact.rows.length > 0 ? (
+              <div className="mt-4 overflow-x-auto rounded-md border border-neutral-200">
+                <table className="w-full min-w-[980px] text-left text-sm">
+                  <thead className="bg-red-50 text-red-950">
+                    <tr>
+                      <th className="p-3">商品</th>
+                      <th className="p-3 text-right">旧原価</th>
+                      <th className="p-3 text-right">新原価</th>
+                      <th className="p-3 text-right">上昇額</th>
+                      <th className="p-3 text-right">旧原価率</th>
+                      <th className="p-3 text-right">新原価率</th>
+                      <th className="p-3 text-right">維持する売値</th>
+                      <th className="p-3">判定</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentPriceImpact.rows.map((row) => (
+                      <tr key={row.product.id} className="border-t border-neutral-200">
+                        <td className="p-3 font-black">
+                          {row.product.name}
+                          {row.product.isIntermediateMaterial && <span className="ml-2 rounded bg-teal-50 px-2 py-1 text-xs font-bold text-teal-800">中間材料</span>}
+                        </td>
+                        <td className="p-3 text-right">{yenForSmallCost(row.oldCost)}</td>
+                        <td className="p-3 text-right font-black">{yenForSmallCost(row.newCost)}</td>
+                        <td className={`p-3 text-right font-black ${row.increase > 0 ? "text-red-700" : "text-teal-700"}`}>{yenForSmallCost(row.increase)}</td>
+                        <td className="p-3 text-right">{percent(row.oldCostRate)}</td>
+                        <td className={`p-3 text-right font-black ${row.newCostRate >= 40 ? "text-red-700" : row.newCostRate >= 35 ? "text-amber-700" : "text-neutral-900"}`}>{percent(row.newCostRate)}</td>
+                        <td className="p-3 text-right font-black text-teal-800">{yenForSmallCost(keepCurrentRatePrice(row))}</td>
+                        <td className="p-3">
+                          <span className={`rounded px-2 py-1 text-xs font-black ${row.needsPriceReview ? "bg-red-50 text-red-700" : "bg-teal-50 text-teal-800"}`}>
+                            {row.needsPriceReview ? "値上げ検討" : "確認のみ"}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-md border border-neutral-200 bg-neutral-50 p-4 text-sm font-bold text-neutral-600">
+                この原材料に紐づく商品はありません。
+              </div>
+            )}
+            <p className="mt-3 text-xs font-bold text-neutral-500">
+              「維持する売値」は、価格改定前の原価率を維持するための目安です。実際の販売価格は10円単位・50円単位などで調整してください。
+            </p>
           </section>
         </div>
       )}
