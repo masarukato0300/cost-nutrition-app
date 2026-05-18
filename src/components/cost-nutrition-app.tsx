@@ -32,6 +32,7 @@ const defaultStoreId = "デモ店舗";
 const legacyStorageKey = "cost-nutrition-label-mvp-v1";
 const storesStorageKey = "cost-nutrition-label-mvp-stores-v1";
 const currentStoreStorageKey = "cost-nutrition-label-mvp-current-store-v1";
+const storeSessionStorageKey = "cost-nutrition-label-mvp-store-session-v1";
 const allergenOptions = ["卵", "乳", "小麦", "えび", "かに", "くるみ", "そば", "落花生"];
 const materialTypeLabels: Record<MaterialType, string> = {
   PURCHASED_INGREDIENT: "仕入原材料",
@@ -218,6 +219,7 @@ type StoreAccount = {
   updatedAt: string;
 };
 type StoreModalMode = "switch" | "create";
+type AuthModalMode = "login" | "create";
 type OcrPriceCandidate = {
   id: string;
   ingredientId: string;
@@ -1201,6 +1203,10 @@ export function CostNutritionApp() {
   const [switchStorePin, setSwitchStorePin] = useState("");
   const [isStoreModalOpen, setIsStoreModalOpen] = useState(false);
   const [storeModalMode, setStoreModalMode] = useState<StoreModalMode>("switch");
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(true);
+  const [authModalMode, setAuthModalMode] = useState<AuthModalMode>("login");
+  const [authStoreName, setAuthStoreName] = useState("");
+  const [authPin, setAuthPin] = useState("");
   const [ingredientOcrImageName, setIngredientOcrImageName] = useState("");
   const [ingredientOcrStatus, setIngredientOcrStatus] = useState("");
   const [isIngredientOcrReading, setIsIngredientOcrReading] = useState(false);
@@ -1239,11 +1245,15 @@ export function CostNutritionApp() {
   useEffect(() => {
     queueMicrotask(() => {
       const loadedStores = loadStores();
-      const loadedStoreId = loadCurrentStoreId(loadedStores);
+      const sessionStoreId = window.sessionStorage.getItem(storeSessionStorageKey);
+      const hasActiveSession = Boolean(sessionStoreId && loadedStores.some((store) => store.id === sessionStoreId));
+      const loadedStoreId = hasActiveSession ? sessionStoreId || defaultStoreId : loadCurrentStoreId(loadedStores);
       const loadedData = loadData(loadedStoreId);
-    setStores(loadedStores);
+      setStores(loadedStores);
       setCurrentStoreId(loadedStoreId);
       setSwitchStoreId(loadedStoreId);
+      setAuthStoreName(loadedStoreId);
+      setIsAuthModalOpen(!hasActiveSession);
       setData(loadedData);
       setSelectedProductId(loadedData.products[0]?.id ?? "");
       setRecipeProductSelectId("");
@@ -1277,6 +1287,7 @@ export function CostNutritionApp() {
     const nextData = loadData(storeId);
     setCurrentStoreId(storeId);
     window.localStorage.setItem(currentStoreStorageKey, storeId);
+    window.sessionStorage.setItem(storeSessionStorageKey, storeId);
     setData(nextData);
     setSelectedProductId(nextData.products[0]?.id ?? "");
     setRecipeProductSelectId("");
@@ -1292,8 +1303,55 @@ export function CostNutritionApp() {
     setSwitchStoreId(storeId);
     setSwitchStorePin("");
     setActivePage("top");
+    setIsAuthModalOpen(false);
+    setAuthStoreName(storeId);
+    setAuthPin("");
     setIsStoreModalOpen(false);
     setStoreModalMode("switch");
+  }
+
+  function submitAuthStore() {
+    const storeName = authStoreName.trim();
+    if (!storeName) {
+      alert("店舗名を入力してください。");
+      return;
+    }
+    if (!/^\d{4}$/.test(authPin)) {
+      alert("PINコードは4桁の数字で入力してください。");
+      return;
+    }
+    if (authModalMode === "create") {
+      if (stores.some((store) => store.id === storeName)) {
+        alert("同じ店舗名がすでにあります。ログインを選んでください。");
+        return;
+      }
+      const nextStore: StoreAccount = { id: storeName, pin: authPin, createdAt: now(), updatedAt: now() };
+      const nextStores = [...stores, nextStore];
+      setStores(nextStores);
+      saveStores(nextStores);
+      window.localStorage.setItem(storeDataKey(storeName), JSON.stringify(sampleData));
+      loadStoreData(storeName);
+      return;
+    }
+
+    const store = stores.find((item) => item.id === storeName);
+    if (!store) {
+      alert("この店舗名は登録されていません。新規作成を選んでください。");
+      return;
+    }
+    if (store.pin !== authPin) {
+      alert("PINコードが違います。");
+      return;
+    }
+    loadStoreData(store.id);
+  }
+
+  function logoutStore() {
+    window.sessionStorage.removeItem(storeSessionStorageKey);
+    setAuthModalMode("login");
+    setAuthStoreName(currentStoreId);
+    setAuthPin("");
+    setIsAuthModalOpen(true);
   }
 
   function createStore() {
@@ -2719,6 +2777,9 @@ export function CostNutritionApp() {
           <button className="rounded-md border border-teal-200 bg-teal-50 px-4 py-2 font-bold text-teal-800" onClick={openStoreModal}>
             店舗切替
           </button>
+          <button className="rounded-md border border-neutral-300 bg-white px-4 py-2 font-bold text-neutral-700" onClick={logoutStore}>
+            ログアウト
+          </button>
           <button className="rounded-md border border-red-200 bg-red-50 px-4 py-2 font-bold text-red-700" onClick={resetSample}>
             サンプルデータに戻す
           </button>
@@ -2888,6 +2949,46 @@ export function CostNutritionApp() {
         <Panel title="使い方">
           <HelpGuide onNavigate={setActivePage} />
         </Panel>
+      )}
+
+      {isAuthModalOpen && (
+        <div className="fixed inset-0 z-[60] grid place-items-center bg-black/50 p-3">
+          <section className="w-full max-w-md rounded-md border border-neutral-200 bg-white p-5 shadow-2xl">
+            <div>
+              <p className="text-xs font-black text-teal-700">店舗ログイン</p>
+              <h2 className="mt-1 text-2xl font-black text-neutral-950">
+                {authModalMode === "create" ? "新規作成" : "ログイン"}
+              </h2>
+              <p className="mt-2 text-sm font-bold text-neutral-500">
+                店舗名と4桁PINで、この端末内の店舗データを開きます。
+              </p>
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-2 rounded-md border border-neutral-200 bg-neutral-50 p-1">
+              <button
+                className={`rounded px-3 py-2 font-black ${authModalMode === "login" ? "bg-teal-700 text-white" : "bg-white text-neutral-700"}`}
+                onClick={() => setAuthModalMode("login")}
+              >
+                ログイン
+              </button>
+              <button
+                className={`rounded px-3 py-2 font-black ${authModalMode === "create" ? "bg-teal-700 text-white" : "bg-white text-neutral-700"}`}
+                onClick={() => setAuthModalMode("create")}
+              >
+                新規作成
+              </button>
+            </div>
+            <div className="mt-4 grid gap-3">
+              <TextInput label="店舗名" value={authStoreName} onChange={setAuthStoreName} onEnter={submitAuthStore} />
+              <PinInput label="4桁PINコード" value={authPin} onChange={setAuthPin} />
+              <button className="rounded-md bg-teal-700 px-4 py-3 text-base font-black text-white" onClick={submitAuthStore}>
+                {authModalMode === "create" ? "店舗を作成して始める" : "ログインして始める"}
+              </button>
+            </div>
+            <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-900">
+              現在はMVP用の簡易PINです。正式リリース時はクラウドDBとログイン機能に移行する想定です。
+            </div>
+          </section>
+        </div>
       )}
 
       {isStoreModalOpen && (
