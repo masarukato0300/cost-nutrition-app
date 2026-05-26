@@ -1996,6 +1996,25 @@ export function CostNutritionApp() {
     setActivePage("product");
   }
 
+  function editRecipeProduct(product: Product) {
+    setRecipeProductSelectId(product.id);
+    setRecipeProductName("");
+    setSelectedProductId(product.id);
+    setProductForm(product);
+    setRecipeProductIsIntermediate(product.isIntermediateMaterial);
+  }
+
+  function deleteRecipeForProduct(product: Product) {
+    const rows = data.recipeItems.filter((item) => item.productId === product.id);
+    if (rows.length === 0) return;
+    if (!confirm(`${product.name} のレシピを削除しますか？\n\n商品登録は残し、レシピ行 ${rows.length} 件だけ削除します。`)) return;
+    commit({
+      ...data,
+      recipeItems: data.recipeItems.filter((item) => item.productId !== product.id),
+    });
+    if (recipeProductSelectId === product.id) setRecipeProductSelectId("");
+  }
+
   function updateRecipeProductName(value: string) {
     setRecipeProductName(value);
     if (value.trim()) setRecipeProductSelectId("");
@@ -2823,6 +2842,13 @@ export function CostNutritionApp() {
     : "";
 
   const recipeRows = data.recipeItems.filter((item) => item.productId === recipeEditingProduct?.id);
+  const recipeRegisteredProducts = data.products
+    .map((product) => ({
+      product,
+      rows: data.recipeItems.filter((item) => item.productId === product.id),
+    }))
+    .filter((entry) => entry.rows.length > 0)
+    .sort((a, b) => Number(a.product.isIntermediateMaterial) - Number(b.product.isIntermediateMaterial) || a.product.name.localeCompare(b.product.name, "ja"));
   const currentTone = activePage === "ocr" ? pageTones.ingredient : pageTone(activePage);
   const activeNavGroup = activePage === "ocr" ? null : navGroups.find((group) => (group.pages as readonly PageNavKey[]).includes(activePage)) ?? null;
   const visibleNavGroup = openNavGroup
@@ -4134,6 +4160,59 @@ export function CostNutritionApp() {
               新しい商品名が入力されている場合は、その名前の商品登録を優先します。既存商品に追加する場合は一覧から選んでください。
             </div>
           </div>
+
+          <section className="mt-4 rounded-md border border-teal-200 bg-teal-50 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="font-black text-teal-950">レシピ登録済み商品</h3>
+                <p className="mt-1 text-xs font-bold text-teal-800">
+                  商品登録済みの商品も、ここからレシピ編集・商品編集・レシピ削除ができます。
+                </p>
+              </div>
+              <span className="rounded bg-white px-2 py-1 text-xs font-black text-teal-800">{recipeRegisteredProducts.length}件</span>
+            </div>
+            <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {recipeRegisteredProducts.map(({ product, rows }) => {
+                const summary = calculateProductCost(product, data.ingredients, data.recipeItems, data.products);
+                const isEditing = recipeProductSelectId === product.id;
+                return (
+                  <div key={product.id} className={`rounded-md border bg-white p-3 shadow-sm ${isEditing ? "border-teal-600 ring-2 ring-teal-100" : "border-teal-100"}`}>
+                    <button className="w-full text-left" onClick={() => editRecipeProduct(product)}>
+                      <div className="flex items-start justify-between gap-2">
+                        <strong className="text-base text-neutral-950">{product.name}</strong>
+                        <CostRateBadge value={summary.costRate} />
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-1 text-[11px] font-black">
+                        <span className="rounded bg-neutral-100 px-2 py-1 text-neutral-700">{product.category || "未分類"}</span>
+                        {product.isIntermediateMaterial && <span className="rounded bg-emerald-100 px-2 py-1 text-emerald-800">中間材料</span>}
+                        <span className="rounded bg-sky-100 px-2 py-1 text-sky-800">商品登録済み</span>
+                        <span className="rounded bg-teal-100 px-2 py-1 text-teal-800">レシピ{rows.length}行</span>
+                      </div>
+                      <p className="mt-2 text-xs font-bold text-neutral-600">
+                        原価/個 {yenForSmallCost(summary.costPerPiece)} / 売価 {yen(product.sellingPrice)}
+                      </p>
+                    </button>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button className="rounded-md bg-teal-700 px-3 py-2 text-xs font-black text-white" onClick={() => editRecipeProduct(product)}>
+                        レシピ編集
+                      </button>
+                      <button className="rounded-md border border-orange-300 bg-orange-50 px-3 py-2 text-xs font-black text-orange-900" onClick={() => editProductFromList(product)}>
+                        商品編集
+                      </button>
+                      <button className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs font-black text-red-700" onClick={() => deleteRecipeForProduct(product)}>
+                        レシピ削除
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {recipeRegisteredProducts.length === 0 && (
+              <div className="mt-3 rounded-md border border-dashed border-teal-300 bg-white p-4 text-center text-sm font-bold text-teal-800">
+                まだレシピ登録済みの商品はありません。
+              </div>
+            )}
+          </section>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-[320px_1fr]">
             <aside className="rounded-md border border-neutral-200 bg-neutral-50 p-3">
