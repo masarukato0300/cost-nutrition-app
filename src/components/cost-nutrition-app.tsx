@@ -1682,6 +1682,7 @@ export function CostNutritionApp() {
       }
       : ingredientOcrCandidate;
     setIngredientForm(reflectedIngredient);
+    setNutritionSearchText(reflectedIngredient.name);
     setAppliedStandardNutritionId("");
     setSelectedStandardNutritionId("");
     const nextIndex = ingredientOcrCandidateIndex + 1;
@@ -1895,6 +1896,28 @@ export function CostNutritionApp() {
     };
   }, [data, impactRows.length]);
 
+  function syncIngredientName(value: string) {
+    setIngredientForm((current) => ({
+      ...current,
+      name: value,
+      labelName: !current.labelName || current.labelName === current.name ? value : current.labelName,
+    }));
+    setNutritionSearchText(value);
+    setSelectedStandardNutritionId("");
+    setAppliedStandardNutritionId("");
+  }
+
+  function syncNutritionSearchText(value: string) {
+    setNutritionSearchText(value);
+    setIngredientForm((current) => ({
+      ...current,
+      name: value,
+      labelName: !current.labelName || current.labelName === current.name ? value : current.labelName,
+    }));
+    setSelectedStandardNutritionId("");
+    setAppliedStandardNutritionId("");
+  }
+
   function saveIngredient() {
     if (!ingredientForm.name.trim()) return;
     const isEdit = Boolean(ingredientForm.id);
@@ -1991,6 +2014,7 @@ export function CostNutritionApp() {
     setShowIngredientUnitConversion(false);
     setAppliedStandardNutritionId("");
     setSelectedStandardNutritionId("");
+    setNutritionSearchText("");
     if (!recipeIngredientId) setRecipeIngredientId(ingredient.id);
     if (ingredientOcrCandidateIndex < ingredientOcrCandidates.length) {
       setIngredientOcrStatus("保存しました。次の商品を表示します。");
@@ -2003,6 +2027,7 @@ export function CostNutritionApp() {
     setShowIngredientUnitConversion(false);
     setAppliedStandardNutritionId("");
     setSelectedStandardNutritionId("");
+    setNutritionSearchText("");
     if (ingredientOcrCandidateIndex < ingredientOcrCandidates.length) {
       setIngredientOcrStatus("この候補をスキップしました。次の候補を確認できます。");
     } else {
@@ -2027,7 +2052,9 @@ export function CostNutritionApp() {
 
   function applyLearnedIngredientAlias() {
     if (!learnedIngredientAlias) return;
-    setIngredientForm(applyIngredientAlias(ingredientForm, learnedIngredientAlias));
+    const reflectedIngredient = applyIngredientAlias(ingredientForm, learnedIngredientAlias);
+    setIngredientForm(reflectedIngredient);
+    setNutritionSearchText(reflectedIngredient.name);
   }
 
   function saveProduct() {
@@ -2429,6 +2456,9 @@ export function CostNutritionApp() {
 
   function editIngredientFromMaster(ingredient: Ingredient) {
     setIngredientForm(ingredient);
+    setNutritionSearchText(ingredient.name);
+    setAppliedStandardNutritionId("");
+    setSelectedStandardNutritionId("");
     setActivePage("ingredient");
   }
 
@@ -2443,7 +2473,12 @@ export function CostNutritionApp() {
       ingredients: data.ingredients.filter((item) => item.id !== ingredient.id),
       recipeItems: data.recipeItems.filter((item) => item.ingredientId !== ingredient.id),
     });
-    if (ingredientForm.id === ingredient.id) setIngredientForm(emptyIngredient());
+    if (ingredientForm.id === ingredient.id) {
+      setIngredientForm(emptyIngredient());
+      setNutritionSearchText("");
+      setAppliedStandardNutritionId("");
+      setSelectedStandardNutritionId("");
+    }
   }
 
   function dropPaletteItemToTrash(event: React.DragEvent<HTMLDivElement>) {
@@ -2942,6 +2977,69 @@ export function CostNutritionApp() {
     setSetProductItemForm(emptySetProductItem("prd-gift", "prd-madeleine"));
   }
 
+  function clearSampleOnly() {
+    if (!confirm("サンプルデータだけを消去しますか？\n\n手入力で追加したデータは残します。")) return;
+    const sampleIngredientIds = new Set(sampleData.ingredients.map((ingredient) => ingredient.id));
+    const sampleProductIds = new Set(sampleData.products.map((product) => product.id));
+    const sampleRecipeItemIds = new Set(sampleData.recipeItems.map((item) => item.id));
+    const samplePriceHistoryIds = new Set(sampleData.priceHistories.map((history) => history.id));
+    const sampleSalesRecordIds = new Set(sampleData.salesRecords.map((record) => record.id));
+    const sampleActualCostRecordIds = new Set(sampleData.actualCostRecords.map((record) => record.id));
+    const sampleEventPlanIds = new Set(sampleData.eventPlans.map((plan) => plan.id));
+    const sampleEventPlanItemIds = new Set(sampleData.eventPlanItems.map((item) => item.id));
+    const sampleLaborCostIds = new Set(sampleData.laborCosts.map((record) => record.id));
+    const sampleSetProductItemIds = new Set(sampleData.setProductItems.map((item) => item.id));
+
+    const remainingProducts = data.products.filter((product) => !sampleProductIds.has(product.id));
+    const nextData: AppData = {
+      ...data,
+      ingredients: data.ingredients.filter((ingredient) => !sampleIngredientIds.has(ingredient.id)),
+      products: remainingProducts,
+      productCategories: data.productCategories.filter((category) => (
+        !sampleData.productCategories.includes(category) || remainingProducts.some((product) => product.category === category)
+      )),
+      recipeItems: data.recipeItems.filter((item) => (
+        !sampleRecipeItemIds.has(item.id)
+        && !sampleIngredientIds.has(item.ingredientId)
+        && !sampleProductIds.has(item.productId)
+        && !sampleProductIds.has(item.intermediateProductId)
+      )),
+      priceHistories: data.priceHistories.filter((history) => !samplePriceHistoryIds.has(history.id) && !sampleIngredientIds.has(history.ingredientId)),
+      wasteRecords: data.wasteRecords.filter((record) => {
+        if (record.itemType === "INGREDIENT") return !sampleIngredientIds.has(record.itemId);
+        return !sampleProductIds.has(record.itemId);
+      }),
+      salesRecords: data.salesRecords.filter((record) => !sampleSalesRecordIds.has(record.id) && !sampleProductIds.has(record.productId)),
+      actualCostRecords: data.actualCostRecords.filter((record) => !sampleActualCostRecordIds.has(record.id)),
+      eventPlans: data.eventPlans.filter((plan) => !sampleEventPlanIds.has(plan.id)),
+      eventPlanItems: data.eventPlanItems.filter((item) => (
+        !sampleEventPlanItemIds.has(item.id)
+        && !sampleEventPlanIds.has(item.eventPlanId)
+        && !sampleProductIds.has(item.productId)
+      )),
+      laborCosts: data.laborCosts.filter((record) => !sampleLaborCostIds.has(record.id) && !sampleProductIds.has(record.productId)),
+      setProductItems: data.setProductItems.filter((item) => (
+        !sampleSetProductItemIds.has(item.id)
+        && !sampleProductIds.has(item.setProductId)
+        && !sampleProductIds.has(item.childProductId)
+      )),
+    };
+    commit(nextData);
+    const nextProductId = remainingProducts[0]?.id ?? "";
+    setSelectedProductId(nextProductId);
+    setRecipeProductSelectId(nextProductId);
+    setRecipeProductName("");
+    setRecipeIngredientId(nextData.ingredients[0]?.id ?? "");
+    setImpactIngredientId(nextData.ingredients[0]?.id ?? "");
+    setImpactNewPrice(nextData.ingredients[0]?.price ?? 0);
+    setSelectedEventPlanId(nextData.eventPlans[0]?.id ?? "");
+    setEventImpactIngredientId(nextData.ingredients[0]?.id ?? "");
+    setEventImpactNewPrice(nextData.ingredients[0]?.price ?? 0);
+    setLaborForm(emptyLaborCost(remainingProducts.find((product) => !product.isIntermediateMaterial)?.id ?? ""));
+    setSelectedSetProductId(remainingProducts.find((product) => product.category === "ギフト")?.id ?? remainingProducts.find((product) => !product.isIntermediateMaterial)?.id ?? "");
+    setSetProductItemForm(emptySetProductItem(remainingProducts.find((product) => product.category === "ギフト")?.id ?? "", remainingProducts.find((product) => !product.isIntermediateMaterial)?.id ?? ""));
+  }
+
   const labelText = selectedProduct && costSummary && nutritionSummary
     ? buildLabelText(selectedProduct, costSummary.materialCostPerPiece, costSummary.costPerPiece, costSummary.costRate, nutritionSummary, data)
     : "";
@@ -2982,6 +3080,9 @@ export function CostNutritionApp() {
           </button>
           <button className="rounded-md border border-red-200 bg-red-50 px-4 py-2 font-bold text-red-700" onClick={resetSample}>
             サンプルデータに戻す
+          </button>
+          <button className="rounded-md border border-orange-200 bg-orange-50 px-4 py-2 font-bold text-orange-700" onClick={clearSampleOnly}>
+            サンプルデータだけ消去
           </button>
         </div>
       </header>
@@ -3689,13 +3790,7 @@ export function CostNutritionApp() {
               <TextInput
                 label="原材料名"
                 value={ingredientForm.name}
-                onChange={(value) =>
-                  setIngredientForm({
-                    ...ingredientForm,
-                    name: value,
-                    labelName: value,
-                  })
-                }
+                onChange={syncIngredientName}
               />
               <TextInput label="製品名" value={ingredientForm.packageName} onChange={(value) => setIngredientForm({ ...ingredientForm, packageName: value })} />
               <SelectInput
@@ -3825,11 +3920,7 @@ export function CostNutritionApp() {
                 <TextInput
                   label="食品名検索"
                   value={nutritionSearchText}
-                  onChange={(value) => {
-                    setNutritionSearchText(value);
-                    setSelectedStandardNutritionId("");
-                    setAppliedStandardNutritionId("");
-                  }}
+                  onChange={syncNutritionSearchText}
                 />
                 <SelectInput
                   label="候補"
