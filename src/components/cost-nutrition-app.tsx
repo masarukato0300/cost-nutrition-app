@@ -1464,7 +1464,7 @@ export function CostNutritionApp() {
       return;
     }
     if (authModalMode === "login" && !authPin.trim()) {
-      alert("PINコード、または管理者マスターキーを入力してください。");
+      alert("PINコードを入力してください。");
       return;
     }
     try {
@@ -3449,7 +3449,7 @@ export function CostNutritionApp() {
                 {authModalMode === "create" ? "新規作成" : "ログイン"}
               </h2>
               <p className="mt-2 text-sm font-bold text-neutral-500">
-                店舗名と4桁PINで店舗データを開きます。管理者はマスターキーでもログインできます。
+                店舗名と4桁PINで店舗データを開きます。
               </p>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-2 rounded-md border border-neutral-200 bg-neutral-50 p-1">
@@ -3471,7 +3471,7 @@ export function CostNutritionApp() {
               {authModalMode === "create" ? (
                 <PinInput label="4桁PINコード" value={authPin} onChange={setAuthPin} />
               ) : (
-                <TextInput label="4桁PINコード または 管理者マスターキー" value={authPin} onChange={setAuthPin} onEnter={submitAuthStore} />
+                <TextInput label="4桁PINコード" value={authPin} onChange={setAuthPin} onEnter={submitAuthStore} />
               )}
               <button className="rounded-md bg-teal-700 px-4 py-3 text-base font-black text-white" onClick={submitAuthStore}>
                 {authModalMode === "create" ? "店舗を作成して始める" : "ログインして始める"}
