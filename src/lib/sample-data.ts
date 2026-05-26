@@ -174,5 +174,16 @@ export const sampleData: AppData = {
     planType: "standard",
     ocrUsedMonth: "2026-05",
     ocrUsedThisMonth: 12,
+    planBillingMonth: "2026-05",
+    planAgreedAt: "2026-05-26T00:00:00.000Z",
+    planChangeHistory: [
+      {
+        id: "billing-standard-2026-05",
+        planType: "standard",
+        billingMonth: "2026-05",
+        agreedAt: "2026-05-26T00:00:00.000Z",
+        priceLabel: "月額1,900円",
+      },
+    ],
   },
 };

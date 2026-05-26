@@ -121,6 +121,15 @@ export type BillingSettings = {
   planType: BillingPlanType;
   ocrUsedMonth: string;
   ocrUsedThisMonth: number;
+  planBillingMonth: string;
+  planAgreedAt: string;
+  planChangeHistory: Array<{
+    id: string;
+    planType: BillingPlanType;
+    billingMonth: string;
+    agreedAt: string;
+    priceLabel: string;
+  }>;
 };
 
 export type AppData = {

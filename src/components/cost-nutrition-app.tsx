@@ -52,6 +52,9 @@ const defaultBilling: BillingSettings = {
   planType: "light",
   ocrUsedMonth: "",
   ocrUsedThisMonth: 0,
+  planBillingMonth: "",
+  planAgreedAt: "",
+  planChangeHistory: [],
 };
 const materialTypeLabels: Record<MaterialType, string> = {
   PURCHASED_INGREDIENT: "仕入原材料",
@@ -421,6 +424,9 @@ function normalizeData(parsed: AppData): AppData {
       planType: parsed.billing?.planType || "light",
       ocrUsedMonth: parsed.billing?.ocrUsedMonth || currentMonth(),
       ocrUsedThisMonth: parsed.billing?.ocrUsedThisMonth || 0,
+      planBillingMonth: parsed.billing?.planBillingMonth || currentMonth(),
+      planAgreedAt: parsed.billing?.planAgreedAt || "",
+      planChangeHistory: parsed.billing?.planChangeHistory || [],
     },
   };
 }
@@ -1339,6 +1345,7 @@ export function CostNutritionApp() {
   const [authStoreName, setAuthStoreName] = useState("");
   const [authPin, setAuthPin] = useState("");
   const [isLineConsentOpen, setIsLineConsentOpen] = useState(false);
+  const [pendingPlanType, setPendingPlanType] = useState<BillingPlanType | null>(null);
   const [ingredientOcrImageName, setIngredientOcrImageName] = useState("");
   const [ingredientOcrStatus, setIngredientOcrStatus] = useState("");
   const [isIngredientOcrReading, setIsIngredientOcrReading] = useState(false);
@@ -2031,10 +2038,30 @@ export function CostNutritionApp() {
   }
 
   function updatePlanType(planType: BillingPlanType) {
+    if (planType === currentBilling.planType) return;
+    setPendingPlanType(planType);
+  }
+
+  function confirmPlanChange() {
+    if (!pendingPlanType) return;
+    const nextPlan = planConfigs[pendingPlanType];
     saveBilling({
       ...currentBilling,
-      planType,
+      planType: pendingPlanType,
+      planBillingMonth: billingMonth,
+      planAgreedAt: now(),
+      planChangeHistory: [
+        ...(currentBilling.planChangeHistory || []),
+        {
+          id: createId("billing"),
+          planType: pendingPlanType,
+          billingMonth,
+          agreedAt: now(),
+          priceLabel: nextPlan.price,
+        },
+      ],
     });
+    setPendingPlanType(null);
   }
 
   function resetOcrUsage() {
@@ -3672,6 +3699,43 @@ export function CostNutritionApp() {
                 onClick={confirmOpenOfficialLine}
               >
                 承諾して進む
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {pendingPlanType && (
+        <div className="fixed inset-0 z-[70] grid place-items-center bg-black/50 p-3">
+          <section className="w-full max-w-md rounded-md border border-blue-200 bg-white p-5 shadow-2xl">
+            <p className="text-xs font-black text-blue-700">プラン変更の確認</p>
+            <h2 className="mt-1 text-xl font-black text-neutral-950">
+              {planConfigs[pendingPlanType].label}へ変更しますか？
+            </h2>
+            <div className="mt-3 rounded-md border border-blue-100 bg-blue-50 p-3">
+              <p className="text-sm font-black text-blue-950">
+                {billingMonth}分の請求対象プラン: {planConfigs[pendingPlanType].label}
+              </p>
+              <p className="mt-1 text-lg font-black text-blue-800">{planConfigs[pendingPlanType].price}</p>
+              <p className="mt-2 text-sm font-bold text-neutral-700">
+                OCR {planConfigs[pendingPlanType].ocrLimit === null ? "実質無制限" : `月${planConfigs[pendingPlanType].ocrLimit}枚まで`}
+              </p>
+            </div>
+            <p className="mt-3 text-sm font-bold leading-7 text-neutral-700">
+              同意すると、今月分はこのプランで請求対象として記録されます。請求は後日請求書をお送りさせていただき、銀行振込となります。
+            </p>
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <button
+                className="min-h-12 rounded-md border border-neutral-300 bg-white px-4 py-2 font-black text-neutral-700"
+                onClick={() => setPendingPlanType(null)}
+              >
+                キャンセル
+              </button>
+              <button
+                className="min-h-12 rounded-md bg-blue-700 px-4 py-2 font-black text-white shadow-sm hover:bg-blue-800"
+                onClick={confirmPlanChange}
+              >
+                同意して変更
               </button>
             </div>
           </section>
@@ -5576,6 +5640,9 @@ export function CostNutritionApp() {
                 <p className="mt-2 text-sm font-bold text-neutral-700">
                   今月のOCR利用枚数と残り枚数を、ダッシュボードにも表示します。
                 </p>
+                <p className="mt-2 text-xs font-black text-blue-800">
+                  請求対象月: {currentBilling.planBillingMonth || billingMonth} / 最終同意: {currentBilling.planAgreedAt ? new Date(currentBilling.planAgreedAt).toLocaleDateString("ja-JP") : "未記録"}
+                </p>
               </div>
               <div className="rounded-md border border-blue-200 bg-white p-3 text-right">
                 <p className="text-xs font-black text-blue-700">OCR利用状況</p>
@@ -5618,6 +5685,20 @@ export function CostNutritionApp() {
                 OCR利用枚数を今月分リセット
               </button>
             </div>
+            {(currentBilling.planChangeHistory || []).length > 0 && (
+              <div className="mt-3 rounded-md border border-blue-100 bg-white p-3">
+                <h4 className="text-sm font-black text-blue-950">プラン変更履歴</h4>
+                <div className="mt-2 grid gap-2">
+                  {currentBilling.planChangeHistory.slice().reverse().slice(0, 5).map((record) => (
+                    <div key={record.id} className="flex flex-wrap justify-between gap-2 rounded-md bg-blue-50 px-3 py-2 text-xs font-bold text-blue-950">
+                      <span>{record.billingMonth} 請求分</span>
+                      <span>{planConfigs[record.planType]?.label || record.planType} / {record.priceLabel}</span>
+                      <span>{new Date(record.agreedAt).toLocaleDateString("ja-JP")}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </section>
 
           <section className="rounded-md border border-green-200 bg-green-50 p-4">
