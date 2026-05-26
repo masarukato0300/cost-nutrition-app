@@ -277,6 +277,7 @@ type CloudStoreAuthResponse = {
   cloudConfigured?: boolean;
   storeName?: string;
   data?: AppData;
+  isAdmin?: boolean;
   error?: string;
 };
 
@@ -1319,6 +1320,7 @@ export function CostNutritionApp() {
   const [authModalMode, setAuthModalMode] = useState<AuthModalMode>("login");
   const [authStoreName, setAuthStoreName] = useState("");
   const [authPin, setAuthPin] = useState("");
+  const [isLineConsentOpen, setIsLineConsentOpen] = useState(false);
   const [ingredientOcrImageName, setIngredientOcrImageName] = useState("");
   const [ingredientOcrStatus, setIngredientOcrStatus] = useState("");
   const [isIngredientOcrReading, setIsIngredientOcrReading] = useState(false);
@@ -1457,14 +1459,18 @@ export function CostNutritionApp() {
       alert("店舗名を入力してください。");
       return;
     }
-    if (!/^\d{4}$/.test(authPin)) {
+    if (authModalMode === "create" && !/^\d{4}$/.test(authPin)) {
       alert("PINコードは4桁の数字で入力してください。");
+      return;
+    }
+    if (authModalMode === "login" && !authPin.trim()) {
+      alert("PINコード、または管理者マスターキーを入力してください。");
       return;
     }
     try {
       const cloud = await authCloudStore(authModalMode, storeName, authPin);
       if (cloud.cloudConfigured && cloud.ok && cloud.data) {
-        applyStoreSession(storeName, authPin, normalizeData(cloud.data), "クラウド共有済み");
+        applyStoreSession(storeName, authPin, normalizeData(cloud.data), cloud.isAdmin ? "管理者キーでログイン中" : "クラウド共有済み");
         return;
       }
     } catch (error) {
@@ -1976,7 +1982,12 @@ export function CostNutritionApp() {
   }
 
   function openOfficialLine() {
+    setIsLineConsentOpen(true);
+  }
+
+  function confirmOpenOfficialLine() {
     const url = onboardingSupport.officialLineUrl || officialLineUrl;
+    setIsLineConsentOpen(false);
     window.open(url, "_blank", "noopener,noreferrer");
   }
 
@@ -3438,7 +3449,7 @@ export function CostNutritionApp() {
                 {authModalMode === "create" ? "新規作成" : "ログイン"}
               </h2>
               <p className="mt-2 text-sm font-bold text-neutral-500">
-                店舗名と4桁PINで、この端末内の店舗データを開きます。
+                店舗名と4桁PINで店舗データを開きます。管理者はマスターキーでもログインできます。
               </p>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-2 rounded-md border border-neutral-200 bg-neutral-50 p-1">
@@ -3457,7 +3468,11 @@ export function CostNutritionApp() {
             </div>
             <div className="mt-4 grid gap-3">
               <TextInput label="店舗名" value={authStoreName} onChange={setAuthStoreName} onEnter={submitAuthStore} />
-              <PinInput label="4桁PINコード" value={authPin} onChange={setAuthPin} />
+              {authModalMode === "create" ? (
+                <PinInput label="4桁PINコード" value={authPin} onChange={setAuthPin} />
+              ) : (
+                <TextInput label="4桁PINコード または 管理者マスターキー" value={authPin} onChange={setAuthPin} onEnter={submitAuthStore} />
+              )}
               <button className="rounded-md bg-teal-700 px-4 py-3 text-base font-black text-white" onClick={submitAuthStore}>
                 {authModalMode === "create" ? "店舗を作成して始める" : "ログインして始める"}
               </button>
@@ -3541,6 +3556,32 @@ export function CostNutritionApp() {
             <p className="mt-3 text-xs font-bold text-neutral-500">
               「維持する売値」は、価格改定前の原価率を維持するための目安です。実際の販売価格は10円単位・50円単位などで調整してください。
             </p>
+          </section>
+        </div>
+      )}
+
+      {isLineConsentOpen && (
+        <div className="fixed inset-0 z-[70] grid place-items-center bg-black/50 p-3">
+          <section className="w-full max-w-md rounded-md border border-green-200 bg-white p-5 shadow-2xl">
+            <p className="text-xs font-black text-green-700">公式LINEへ進む前にご確認ください</p>
+            <h2 className="mt-1 text-xl font-black text-neutral-950">初期設定サービスのお申し込み確認</h2>
+            <p className="mt-3 text-sm font-bold leading-7 text-neutral-700">
+              初期設定サービスは別途有料となります。請求は後日請求書をお送りさせていただきますので、銀行振込となります。
+            </p>
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <button
+                className="min-h-12 rounded-md border border-neutral-300 bg-white px-4 py-2 font-black text-neutral-700"
+                onClick={() => setIsLineConsentOpen(false)}
+              >
+                キャンセル
+              </button>
+              <button
+                className="min-h-12 rounded-md bg-green-600 px-4 py-2 font-black text-white shadow-sm hover:bg-green-700"
+                onClick={confirmOpenOfficialLine}
+              >
+                承諾して進む
+              </button>
+            </div>
           </section>
         </div>
       )}

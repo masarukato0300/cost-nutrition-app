@@ -18,6 +18,11 @@ function hashPin(pin: string) {
   return createHash("sha256").update(pin).digest("hex");
 }
 
+function isMasterKey(pin: string) {
+  const masterKey = process.env.STORE_MASTER_KEY || process.env.ADMIN_MASTER_KEY;
+  return Boolean(masterKey && pin && pin === masterKey);
+}
+
 function supabaseHeaders(serviceKey: string) {
   return {
     apikey: serviceKey,
@@ -33,7 +38,7 @@ export async function POST(request: Request) {
   const { storeName, pin, data } = await request.json() as { storeName?: string; pin?: string; data?: AppData };
   const id = String(storeName || "").trim();
   const pinCode = String(pin || "");
-  if (!id || !/^\d{4}$/.test(pinCode) || !data) {
+  if (!id || !pinCode || !data) {
     return NextResponse.json({ ok: false, error: "保存に必要な情報が不足しています。" }, { status: 400 });
   }
 
@@ -45,7 +50,7 @@ export async function POST(request: Request) {
   const rows = await getResponse.json() as StoreRecord[];
   const store = rows[0];
   if (!store) return NextResponse.json({ ok: false, error: "店舗が見つかりません。" }, { status: 404 });
-  if (store.pin_hash !== hashPin(pinCode)) return NextResponse.json({ ok: false, error: "PINコードが違います。" }, { status: 401 });
+  if (store.pin_hash !== hashPin(pinCode) && !isMasterKey(pinCode)) return NextResponse.json({ ok: false, error: "PINコードが違います。" }, { status: 401 });
 
   const updateResponse = await fetch(`${config.url}/rest/v1/app_stores?id=eq.${encodeURIComponent(id)}`, {
     method: "PATCH",

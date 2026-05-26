@@ -20,6 +20,11 @@ function hashPin(pin: string) {
   return createHash("sha256").update(pin).digest("hex");
 }
 
+function isMasterKey(pin: string) {
+  const masterKey = process.env.STORE_MASTER_KEY || process.env.ADMIN_MASTER_KEY;
+  return Boolean(masterKey && pin && pin === masterKey);
+}
+
 function supabaseHeaders(serviceKey: string) {
   return {
     apikey: serviceKey,
@@ -47,14 +52,17 @@ export async function POST(request: Request) {
   const { mode, storeName, pin } = await request.json() as { mode?: string; storeName?: string; pin?: string };
   const id = String(storeName || "").trim();
   const pinCode = String(pin || "");
-  if (!id || !/^\d{4}$/.test(pinCode)) {
-    return NextResponse.json({ ok: false, error: "店舗名と4桁PINを入力してください。" }, { status: 400 });
+  if (!id || !pinCode) {
+    return NextResponse.json({ ok: false, error: "店舗名とPINコードを入力してください。" }, { status: 400 });
   }
 
   const existing = await fetchStore(id, config);
   const pinHash = hashPin(pinCode);
 
   if (mode === "create") {
+    if (!/^\d{4}$/.test(pinCode)) {
+      return NextResponse.json({ ok: false, error: "新規作成時のPINコードは4桁の数字で入力してください。" }, { status: 400 });
+    }
     if (existing) {
       return NextResponse.json({ ok: false, error: "同じ店舗名がすでにあります。ログインを選んでください。" }, { status: 409 });
     }
@@ -80,8 +88,8 @@ export async function POST(request: Request) {
   if (!existing) {
     return NextResponse.json({ ok: false, error: "この店舗名は登録されていません。新規作成を選んでください。" }, { status: 404 });
   }
-  if (existing.pin_hash !== pinHash) {
+  if (existing.pin_hash !== pinHash && !isMasterKey(pinCode)) {
     return NextResponse.json({ ok: false, error: "PINコードが違います。" }, { status: 401 });
   }
-  return NextResponse.json({ ok: true, cloudConfigured: true, storeName: id, data: existing.data || sampleData });
+  return NextResponse.json({ ok: true, cloudConfigured: true, storeName: id, data: existing.data || sampleData, isAdmin: isMasterKey(pinCode) });
 }
