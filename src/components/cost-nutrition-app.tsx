@@ -33,6 +33,7 @@ const legacyStorageKey = "cost-nutrition-label-mvp-v1";
 const storesStorageKey = "cost-nutrition-label-mvp-stores-v1";
 const currentStoreStorageKey = "cost-nutrition-label-mvp-current-store-v1";
 const storeSessionStorageKey = "cost-nutrition-label-mvp-store-session-v1";
+const storeSessionPinStorageKey = "cost-nutrition-label-mvp-store-session-pin-v1";
 const allergenOptions = ["卵", "乳", "小麦", "えび", "かに", "くるみ", "そば", "落花生"];
 const materialTypeLabels: Record<MaterialType, string> = {
   PURCHASED_INGREDIENT: "仕入原材料",
@@ -257,6 +258,13 @@ type RecentPriceImpact = {
   newPrice: number;
   rows: PriceImpactRow[];
 };
+type CloudStoreAuthResponse = {
+  ok: boolean;
+  cloudConfigured?: boolean;
+  storeName?: string;
+  data?: AppData;
+  error?: string;
+};
 
 function yen(value: number) {
   return new Intl.NumberFormat("ja-JP", { style: "currency", currency: "JPY", maximumFractionDigits: 1 }).format(value || 0);
@@ -368,6 +376,28 @@ function loadData(storeId = defaultStoreId): AppData {
   } catch {
     return sampleData;
   }
+}
+
+async function authCloudStore(mode: "login" | "create", storeName: string, pin: string): Promise<CloudStoreAuthResponse> {
+  const response = await fetch("/api/store-auth", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode, storeName, pin }),
+  });
+  const payload = await response.json() as CloudStoreAuthResponse;
+  if (!response.ok && payload.error) throw new Error(payload.error);
+  return payload;
+}
+
+async function saveCloudStoreData(storeName: string, pin: string, data: AppData) {
+  const response = await fetch("/api/store-data", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ storeName, pin, data }),
+  });
+  const payload = await response.json() as { ok: boolean; cloudConfigured?: boolean; error?: string };
+  if (!response.ok && payload.error) throw new Error(payload.error);
+  return payload;
 }
 
 function normalizeRecipeItem(item: RecipeItem): RecipeItem {
@@ -1218,6 +1248,8 @@ export function CostNutritionApp() {
   const [activePage, setActivePage] = useState<PageKey>("top");
   const [stores, setStores] = useState<StoreAccount[]>([{ id: defaultStoreId, pin: "0000", createdAt: now(), updatedAt: now() }]);
   const [currentStoreId, setCurrentStoreId] = useState(defaultStoreId);
+  const [currentStorePin, setCurrentStorePin] = useState("");
+  const [cloudSyncStatus, setCloudSyncStatus] = useState("この端末に保存中");
   const [data, setData] = useState<AppData>(sampleData);
   const [selectedProductId, setSelectedProductId] = useState(sampleData.products[0]?.id ?? "");
   const [ingredientForm, setIngredientForm] = useState<Ingredient>(() => emptyIngredient());
@@ -1286,11 +1318,14 @@ export function CostNutritionApp() {
     queueMicrotask(() => {
       const loadedStores = loadStores();
       const sessionStoreId = window.sessionStorage.getItem(storeSessionStorageKey);
+      const sessionStorePin = window.sessionStorage.getItem(storeSessionPinStorageKey) || "";
       const hasActiveSession = Boolean(sessionStoreId && loadedStores.some((store) => store.id === sessionStoreId));
       const loadedStoreId = hasActiveSession ? sessionStoreId || defaultStoreId : loadCurrentStoreId(loadedStores);
       const loadedData = loadData(loadedStoreId);
       setStores(loadedStores);
       setCurrentStoreId(loadedStoreId);
+      setCurrentStorePin(hasActiveSession ? sessionStorePin : "");
+      setCloudSyncStatus(hasActiveSession && sessionStorePin ? "クラウド共有中" : "この端末に保存中");
       setSwitchStoreId(loadedStoreId);
       setAuthStoreName(loadedStoreId);
       setIsAuthModalOpen(!hasActiveSession);
@@ -1321,13 +1356,34 @@ export function CostNutritionApp() {
   function commit(nextData: AppData) {
     setData(nextData);
     window.localStorage.setItem(storeDataKey(currentStoreId), JSON.stringify(nextData));
+    if (currentStorePin) {
+      setCloudSyncStatus("クラウド保存中...");
+      void saveCloudStoreData(currentStoreId, currentStorePin, nextData)
+        .then((result) => {
+          setCloudSyncStatus(result.cloudConfigured ? "クラウド共有済み" : "この端末に保存中");
+        })
+        .catch(() => {
+          setCloudSyncStatus("端末保存済み / クラウド未同期");
+        });
+    } else {
+      setCloudSyncStatus("この端末に保存中");
+    }
   }
 
-  function loadStoreData(storeId: string) {
-    const nextData = loadData(storeId);
+  function applyStoreSession(storeId: string, pin: string, nextData: AppData, syncStatus = "この端末に保存中") {
+    const existingStore = stores.find((store) => store.id === storeId);
+    if (!existingStore) {
+      const nextStores = [...stores, { id: storeId, pin, createdAt: now(), updatedAt: now() }];
+      setStores(nextStores);
+      saveStores(nextStores);
+    }
+    window.localStorage.setItem(storeDataKey(storeId), JSON.stringify(nextData));
     setCurrentStoreId(storeId);
+    setCurrentStorePin(pin);
+    setCloudSyncStatus(syncStatus);
     window.localStorage.setItem(currentStoreStorageKey, storeId);
     window.sessionStorage.setItem(storeSessionStorageKey, storeId);
+    window.sessionStorage.setItem(storeSessionPinStorageKey, pin);
     setData(nextData);
     setSelectedProductId(nextData.products[0]?.id ?? "");
     setRecipeProductSelectId("");
@@ -1350,7 +1406,11 @@ export function CostNutritionApp() {
     setStoreModalMode("switch");
   }
 
-  function submitAuthStore() {
+  function loadStoreData(storeId: string, pin = "") {
+    applyStoreSession(storeId, pin, loadData(storeId));
+  }
+
+  async function submitAuthStore() {
     const storeName = authStoreName.trim();
     if (!storeName) {
       alert("店舗名を入力してください。");
@@ -1360,6 +1420,17 @@ export function CostNutritionApp() {
       alert("PINコードは4桁の数字で入力してください。");
       return;
     }
+    try {
+      const cloud = await authCloudStore(authModalMode, storeName, authPin);
+      if (cloud.cloudConfigured && cloud.ok && cloud.data) {
+        applyStoreSession(storeName, authPin, normalizeData(cloud.data), "クラウド共有済み");
+        return;
+      }
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "クラウドログインに失敗しました。");
+      return;
+    }
+
     if (authModalMode === "create") {
       if (stores.some((store) => store.id === storeName)) {
         alert("同じ店舗名がすでにあります。ログインを選んでください。");
@@ -1370,7 +1441,7 @@ export function CostNutritionApp() {
       setStores(nextStores);
       saveStores(nextStores);
       window.localStorage.setItem(storeDataKey(storeName), JSON.stringify(sampleData));
-      loadStoreData(storeName);
+      loadStoreData(storeName, authPin);
       return;
     }
 
@@ -1383,18 +1454,21 @@ export function CostNutritionApp() {
       alert("PINコードが違います。");
       return;
     }
-    loadStoreData(store.id);
+    loadStoreData(store.id, authPin);
   }
 
   function logoutStore() {
     window.sessionStorage.removeItem(storeSessionStorageKey);
+    window.sessionStorage.removeItem(storeSessionPinStorageKey);
+    setCurrentStorePin("");
+    setCloudSyncStatus("ログアウト中");
     setAuthModalMode("login");
     setAuthStoreName(currentStoreId);
     setAuthPin("");
     setIsAuthModalOpen(true);
   }
 
-  function createStore() {
+  async function createStore() {
     const id = newStoreId.trim();
     if (!id) {
       alert("店舗IDを入力してください。");
@@ -1408,6 +1482,19 @@ export function CostNutritionApp() {
       alert("同じ店舗IDがすでに登録されています。");
       return;
     }
+    try {
+      const cloud = await authCloudStore("create", id, newStorePin);
+      if (cloud.cloudConfigured && cloud.ok && cloud.data) {
+        setNewStoreId("");
+        setNewStorePin("");
+        applyStoreSession(id, newStorePin, normalizeData(cloud.data), "クラウド共有済み");
+        return;
+      }
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "クラウド店舗作成に失敗しました。");
+      return;
+    }
+
     const nextStore: StoreAccount = { id, pin: newStorePin, createdAt: now(), updatedAt: now() };
     const nextStores = [...stores, nextStore];
     setStores(nextStores);
@@ -1415,7 +1502,7 @@ export function CostNutritionApp() {
     window.localStorage.setItem(storeDataKey(id), JSON.stringify(sampleData));
     setNewStoreId("");
     setNewStorePin("");
-    loadStoreData(id);
+    loadStoreData(id, newStorePin);
   }
 
   function openStoreModal() {
@@ -1423,14 +1510,23 @@ export function CostNutritionApp() {
     setIsStoreModalOpen(true);
   }
 
-  function switchStore() {
+  async function switchStore() {
     const store = stores.find((item) => item.id === switchStoreId);
     if (!store) return;
+    try {
+      const cloud = await authCloudStore("login", switchStoreId, switchStorePin);
+      if (cloud.cloudConfigured && cloud.ok && cloud.data) {
+        applyStoreSession(switchStoreId, switchStorePin, normalizeData(cloud.data), "クラウド共有済み");
+        return;
+      }
+    } catch {
+      // Supabase未設定または通信不可の場合は、端末内の店舗切替に進みます。
+    }
     if (store.pin !== switchStorePin) {
       alert("PINコードが違います。");
       return;
     }
-    loadStoreData(store.id);
+    loadStoreData(store.id, switchStorePin);
   }
 
   function updateStorePin(storeId: string, nextPin: string) {
@@ -2873,7 +2969,9 @@ export function CostNutritionApp() {
             洋菓子店・飲食店向け MVP
           </p>
           <h1 className="text-2xl font-black md:text-3xl">原価計算＋栄養成分表示</h1>
-          <p className="mt-1 text-xs font-bold text-neutral-500">現在の店舗: {currentStoreId}</p>
+          <p className="mt-1 text-xs font-bold text-neutral-500">
+            現在の店舗: {currentStoreId} / {cloudSyncStatus}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button className="rounded-md border border-teal-200 bg-teal-50 px-4 py-2 font-bold text-teal-800" onClick={openStoreModal}>
