@@ -1221,6 +1221,7 @@ export function CostNutritionApp() {
   const [recipeProductSelectId, setRecipeProductSelectId] = useState("");
   const [recipeIngredientId, setRecipeIngredientId] = useState(data.ingredients[0]?.id ?? "");
   const [recipeProductIsIntermediate, setRecipeProductIsIntermediate] = useState(false);
+  const [isRecipeProductListOpen, setIsRecipeProductListOpen] = useState(false);
   const [activeIngredientCategory, setActiveIngredientCategory] = useState("すべて");
   const [impactIngredientId, setImpactIngredientId] = useState(data.ingredients[4]?.id ?? data.ingredients[0]?.id ?? "");
   const [impactNewPrice, setImpactNewPrice] = useState(data.ingredients[4]?.price + 100 || 0);
@@ -2967,7 +2968,10 @@ export function CostNutritionApp() {
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
             <MiniStatus label="原材料" value={`${dashboard.ingredientCount}件`} onClick={() => setActivePage("master")} />
             <MiniStatus label="商品" value={`${dashboard.productCount}品`} onClick={() => setActivePage("productList")} />
-            <MiniStatus label="レシピ済" value={`${recipeRegisteredProducts.length}品`} onClick={() => setActivePage("recipe")} />
+            <MiniStatus label="レシピ済" value={`${recipeRegisteredProducts.length}品`} onClick={() => {
+              setActivePage("recipe");
+              setIsRecipeProductListOpen(true);
+            }} />
             <MiniStatus label="注意" value={`${dashboard.highCostCount}品`} tone="warn" onClick={() => setActivePage("cost")} />
             <MiniStatus label="危険" value={`${dashboard.dangerousCostCount}品`} tone="danger" onClick={() => setActivePage("cost")} />
           </div>
@@ -4162,7 +4166,23 @@ export function CostNutritionApp() {
             </div>
           </div>
 
-          <section className="mt-4 rounded-md border border-teal-200 bg-teal-50 p-3">
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-md border border-teal-200 bg-teal-50 p-3">
+            <div>
+              <h3 className="font-black text-teal-950">レシピ登録済み商品</h3>
+              <p className="mt-1 text-xs font-bold text-teal-800">
+                上部の「レシピ済」または右のボタンで一覧を表示できます。
+              </p>
+            </div>
+            <button
+              className="rounded-md bg-teal-700 px-4 py-2 text-sm font-black text-white"
+              onClick={() => setIsRecipeProductListOpen((open) => !open)}
+            >
+              {isRecipeProductListOpen ? "一覧を隠す" : `一覧を表示（${recipeRegisteredProducts.length}品）`}
+            </button>
+          </div>
+
+          {isRecipeProductListOpen && (
+          <section className="mt-3 rounded-md border border-teal-200 bg-teal-50 p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h3 className="font-black text-teal-950">レシピ登録済み商品</h3>
@@ -4170,7 +4190,12 @@ export function CostNutritionApp() {
                   商品登録済みの商品も、ここからレシピ編集・商品編集・レシピ削除ができます。
                 </p>
               </div>
-              <span className="rounded bg-white px-2 py-1 text-xs font-black text-teal-800">{recipeRegisteredProducts.length}件</span>
+              <div className="flex items-center gap-2">
+                <span className="rounded bg-white px-2 py-1 text-xs font-black text-teal-800">{recipeRegisteredProducts.length}件</span>
+                <button className="rounded bg-white px-3 py-1 text-xs font-black text-teal-800" onClick={() => setIsRecipeProductListOpen(false)}>
+                  隠す
+                </button>
+              </div>
             </div>
             <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
               {recipeRegisteredProducts.map(({ product, rows }) => {
@@ -4214,6 +4239,7 @@ export function CostNutritionApp() {
               </div>
             )}
           </section>
+          )}
 
           <div className="mt-4 grid gap-4 lg:grid-cols-[320px_1fr]">
             <aside className="rounded-md border border-neutral-200 bg-neutral-50 p-3">
