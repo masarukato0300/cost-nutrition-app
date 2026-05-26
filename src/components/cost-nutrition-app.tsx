@@ -2964,11 +2964,12 @@ export function CostNutritionApp() {
             <h2 className="text-xl font-black text-neutral-950">{currentPageTitle}</h2>
             <p className="mt-1 text-xs font-bold text-neutral-500">{currentPageDescription}</p>
           </div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <MiniStatus label="原材料" value={`${dashboard.ingredientCount}件`} />
-            <MiniStatus label="商品" value={`${dashboard.productCount}品`} />
-            <MiniStatus label="注意" value={`${dashboard.highCostCount}品`} tone="warn" />
-            <MiniStatus label="危険" value={`${dashboard.dangerousCostCount}品`} tone="danger" />
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+            <MiniStatus label="原材料" value={`${dashboard.ingredientCount}件`} onClick={() => setActivePage("master")} />
+            <MiniStatus label="商品" value={`${dashboard.productCount}品`} onClick={() => setActivePage("productList")} />
+            <MiniStatus label="レシピ済" value={`${recipeRegisteredProducts.length}品`} onClick={() => setActivePage("recipe")} />
+            <MiniStatus label="注意" value={`${dashboard.highCostCount}品`} tone="warn" onClick={() => setActivePage("cost")} />
+            <MiniStatus label="危険" value={`${dashboard.dangerousCostCount}品`} tone="danger" onClick={() => setActivePage("cost")} />
           </div>
         </div>
       </section>
@@ -5217,12 +5218,34 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
   );
 }
 
-function MiniStatus({ label, value, tone = "normal" }: { label: string; value: string; tone?: "normal" | "warn" | "danger" }) {
+function MiniStatus({
+  label,
+  value,
+  tone = "normal",
+  onClick,
+}: {
+  label: string;
+  value: string;
+  tone?: "normal" | "warn" | "danger";
+  onClick?: () => void;
+}) {
   const toneClass = tone === "danger" ? "border-red-200 bg-red-50 text-red-800" : tone === "warn" ? "border-amber-200 bg-amber-50 text-amber-800" : "border-neutral-200 bg-neutral-50 text-neutral-800";
-  return (
-    <div className={`min-w-20 rounded-md border px-3 py-2 text-center ${toneClass}`}>
+  const content = (
+    <>
       <p className="text-[10px] font-black leading-tight opacity-70">{label}</p>
       <strong className="block text-base leading-tight">{value}</strong>
+    </>
+  );
+  if (onClick) {
+    return (
+      <button className={`min-w-20 rounded-md border px-3 py-2 text-center transition hover:-translate-y-0.5 hover:shadow-sm ${toneClass}`} onClick={onClick}>
+        {content}
+      </button>
+    );
+  }
+  return (
+    <div className={`min-w-20 rounded-md border px-3 py-2 text-center ${toneClass}`}>
+      {content}
     </div>
   );
 }
