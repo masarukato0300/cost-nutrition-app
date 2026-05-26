@@ -109,6 +109,13 @@ export type IngredientAlias = {
   updatedAt: string;
 };
 
+export type OnboardingSupportSettings = {
+  onboardingSupportEnabled: boolean;
+  onboardingSupportStartDate: string;
+  onboardingSupportEndDate: string;
+  officialLineUrl: string;
+};
+
 export type AppData = {
   ingredients: Ingredient[];
   products: Product[];
@@ -123,6 +130,7 @@ export type AppData = {
   eventPlanItems: EventPlanItem[];
   laborCosts: LaborCost[];
   setProductItems: SetProductItem[];
+  onboardingSupport: OnboardingSupportSettings;
 };
 
 export type ProductCostSummary = {

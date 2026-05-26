@@ -26,7 +26,7 @@ import {
 import { sampleData } from "@/lib/sample-data";
 import { standardNutritionFoods } from "@/lib/standard-nutrition";
 import type { StandardNutritionFood } from "@/lib/standard-nutrition";
-import type { ActualCostRecord, AppData, EventPlan, EventSimulationRow, Ingredient, IngredientAlias, LaborCost, MaterialType, MonthlyTheoryRow, PriceImpactRow, Product, ProductLaborCostSummary, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow, SalesRecord, SetProductCostSummary, SetProductItem, WasteItemType, WasteMonthlySummary, WasteReason, WasteRecord } from "@/lib/types";
+import type { ActualCostRecord, AppData, EventPlan, EventSimulationRow, Ingredient, IngredientAlias, LaborCost, MaterialType, MonthlyTheoryRow, OnboardingSupportSettings, PriceImpactRow, Product, ProductLaborCostSummary, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow, SalesRecord, SetProductCostSummary, SetProductItem, WasteItemType, WasteMonthlySummary, WasteReason, WasteRecord } from "@/lib/types";
 
 const defaultStoreId = "デモ店舗";
 const legacyStorageKey = "cost-nutrition-label-mvp-v1";
@@ -35,6 +35,13 @@ const currentStoreStorageKey = "cost-nutrition-label-mvp-current-store-v1";
 const storeSessionStorageKey = "cost-nutrition-label-mvp-store-session-v1";
 const storeSessionPinStorageKey = "cost-nutrition-label-mvp-store-session-pin-v1";
 const allergenOptions = ["卵", "乳", "小麦", "えび", "かに", "くるみ", "そば", "落花生"];
+const officialLineUrl = "https://lin.ee/sq52Q9d";
+const defaultOnboardingSupport: OnboardingSupportSettings = {
+  onboardingSupportEnabled: false,
+  onboardingSupportStartDate: "",
+  onboardingSupportEndDate: "",
+  officialLineUrl,
+};
 const materialTypeLabels: Record<MaterialType, string> = {
   PURCHASED_INGREDIENT: "仕入原材料",
   INTERMEDIATE: "中間材料",
@@ -72,6 +79,7 @@ const pages = [
   { key: "impact", label: "影響分析" },
   { key: "label", label: "ラベル表示" },
   { key: "csv", label: "CSV出力" },
+  { key: "settings", label: "設定" },
   { key: "master", label: "原材料マスター" },
 ] as const;
 
@@ -84,7 +92,7 @@ const navGroups = [
   { key: "costs", label: "原価・値上げ", description: "原価計算、値上げ、イベント、人件費", pages: ["cost", "impact", "event", "labor", "set"] },
   { key: "display", label: "表示・ラベル", description: "栄養成分、アレルゲン、ラベル", pages: ["nutrition", "allergen", "label"] },
   { key: "operation", label: "現場管理", description: "仕込み、発注、廃棄、月間原価", pages: ["production", "order", "waste", "monthly"] },
-  { key: "data", label: "データ管理", description: "商品一覧、カテゴリ、原材料一覧、CSV出力", pages: ["productList", "productCategory", "master", "csv"] },
+  { key: "data", label: "データ管理", description: "商品一覧、カテゴリ、原材料一覧、CSV出力、設定", pages: ["productList", "productCategory", "master", "csv", "settings"] },
 ] as const satisfies Array<{ key: string; label: string; description: string; pages: PageNavKey[] }>;
 const pageTones: Record<PageNavKey, { navActive: string; navIdle: string; topCard: string; mark: string }> = {
   top: {
@@ -213,6 +221,12 @@ const pageTones: Record<PageNavKey, { navActive: string; navIdle: string; topCar
     topCard: "border-indigo-100 bg-indigo-50/70 hover:border-indigo-400",
     mark: "bg-indigo-500",
   },
+  settings: {
+    navActive: "border-slate-800 bg-slate-700 text-white shadow-sm",
+    navIdle: "border-slate-500 bg-slate-50 text-slate-900 hover:bg-slate-100",
+    topCard: "border-slate-100 bg-slate-50/70 hover:border-slate-400",
+    mark: "bg-slate-500",
+  },
   master: {
     navActive: "border-cyan-700 bg-cyan-600 text-white shadow-sm",
     navIdle: "border-cyan-500 bg-cyan-50 text-cyan-900 hover:bg-cyan-100",
@@ -277,6 +291,26 @@ function yenForSmallCost(value: number) {
     minimumFractionDigits: Math.abs(value || 0) < 100 ? 2 : 0,
     maximumFractionDigits: Math.abs(value || 0) < 100 ? 2 : 0,
   }).format(value || 0);
+}
+
+function dateString(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function addDaysToDateString(value: string, days: number) {
+  const baseDate = value ? new Date(`${value}T00:00:00`) : new Date();
+  baseDate.setDate(baseDate.getDate() + days);
+  return dateString(baseDate);
+}
+
+function daysBetweenInclusive(fromDate: string, toDate: string) {
+  if (!fromDate || !toDate) return 0;
+  const fromTime = new Date(`${fromDate}T00:00:00`).getTime();
+  const toTime = new Date(`${toDate}T00:00:00`).getTime();
+  return Math.max(0, Math.ceil((toTime - fromTime) / 86400000));
 }
 
 function number(value: number, digits = 1) {
@@ -364,6 +398,11 @@ function normalizeData(parsed: AppData): AppData {
     eventPlanItems: parsed.eventPlanItems || [],
     laborCosts: parsed.laborCosts || [],
     setProductItems: parsed.setProductItems || [],
+    onboardingSupport: {
+      ...defaultOnboardingSupport,
+      ...(parsed.onboardingSupport || {}),
+      officialLineUrl: parsed.onboardingSupport?.officialLineUrl || officialLineUrl,
+    },
   };
 }
 
@@ -490,6 +529,7 @@ function NavPictogram({ pageKey }: { pageKey: PageNavKey }) {
     impact: <><path className={common} d="M4 18h16" /><path className={common} d="M7 15 12 9l3 3 4-6" /><path className={common} d="M16 6h3v3" /></>,
     label: <><path className={common} d="M4 5h10l6 6-9 9-7-7V5Z" /><circle className={common} cx="9" cy="10" r="1" /></>,
     csv: <><path className={common} d="M6 3h9l3 3v15H6z" /><path className={common} d="M15 3v4h4" /><path className={common} d="M8 14h8M8 17h8M8 11h4" /></>,
+    settings: <><circle className={common} cx="12" cy="12" r="3" /><path className={common} d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" /></>,
     master: <><ellipse className={common} cx="12" cy="6" rx="7" ry="3" /><path className={common} d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6" /><path className={common} d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3" /></>,
   };
 
@@ -723,6 +763,7 @@ function topPageDescription(pageKey: PageKey) {
     ocr: "OCR読み取り結果から価格更新候補を作成",
     label: "確認用ラベルテキストを作成",
     csv: "原材料や商品原価をCSVで出力",
+    settings: "公式LINEや初期設定サポート期間を管理",
     master: "登録済み原材料を一覧確認",
   };
   return descriptions[pageKey];
@@ -1895,6 +1936,49 @@ export function CostNutritionApp() {
       priceReviewTop: sellableProductCosts.filter((item) => item.costRate >= item.product.targetCostRate || item.costRate >= 35).sort((a, b) => b.costRate - a.costRate).slice(0, 10),
     };
   }, [data, impactRows.length]);
+
+  const onboardingSupport = data.onboardingSupport || defaultOnboardingSupport;
+  const today = dateString();
+  const isOnboardingSupportActive = Boolean(
+    onboardingSupport.onboardingSupportEnabled
+    && onboardingSupport.onboardingSupportStartDate
+    && onboardingSupport.onboardingSupportEndDate
+    && today >= onboardingSupport.onboardingSupportStartDate
+    && today <= onboardingSupport.onboardingSupportEndDate,
+  );
+  const isOnboardingSupportExpired = Boolean(
+    onboardingSupport.onboardingSupportEnabled
+    && onboardingSupport.onboardingSupportEndDate
+    && today > onboardingSupport.onboardingSupportEndDate,
+  );
+  const onboardingSupportRemainingDays = isOnboardingSupportActive ? daysBetweenInclusive(today, onboardingSupport.onboardingSupportEndDate) : 0;
+
+  function saveOnboardingSupport(nextSettings: OnboardingSupportSettings) {
+    commit({
+      ...data,
+      onboardingSupport: nextSettings,
+    });
+  }
+
+  function updateOnboardingSupport(partial: Partial<OnboardingSupportSettings>) {
+    saveOnboardingSupport({
+      ...onboardingSupport,
+      ...partial,
+    });
+  }
+
+  function updateOnboardingSupportStartDate(startDate: string) {
+    saveOnboardingSupport({
+      ...onboardingSupport,
+      onboardingSupportStartDate: startDate,
+      onboardingSupportEndDate: addDaysToDateString(startDate, 30),
+    });
+  }
+
+  function openOfficialLine() {
+    const url = onboardingSupport.officialLineUrl || officialLineUrl;
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
 
   function syncIngredientName(value: string) {
     setIngredientForm((current) => ({
@@ -3136,6 +3220,49 @@ export function CostNutritionApp() {
 
       {activePage === "top" && (
         <Panel title="ダッシュボード">
+          {(isOnboardingSupportActive || isOnboardingSupportExpired) && (
+            <section className={`mb-4 rounded-md border p-4 shadow-sm ${
+              isOnboardingSupportActive
+                ? onboardingSupportRemainingDays <= 7
+                  ? "border-amber-300 bg-amber-50"
+                  : "border-green-300 bg-green-50"
+                : "border-neutral-200 bg-neutral-50"
+            }`}>
+              <div className="grid gap-4 lg:grid-cols-[1fr_220px] lg:items-center">
+                <div>
+                  <p className={`text-xs font-black ${isOnboardingSupportActive ? "text-green-700" : "text-neutral-500"}`}>
+                    公式LINE: パティスリー原価ガード初期設定代行
+                  </p>
+                  <h3 className="mt-1 text-xl font-black text-neutral-950">
+                    {isOnboardingSupportActive ? "初期設定サポート受付中" : "初期設定サポート期間は終了しました"}
+                  </h3>
+                  <p className="mt-2 text-sm font-bold text-neutral-700">
+                    {isOnboardingSupportActive
+                      ? "原材料表・レシピ表・包材表・価格表の写真を公式LINEから送ってください。こちらで初期登録を進めます。"
+                      : "追加登録や修正をご希望の場合は、別途サポートをご利用ください。"}
+                  </p>
+                  {isOnboardingSupportActive && (
+                    <p className={`mt-3 inline-flex rounded-full px-3 py-1 text-sm font-black ${
+                      onboardingSupportRemainingDays <= 7 ? "bg-amber-200 text-amber-950" : "bg-green-200 text-green-950"
+                    }`}>
+                      初期設定サポート終了まで あと{onboardingSupportRemainingDays}日
+                    </p>
+                  )}
+                  <p className="mt-3 text-xs font-bold text-neutral-600">
+                    レシピ・仕入価格・商品情報は初期設定作業のみに使用します。内容が不明な場合は、LINEで確認させていただく場合があります。
+                  </p>
+                </div>
+                <button
+                  className={`min-h-16 rounded-md px-5 py-3 text-base font-black text-white shadow-sm ${
+                    isOnboardingSupportActive ? "bg-green-600 hover:bg-green-700" : "bg-neutral-700 hover:bg-neutral-800"
+                  }`}
+                  onClick={openOfficialLine}
+                >
+                  {isOnboardingSupportActive ? "公式LINEに送る" : "追加サポートについて問い合わせる"}
+                </button>
+              </div>
+            </section>
+          )}
           <section className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
             <DashboardCard label="登録原材料数" value={`${dashboard.ingredientCount}件`} tone="normal" onClick={() => setActivePage("master")} />
             <DashboardCard label="登録商品数" value={`${dashboard.productCount}品`} tone="normal" onClick={() => setActivePage("productList")} />
@@ -5303,6 +5430,83 @@ export function CostNutritionApp() {
               <span className="mt-2 block text-xs font-bold text-neutral-500">旧価格、新価格、仕入先、反映方法を出力</span>
             </button>
           </div>
+        </Panel>
+      )}
+
+      {activePage === "settings" && (
+        <Panel title="設定">
+          <section className="rounded-md border border-green-200 bg-green-50 p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="text-xs font-black text-green-700">初期設定代行</p>
+                <h3 className="mt-1 text-xl font-black text-green-950">公式LINEサポート設定</h3>
+                <p className="mt-2 text-sm font-bold text-neutral-700">
+                  初回30日間、レシピ表・仕入価格表・包材表の写真を公式LINEで送れるようにします。
+                </p>
+              </div>
+              <label className="flex min-h-12 items-center gap-3 rounded-md border border-green-300 bg-white px-4 py-2 text-sm font-black text-green-950">
+                <input
+                  type="checkbox"
+                  checked={onboardingSupport.onboardingSupportEnabled}
+                  onChange={(event) => updateOnboardingSupport({ onboardingSupportEnabled: event.target.checked })}
+                />
+                初期設定サポートを有効にする
+              </label>
+            </div>
+
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <TextInput
+                label="公式LINE URL"
+                value={onboardingSupport.officialLineUrl}
+                onChange={(value) => updateOnboardingSupport({ officialLineUrl: value })}
+              />
+              <div className="rounded-md border border-green-200 bg-white p-3">
+                <p className="text-xs font-black text-green-700">表示状態</p>
+                <p className="mt-1 text-lg font-black text-neutral-950">
+                  {isOnboardingSupportActive
+                    ? `受付中 あと${onboardingSupportRemainingDays}日`
+                    : isOnboardingSupportExpired
+                      ? "期間終了"
+                      : onboardingSupport.onboardingSupportEnabled
+                        ? "期間外"
+                        : "無効"}
+                </p>
+              </div>
+              <label className="grid gap-1 text-sm font-bold text-neutral-700">
+                サポート開始日
+                <input
+                  className="min-h-12 rounded-md border border-neutral-300 bg-white px-3 py-2 text-base font-bold text-neutral-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100"
+                  type="date"
+                  value={onboardingSupport.onboardingSupportStartDate}
+                  onChange={(event) => updateOnboardingSupportStartDate(event.target.value)}
+                />
+              </label>
+              <label className="grid gap-1 text-sm font-bold text-neutral-700">
+                サポート終了日
+                <input
+                  className="min-h-12 rounded-md border border-neutral-300 bg-white px-3 py-2 text-base font-bold text-neutral-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100"
+                  type="date"
+                  value={onboardingSupport.onboardingSupportEndDate}
+                  onChange={(event) => updateOnboardingSupport({ onboardingSupportEndDate: event.target.value })}
+                />
+              </label>
+            </div>
+
+            <div className="mt-4 rounded-md border border-white bg-white p-3 text-sm font-bold text-neutral-700">
+              <p>売り文句: レシピ表・仕入価格表・包材表を写真で送るだけ。</p>
+              <p className="mt-1">初回30日間、こちらで初期登録をサポートします。</p>
+              <p className="mt-3 text-xs text-neutral-500">
+                初期設定代行の受付期間は、お申し込み日から30日間です。期間終了後の追加登録・大幅修正は別途料金となります。
+              </p>
+            </div>
+
+            <button
+              className="mt-4 min-h-14 w-full rounded-md bg-green-600 px-5 py-3 text-base font-black text-white shadow-sm hover:bg-green-700 md:w-auto"
+              onClick={openOfficialLine}
+            >
+              公式LINEに送る
+            </button>
+          </section>
         </Panel>
       )}
 
