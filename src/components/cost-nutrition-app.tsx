@@ -26,7 +26,7 @@ import {
 import { sampleData } from "@/lib/sample-data";
 import { standardNutritionFoods } from "@/lib/standard-nutrition";
 import type { StandardNutritionFood } from "@/lib/standard-nutrition";
-import type { ActualCostRecord, AppData, EventPlan, EventSimulationRow, Ingredient, IngredientAlias, LaborCost, MaterialType, MonthlyTheoryRow, OnboardingSupportSettings, PriceImpactRow, Product, ProductLaborCostSummary, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow, SalesRecord, SetProductCostSummary, SetProductItem, WasteItemType, WasteMonthlySummary, WasteReason, WasteRecord } from "@/lib/types";
+import type { ActualCostRecord, AppData, BillingPlanType, BillingSettings, EventPlan, EventSimulationRow, Ingredient, IngredientAlias, LaborCost, MaterialType, MonthlyTheoryRow, OnboardingSupportSettings, PriceImpactRow, Product, ProductLaborCostSummary, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow, SalesRecord, SetProductCostSummary, SetProductItem, WasteItemType, WasteMonthlySummary, WasteReason, WasteRecord } from "@/lib/types";
 
 const defaultStoreId = "デモ店舗";
 const legacyStorageKey = "cost-nutrition-label-mvp-v1";
@@ -36,11 +36,22 @@ const storeSessionStorageKey = "cost-nutrition-label-mvp-store-session-v1";
 const storeSessionPinStorageKey = "cost-nutrition-label-mvp-store-session-pin-v1";
 const allergenOptions = ["卵", "乳", "小麦", "えび", "かに", "くるみ", "そば", "落花生"];
 const officialLineUrl = "https://lin.ee/sq52Q9d";
+const planConfigs: Record<BillingPlanType, { label: string; price: string; ocrLimit: number | null; description: string }> = {
+  light: { label: "ライト", price: "月額1,400円", ocrLimit: 30, description: "OCR月30枚まで。小規模店・まず試したい方向け。" },
+  standard: { label: "スタンダード", price: "月額1,900円", ocrLimit: 100, description: "OCR月100枚まで。日常運用に使いやすい標準プラン。" },
+  pro: { label: "PRO", price: "月額2,900円", ocrLimit: null, description: "OCR実質無制限。通常の店舗業務の範囲内で利用できます。" },
+  monitor: { label: "無料モニター", price: "無料", ocrLimit: 100, description: "テスト参加店舗向け。期間限定の確認用プラン。" },
+};
 const defaultOnboardingSupport: OnboardingSupportSettings = {
   onboardingSupportEnabled: false,
   onboardingSupportStartDate: "",
   onboardingSupportEndDate: "",
   officialLineUrl,
+};
+const defaultBilling: BillingSettings = {
+  planType: "light",
+  ocrUsedMonth: "",
+  ocrUsedThisMonth: 0,
 };
 const materialTypeLabels: Record<MaterialType, string> = {
   PURCHASED_INGREDIENT: "仕入原材料",
@@ -403,6 +414,13 @@ function normalizeData(parsed: AppData): AppData {
       ...defaultOnboardingSupport,
       ...(parsed.onboardingSupport || {}),
       officialLineUrl: parsed.onboardingSupport?.officialLineUrl || officialLineUrl,
+    },
+    billing: {
+      ...defaultBilling,
+      ...(parsed.billing || {}),
+      planType: parsed.billing?.planType || "light",
+      ocrUsedMonth: parsed.billing?.ocrUsedMonth || currentMonth(),
+      ocrUsedThisMonth: parsed.billing?.ocrUsedThisMonth || 0,
     },
   };
 }
@@ -1589,6 +1607,11 @@ export function CostNutritionApp() {
   }
 
   async function readIngredientImageWithOcr(imageDataUrl: string, imageName: string) {
+    if (isOcrLimitReached) {
+      setIngredientOcrStatus(`今月のOCR上限に達しました。現在のプラン: ${currentPlan.label}（${currentBilling.ocrUsedThisMonth}/${ocrLimit}枚）`);
+      alert("今月のOCR上限に達しました。設定画面でプラン変更をご検討ください。");
+      return;
+    }
     setIngredientOcrImageName(imageName);
     setIsIngredientOcrReading(true);
     setIngredientOcrStatus("画像を圧縮中...");
@@ -1617,6 +1640,7 @@ export function CostNutritionApp() {
         setIngredientOcrStatus(rawText ? "文字は一部読めましたが、登録項目に分けられませんでした。読み取り結果を手直しして「読み込み確認」を押してください。" : "登録に必要な情報を抽出できませんでした。明るい場所で、紙を画面いっぱいに入れて撮り直してください。");
         return;
       }
+      countOcrUsage();
       const candidates = validResults.map((item) => {
         const candidate = ingredientFromVisionResult({ ...item, rawText }, ingredientForm);
         const learnedAlias = findIngredientAlias(candidate, data.ingredientAliases);
@@ -1989,6 +2013,47 @@ export function CostNutritionApp() {
     const url = onboardingSupport.officialLineUrl || officialLineUrl;
     setIsLineConsentOpen(false);
     window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  const billing = data.billing || defaultBilling;
+  const billingMonth = currentMonth();
+  const currentBilling = billing.ocrUsedMonth === billingMonth ? billing : { ...billing, ocrUsedMonth: billingMonth, ocrUsedThisMonth: 0 };
+  const currentPlan = planConfigs[currentBilling.planType] || planConfigs.light;
+  const ocrLimit = currentPlan.ocrLimit;
+  const ocrRemaining = ocrLimit === null ? null : Math.max(0, ocrLimit - currentBilling.ocrUsedThisMonth);
+  const isOcrLimitReached = ocrLimit !== null && currentBilling.ocrUsedThisMonth >= ocrLimit;
+
+  function saveBilling(nextBilling: BillingSettings) {
+    commit({
+      ...data,
+      billing: nextBilling,
+    });
+  }
+
+  function updatePlanType(planType: BillingPlanType) {
+    saveBilling({
+      ...currentBilling,
+      planType,
+    });
+  }
+
+  function resetOcrUsage() {
+    saveBilling({
+      ...currentBilling,
+      ocrUsedMonth: billingMonth,
+      ocrUsedThisMonth: 0,
+    });
+  }
+
+  function countOcrUsage() {
+    commit({
+      ...data,
+      billing: {
+        ...currentBilling,
+        ocrUsedMonth: billingMonth,
+        ocrUsedThisMonth: currentBilling.ocrUsedThisMonth + 1,
+      },
+    });
   }
 
   function syncIngredientName(value: string) {
@@ -3274,6 +3339,28 @@ export function CostNutritionApp() {
               </div>
             </section>
           )}
+          <section className="mb-4 rounded-md border border-blue-200 bg-blue-50 p-4 shadow-sm">
+            <div className="grid gap-4 lg:grid-cols-[1fr_220px] lg:items-center">
+              <div>
+                <p className="text-xs font-black text-blue-700">ご利用プラン</p>
+                <h3 className="mt-1 text-xl font-black text-blue-950">
+                  現在のプラン: {currentPlan.label} <span className="text-base text-blue-700">（{currentPlan.price}）</span>
+                </h3>
+                <p className="mt-2 text-sm font-bold text-neutral-700">{currentPlan.description}</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                  <MiniStatus label="今月のOCR利用" value={`${currentBilling.ocrUsedThisMonth}枚`} />
+                  <MiniStatus label="OCR上限" value={ocrLimit === null ? "実質無制限" : `${ocrLimit}枚/月`} />
+                  <MiniStatus label="残りOCR枚数" value={ocrRemaining === null ? "実質無制限" : `${ocrRemaining}枚`} tone={isOcrLimitReached ? "danger" : ocrRemaining !== null && ocrRemaining <= 10 ? "warn" : "normal"} />
+                </div>
+              </div>
+              <button
+                className="min-h-14 rounded-md bg-blue-700 px-5 py-3 text-base font-black text-white shadow-sm hover:bg-blue-800"
+                onClick={() => setActivePage("settings")}
+              >
+                プランを確認
+              </button>
+            </div>
+          </section>
           <section className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
             <DashboardCard label="登録原材料数" value={`${dashboard.ingredientCount}件`} tone="normal" onClick={() => setActivePage("master")} />
             <DashboardCard label="登録商品数" value={`${dashboard.productCount}品`} tone="normal" onClick={() => setActivePage("productList")} />
@@ -5481,6 +5568,58 @@ export function CostNutritionApp() {
 
       {activePage === "settings" && (
         <Panel title="設定">
+          <section className="mb-4 rounded-md border border-blue-200 bg-blue-50 p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="text-xs font-black text-blue-700">料金プラン</p>
+                <h3 className="mt-1 text-xl font-black text-blue-950">現在のプラン: {currentPlan.label}</h3>
+                <p className="mt-2 text-sm font-bold text-neutral-700">
+                  今月のOCR利用枚数と残り枚数を、ダッシュボードにも表示します。
+                </p>
+              </div>
+              <div className="rounded-md border border-blue-200 bg-white p-3 text-right">
+                <p className="text-xs font-black text-blue-700">OCR利用状況</p>
+                <p className="mt-1 text-lg font-black text-neutral-950">
+                  {currentBilling.ocrUsedThisMonth} / {ocrLimit === null ? "実質無制限" : `${ocrLimit}枚`}
+                </p>
+                <p className={`mt-1 text-xs font-black ${isOcrLimitReached ? "text-red-700" : "text-blue-700"}`}>
+                  残り {ocrRemaining === null ? "実質無制限" : `${ocrRemaining}枚`}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 lg:grid-cols-3">
+              {(["light", "standard", "pro"] as BillingPlanType[]).map((planType) => {
+                const plan = planConfigs[planType];
+                const selected = currentBilling.planType === planType;
+                return (
+                  <button
+                    key={planType}
+                    className={`min-h-36 rounded-md border-2 p-4 text-left shadow-sm transition-colors ${
+                      selected ? "border-blue-700 bg-blue-700 text-white" : "border-blue-200 bg-white text-neutral-900 hover:bg-blue-50"
+                    }`}
+                    onClick={() => updatePlanType(planType)}
+                  >
+                    <span className="block text-xl font-black">{plan.label}</span>
+                    <span className={`mt-1 block text-lg font-black ${selected ? "text-blue-100" : "text-blue-800"}`}>{plan.price}</span>
+                    <span className="mt-3 block text-sm font-bold">
+                      OCR {plan.ocrLimit === null ? "実質無制限" : `月${plan.ocrLimit}枚まで`}
+                    </span>
+                    <span className={`mt-2 block text-xs font-bold ${selected ? "text-white/80" : "text-neutral-500"}`}>{plan.description}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-blue-100 bg-white p-3">
+              <p className="text-xs font-bold text-neutral-600">
+                PROのOCR実質無制限は、通常の店舗業務の範囲内でのご利用を想定しています。
+              </p>
+              <button className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-black text-blue-800" onClick={resetOcrUsage}>
+                OCR利用枚数を今月分リセット
+              </button>
+            </div>
+          </section>
+
           <section className="rounded-md border border-green-200 bg-green-50 p-4">
             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
               <div>

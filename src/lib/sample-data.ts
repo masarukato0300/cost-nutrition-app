@@ -170,4 +170,9 @@ export const sampleData: AppData = {
     onboardingSupportEndDate: "2026-06-25",
     officialLineUrl: "https://lin.ee/sq52Q9d",
   },
+  billing: {
+    planType: "standard",
+    ocrUsedMonth: "2026-05",
+    ocrUsedThisMonth: 12,
+  },
 };
