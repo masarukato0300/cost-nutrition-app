@@ -3415,7 +3415,12 @@ export function CostNutritionApp() {
 
       {activePage === "help" && (
         <Panel title="使い方">
-          <HelpGuide onNavigate={setActivePage} />
+          <HelpGuide
+            onNavigate={setActivePage}
+            showOnboardingLine={isOnboardingSupportActive}
+            remainingDays={onboardingSupportRemainingDays}
+            onOpenLine={openOfficialLine}
+          />
         </Panel>
       )}
 
@@ -5754,7 +5759,17 @@ function Metric({
   );
 }
 
-function HelpGuide({ onNavigate }: { onNavigate: (page: PageKey) => void }) {
+function HelpGuide({
+  onNavigate,
+  showOnboardingLine,
+  remainingDays,
+  onOpenLine,
+}: {
+  onNavigate: (page: PageKey) => void;
+  showOnboardingLine: boolean;
+  remainingDays: number;
+  onOpenLine: () => void;
+}) {
   const steps = [
     { title: "1. 原材料を登録", body: "カメラ起動、写真、または手入力で材料名・製品名・価格・栄養成分を登録します。", page: "ingredient" as PageKey },
     { title: "2. 商品を登録", body: "販売価格、出来上がり個数、表示単位を登録します。中間材料として使う商品もここで管理できます。", page: "product" as PageKey },
@@ -5908,6 +5923,36 @@ function HelpGuide({ onNavigate }: { onNavigate: (page: PageKey) => void }) {
           栄養成分は計算上の目安です。食品表示として使う場合は、原材料規格書、メーカー資料、専門家確認などで最終確認してください。
         </p>
       </section>
+
+      {showOnboardingLine && (
+        <section className={`rounded-md border-2 p-5 shadow-sm ${
+          remainingDays <= 7 ? "border-amber-300 bg-amber-50" : "border-green-300 bg-green-50"
+        }`}>
+          <div className="grid gap-4 lg:grid-cols-[1fr_240px] lg:items-center">
+            <div>
+              <p className="text-xs font-black text-green-700">初回30日間限定</p>
+              <h3 className="mt-1 text-2xl font-black text-green-950">めんどうな初期設定を丸投げできます。</h3>
+              <p className="mt-3 text-sm font-bold leading-7 text-neutral-700">
+                レシピ表・仕入価格表・包材表を写真で送るだけ。公式LINEから資料を送っていただければ、初期登録をサポートします。
+              </p>
+              <p className={`mt-3 inline-flex rounded-full px-3 py-1 text-sm font-black ${
+                remainingDays <= 7 ? "bg-amber-200 text-amber-950" : "bg-green-200 text-green-950"
+              }`}>
+                初期設定サポート終了まで あと{remainingDays}日
+              </p>
+              <p className="mt-3 text-xs font-bold text-neutral-600">
+                レシピ・仕入価格・商品情報は初期設定作業のみに使用します。内容が不明な場合は、LINEで確認させていただく場合があります。
+              </p>
+            </div>
+            <button
+              className="min-h-16 rounded-md bg-green-600 px-5 py-4 text-lg font-black text-white shadow-sm hover:bg-green-700"
+              onClick={onOpenLine}
+            >
+              公式LINEに送る
+            </button>
+          </div>
+        </section>
+      )}
     </div>
   );
 }
