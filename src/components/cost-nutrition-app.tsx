@@ -1773,13 +1773,19 @@ export function CostNutritionApp() {
   const dashboard = useMemo(() => {
     const productCosts = data.products.map((product) => calculateProductCost(product, data.ingredients, data.recipeItems, data.products));
     const sellableProductCosts = productCosts.filter((item) => !item.product.isIntermediateMaterial);
+    const recentPriceHistories = data.priceHistories
+      .slice()
+      .sort((a, b) => new Date(b.changedAt).getTime() - new Date(a.changedAt).getTime())
+      .slice(0, 5);
     return {
+      ingredientCount: data.ingredients.length,
       productCount: data.products.length,
       highCostCount: productCosts.filter((item) => item.costRate >= 35).length,
       dangerousCostCount: productCosts.filter((item) => item.costRate >= 40).length,
       affectedCount: impactRows.length,
       missingNutritionCount: data.ingredients.filter((ingredient) => !hasNutrition(ingredient)).length,
-      highCostTop: sellableProductCosts.slice().sort((a, b) => b.costRate - a.costRate).slice(0, 10),
+      recentPriceHistories,
+      highCostTop: sellableProductCosts.slice().sort((a, b) => b.costRate - a.costRate).slice(0, 5),
       priceReviewTop: sellableProductCosts.filter((item) => item.costRate >= item.product.targetCostRate || item.costRate >= 35).sort((a, b) => b.costRate - a.costRate).slice(0, 10),
     };
   }, [data, impactRows.length]);
@@ -2822,6 +2828,10 @@ export function CostNutritionApp() {
   const visibleNavGroup = openNavGroup
     ? navGroups.find((group) => group.key === openNavGroup) ?? activeNavGroup
     : activeNavGroup;
+  const currentPageTitle = activePage === "top" ? "ダッシュボード" : pageLabel(activePage === "ocr" ? "ingredient" : activePage);
+  const currentPageDescription = activePage === "top"
+    ? "今日見るべき原価率・価格変更・未登録情報をまとめて確認できます。"
+    : topPageDescription(activePage === "ocr" ? "ingredient" : activePage);
 
   return (
     <main className="mx-auto flex w-full max-w-7xl flex-col gap-4 p-3 text-sm text-neutral-900 md:p-5">
@@ -2921,17 +2931,34 @@ export function CostNutritionApp() {
         )}
       </nav>
 
-      <section className="grid grid-cols-4 gap-1 md:gap-2">
-        <Metric label="登録商品数" value={`${dashboard.productCount}品`} compact />
-        <Metric label="原価率35%以上" value={`${dashboard.highCostCount}品`} tone="warn" compact />
-        <Metric label="影響商品数" value={`${dashboard.affectedCount}品`} compact />
-        <Metric label="栄養未登録材料" value={`${dashboard.missingNutritionCount}件`} compact />
+      <section className="rounded-md border border-white/80 bg-white/90 p-3 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-black text-teal-700">現在の画面</p>
+            <h2 className="text-xl font-black text-neutral-950">{currentPageTitle}</h2>
+            <p className="mt-1 text-xs font-bold text-neutral-500">{currentPageDescription}</p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <MiniStatus label="原材料" value={`${dashboard.ingredientCount}件`} />
+            <MiniStatus label="商品" value={`${dashboard.productCount}品`} />
+            <MiniStatus label="注意" value={`${dashboard.highCostCount}品`} tone="warn" />
+            <MiniStatus label="危険" value={`${dashboard.dangerousCostCount}品`} tone="danger" />
+          </div>
+        </div>
       </section>
 
       {activePage === "top" && (
-        <Panel title="TOP">
-          <section className="rounded-md border border-teal-100 bg-teal-50 p-3">
-            <h3 className="font-black text-teal-950">まず使うページ</h3>
+        <Panel title="ダッシュボード">
+          <section className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
+            <DashboardCard label="登録原材料数" value={`${dashboard.ingredientCount}件`} tone="normal" onClick={() => setActivePage("master")} />
+            <DashboardCard label="登録商品数" value={`${dashboard.productCount}品`} tone="normal" onClick={() => setActivePage("productList")} />
+            <DashboardCard label="原価率35%以上" value={`${dashboard.highCostCount}品`} tone="warn" onClick={() => setActivePage("cost")} />
+            <DashboardCard label="原価率40%以上" value={`${dashboard.dangerousCostCount}品`} tone="danger" onClick={() => setActivePage("cost")} />
+            <DashboardCard label="栄養未登録材料" value={`${dashboard.missingNutritionCount}件`} tone="warn" onClick={() => setActivePage("ingredient")} />
+          </section>
+
+          <section className="mt-4 rounded-md border border-teal-100 bg-teal-50 p-3">
+            <h3 className="font-black text-teal-950">よく使うページ</h3>
             <div className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-4">
               {(["ingredient", "product", "recipe", "cost"] as PageNavKey[]).map((pageKey) => {
                 const tone = pageTone(pageKey);
@@ -2953,6 +2980,53 @@ export function CostNutritionApp() {
               })}
             </div>
           </section>
+          <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr]">
+            <section className="rounded-md border border-red-100 bg-red-50 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="font-black text-red-950">原価率が高い商品TOP5</h3>
+                <button className="rounded bg-white px-3 py-1 text-xs font-black text-red-800" onClick={() => setActivePage("cost")}>見る</button>
+              </div>
+              <div className="mt-2 grid gap-2">
+                {dashboard.highCostTop.map((summary, index) => (
+                  <button key={summary.product.id} className="grid gap-2 rounded-md bg-white px-3 py-2 text-left text-sm font-bold sm:grid-cols-[32px_1fr_96px_92px] sm:items-center" onClick={() => {
+                    setSelectedProductId(summary.product.id);
+                    setActivePage("cost");
+                  }}>
+                    <span className="grid h-7 w-7 place-items-center rounded bg-red-100 text-red-800">{index + 1}</span>
+                    <span>{summary.product.name}</span>
+                    <span className="text-right">{yenForSmallCost(summary.costPerPiece)}</span>
+                    <CostRateBadge value={summary.costRate} />
+                  </button>
+                ))}
+                {dashboard.highCostTop.length === 0 && <EmptyState text="商品原価率はまだ表示できません。" />}
+              </div>
+            </section>
+
+            <section className="rounded-md border border-amber-100 bg-amber-50 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="font-black text-amber-950">最近価格変更された原材料</h3>
+                <button className="rounded bg-white px-3 py-1 text-xs font-black text-amber-800" onClick={() => setActivePage("impact")}>影響分析</button>
+              </div>
+              <div className="mt-2 grid gap-2">
+                {dashboard.recentPriceHistories.map((history) => {
+                  const ingredient = data.ingredients.find((item) => item.id === history.ingredientId);
+                  return (
+                    <button key={history.id} className="grid gap-2 rounded-md bg-white px-3 py-2 text-left text-sm font-bold sm:grid-cols-[1fr_120px_120px] sm:items-center" onClick={() => {
+                      setImpactIngredientId(history.ingredientId);
+                      setImpactNewPrice(history.newPrice);
+                      setActivePage("impact");
+                    }}>
+                      <span>{ingredient ? ingredientOptionLabel(ingredient) : "削除済み原材料"}</span>
+                      <span className="text-right">{yen(history.oldPrice)} → {yen(history.newPrice)}</span>
+                      <span className="text-right text-xs text-neutral-500">{new Date(history.changedAt).toLocaleDateString("ja-JP")}</span>
+                    </button>
+                  );
+                })}
+                {dashboard.recentPriceHistories.length === 0 && <EmptyState text="価格変更履歴はまだありません。" />}
+              </div>
+            </section>
+          </div>
+
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             {navGroups.map((group) => {
               const tone = pageTone(group.pages[0]);
@@ -5061,6 +5135,54 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
       </h2>
       {children}
     </section>
+  );
+}
+
+function MiniStatus({ label, value, tone = "normal" }: { label: string; value: string; tone?: "normal" | "warn" | "danger" }) {
+  const toneClass = tone === "danger" ? "border-red-200 bg-red-50 text-red-800" : tone === "warn" ? "border-amber-200 bg-amber-50 text-amber-800" : "border-neutral-200 bg-neutral-50 text-neutral-800";
+  return (
+    <div className={`min-w-20 rounded-md border px-3 py-2 text-center ${toneClass}`}>
+      <p className="text-[10px] font-black leading-tight opacity-70">{label}</p>
+      <strong className="block text-base leading-tight">{value}</strong>
+    </div>
+  );
+}
+
+function DashboardCard({
+  label,
+  value,
+  tone,
+  onClick,
+}: {
+  label: string;
+  value: string;
+  tone: "normal" | "warn" | "danger";
+  onClick: () => void;
+}) {
+  const toneClass = tone === "danger"
+    ? "border-red-200 bg-red-50 text-red-900 hover:border-red-400"
+    : tone === "warn"
+      ? "border-amber-200 bg-amber-50 text-amber-900 hover:border-amber-400"
+      : "border-sky-200 bg-sky-50 text-sky-900 hover:border-sky-400";
+  return (
+    <button className={`min-h-28 rounded-md border p-4 text-left shadow-sm transition ${toneClass}`} onClick={onClick}>
+      <p className="text-xs font-black opacity-75">{label}</p>
+      <strong className="mt-2 block text-3xl font-black leading-none">{value}</strong>
+      <span className="mt-3 inline-block text-xs font-black opacity-75">タップして確認</span>
+    </button>
+  );
+}
+
+function CostRateBadge({ value }: { value: number }) {
+  const toneClass = value >= 40 ? "bg-red-600 text-white" : value >= 35 ? "bg-amber-400 text-amber-950" : "bg-teal-100 text-teal-800";
+  return <span className={`rounded px-2 py-1 text-center text-xs font-black ${toneClass}`}>{percent(value)}</span>;
+}
+
+function EmptyState({ text }: { text: string }) {
+  return (
+    <div className="rounded-md border border-dashed border-neutral-300 bg-white/70 p-4 text-center text-sm font-bold text-neutral-500">
+      {text}
+    </div>
   );
 }
 
