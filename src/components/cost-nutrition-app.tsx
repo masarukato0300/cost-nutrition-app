@@ -26,7 +26,7 @@ import {
 import { sampleData } from "@/lib/sample-data";
 import { standardNutritionFoods } from "@/lib/standard-nutrition";
 import type { StandardNutritionFood } from "@/lib/standard-nutrition";
-import type { ActualCostRecord, AppData, BillingPlanType, BillingSettings, EventPlan, EventSimulationRow, Ingredient, IngredientAlias, LaborCost, MaterialType, MonthlyTheoryRow, OnboardingSupportSettings, PriceImpactRow, Product, ProductLaborCostSummary, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow, SalesRecord, SetProductCostSummary, SetProductItem, WasteItemType, WasteMonthlySummary, WasteReason, WasteRecord } from "@/lib/types";
+import type { ActualCostRecord, AppData, BillingSettings, EventPlan, EventSimulationRow, Ingredient, IngredientAlias, LaborCost, MaterialType, MonthlyTheoryRow, OnboardingSupportSettings, PriceImpactRow, Product, ProductLaborCostSummary, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow, SalesRecord, SetProductCostSummary, SetProductItem, WasteItemType, WasteMonthlySummary, WasteReason, WasteRecord } from "@/lib/types";
 
 const defaultStoreId = "デモ店舗";
 const legacyStorageKey = "cost-nutrition-label-mvp-v1";
@@ -34,14 +34,9 @@ const storesStorageKey = "cost-nutrition-label-mvp-stores-v1";
 const currentStoreStorageKey = "cost-nutrition-label-mvp-current-store-v1";
 const storeSessionStorageKey = "cost-nutrition-label-mvp-store-session-v1";
 const storeSessionPinStorageKey = "cost-nutrition-label-mvp-store-session-pin-v1";
+const storeSessionAdminStorageKey = "cost-nutrition-label-mvp-store-session-admin-v1";
 const allergenOptions = ["卵", "乳", "小麦", "えび", "かに", "くるみ", "そば", "落花生"];
 const officialLineUrl = "https://lin.ee/sq52Q9d";
-const planConfigs: Record<BillingPlanType, { label: string; price: string; ocrLimit: number | null; description: string }> = {
-  light: { label: "ライト", price: "月額1,400円", ocrLimit: 30, description: "OCR月30枚まで。小規模店・まず試したい方向け。" },
-  standard: { label: "スタンダード", price: "月額1,900円", ocrLimit: 100, description: "OCR月100枚まで。日常運用に使いやすい標準プラン。" },
-  pro: { label: "PRO", price: "月額2,900円", ocrLimit: null, description: "OCR実質無制限。通常の店舗業務の範囲内で利用できます。" },
-  monitor: { label: "無料モニター", price: "無料", ocrLimit: 100, description: "テスト参加店舗向け。期間限定の確認用プラン。" },
-};
 const defaultOnboardingSupport: OnboardingSupportSettings = {
   onboardingSupportEnabled: false,
   onboardingSupportStartDate: "",
@@ -49,12 +44,14 @@ const defaultOnboardingSupport: OnboardingSupportSettings = {
   officialLineUrl,
 };
 const defaultBilling: BillingSettings = {
-  planType: "light",
   ocrUsedMonth: "",
   ocrUsedThisMonth: 0,
-  planBillingMonth: "",
-  planAgreedAt: "",
-  planChangeHistory: [],
+  baseMonthlyPrice: 1400,
+  ocrBaseLimit: 30,
+  ocrAddonPacks: 0,
+  ocrAddonPackSize: 50,
+  ocrAddonPrice: 500,
+  ocrAddonHistory: [],
 };
 const materialTypeLabels: Record<MaterialType, string> = {
   PURCHASED_INGREDIENT: "仕入原材料",
@@ -421,12 +418,14 @@ function normalizeData(parsed: AppData): AppData {
     billing: {
       ...defaultBilling,
       ...(parsed.billing || {}),
-      planType: parsed.billing?.planType || "light",
       ocrUsedMonth: parsed.billing?.ocrUsedMonth || currentMonth(),
       ocrUsedThisMonth: parsed.billing?.ocrUsedThisMonth || 0,
-      planBillingMonth: parsed.billing?.planBillingMonth || currentMonth(),
-      planAgreedAt: parsed.billing?.planAgreedAt || "",
-      planChangeHistory: parsed.billing?.planChangeHistory || [],
+      baseMonthlyPrice: parsed.billing?.baseMonthlyPrice || 1400,
+      ocrBaseLimit: parsed.billing?.ocrBaseLimit || 30,
+      ocrAddonPacks: parsed.billing?.ocrUsedMonth === currentMonth() ? parsed.billing?.ocrAddonPacks || 0 : 0,
+      ocrAddonPackSize: parsed.billing?.ocrAddonPackSize || 50,
+      ocrAddonPrice: parsed.billing?.ocrAddonPrice || 500,
+      ocrAddonHistory: parsed.billing?.ocrAddonHistory || [],
     },
   };
 }
@@ -1345,7 +1344,8 @@ export function CostNutritionApp() {
   const [authStoreName, setAuthStoreName] = useState("");
   const [authPin, setAuthPin] = useState("");
   const [isLineConsentOpen, setIsLineConsentOpen] = useState(false);
-  const [pendingPlanType, setPendingPlanType] = useState<BillingPlanType | null>(null);
+  const [isAdminSession, setIsAdminSession] = useState(false);
+  const [pendingOcrAddonRequest, setPendingOcrAddonRequest] = useState<{ imageDataUrl: string; imageName: string } | null>(null);
   const [ingredientOcrImageName, setIngredientOcrImageName] = useState("");
   const [ingredientOcrStatus, setIngredientOcrStatus] = useState("");
   const [isIngredientOcrReading, setIsIngredientOcrReading] = useState(false);
@@ -1387,12 +1387,14 @@ export function CostNutritionApp() {
       const loadedStores = loadStores();
       const sessionStoreId = window.sessionStorage.getItem(storeSessionStorageKey);
       const sessionStorePin = window.sessionStorage.getItem(storeSessionPinStorageKey) || "";
+      const sessionIsAdmin = window.sessionStorage.getItem(storeSessionAdminStorageKey) === "true";
       const hasActiveSession = Boolean(sessionStoreId && loadedStores.some((store) => store.id === sessionStoreId));
       const loadedStoreId = hasActiveSession ? sessionStoreId || defaultStoreId : loadCurrentStoreId(loadedStores);
       const loadedData = loadData(loadedStoreId);
       setStores(loadedStores);
       setCurrentStoreId(loadedStoreId);
       setCurrentStorePin(hasActiveSession ? sessionStorePin : "");
+      setIsAdminSession(hasActiveSession ? sessionIsAdmin : false);
       setCloudSyncStatus(hasActiveSession && sessionStorePin ? "クラウド共有中" : "この端末に保存中");
       setSwitchStoreId(loadedStoreId);
       setAuthStoreName(loadedStoreId);
@@ -1438,7 +1440,7 @@ export function CostNutritionApp() {
     }
   }
 
-  function applyStoreSession(storeId: string, pin: string, nextData: AppData, syncStatus = "この端末に保存中") {
+  function applyStoreSession(storeId: string, pin: string, nextData: AppData, syncStatus = "この端末に保存中", isAdmin = false) {
     const existingStore = stores.find((store) => store.id === storeId);
     if (!existingStore) {
       const nextStores = [...stores, { id: storeId, pin, createdAt: now(), updatedAt: now() }];
@@ -1448,10 +1450,12 @@ export function CostNutritionApp() {
     window.localStorage.setItem(storeDataKey(storeId), JSON.stringify(nextData));
     setCurrentStoreId(storeId);
     setCurrentStorePin(pin);
+    setIsAdminSession(isAdmin);
     setCloudSyncStatus(syncStatus);
     window.localStorage.setItem(currentStoreStorageKey, storeId);
     window.sessionStorage.setItem(storeSessionStorageKey, storeId);
     window.sessionStorage.setItem(storeSessionPinStorageKey, pin);
+    window.sessionStorage.setItem(storeSessionAdminStorageKey, String(isAdmin));
     setData(nextData);
     setSelectedProductId(nextData.products[0]?.id ?? "");
     setRecipeProductSelectId("");
@@ -1495,7 +1499,7 @@ export function CostNutritionApp() {
     try {
       const cloud = await authCloudStore(authModalMode, storeName, authPin);
       if (cloud.cloudConfigured && cloud.ok && cloud.data) {
-        applyStoreSession(storeName, authPin, normalizeData(cloud.data), cloud.isAdmin ? "管理者キーでログイン中" : "クラウド共有済み");
+        applyStoreSession(storeName, authPin, normalizeData(cloud.data), cloud.isAdmin ? "管理者キーでログイン中" : "クラウド共有済み", Boolean(cloud.isAdmin));
         return;
       }
     } catch (error) {
@@ -1532,7 +1536,9 @@ export function CostNutritionApp() {
   function logoutStore() {
     window.sessionStorage.removeItem(storeSessionStorageKey);
     window.sessionStorage.removeItem(storeSessionPinStorageKey);
+    window.sessionStorage.removeItem(storeSessionAdminStorageKey);
     setCurrentStorePin("");
+    setIsAdminSession(false);
     setCloudSyncStatus("ログアウト中");
     setAuthModalMode("login");
     setAuthStoreName(currentStoreId);
@@ -1588,7 +1594,7 @@ export function CostNutritionApp() {
     try {
       const cloud = await authCloudStore("login", switchStoreId, switchStorePin);
       if (cloud.cloudConfigured && cloud.ok && cloud.data) {
-        applyStoreSession(switchStoreId, switchStorePin, normalizeData(cloud.data), "クラウド共有済み");
+        applyStoreSession(switchStoreId, switchStorePin, normalizeData(cloud.data), cloud.isAdmin ? "管理者キーでログイン中" : "クラウド共有済み", Boolean(cloud.isAdmin));
         return;
       }
     } catch {
@@ -1613,10 +1619,10 @@ export function CostNutritionApp() {
     saveStores(nextStores);
   }
 
-  async function readIngredientImageWithOcr(imageDataUrl: string, imageName: string) {
-    if (isOcrLimitReached) {
-      setIngredientOcrStatus(`今月のOCR上限に達しました。現在のプラン: ${currentPlan.label}（${currentBilling.ocrUsedThisMonth}/${ocrLimit}枚）`);
-      alert("今月のOCR上限に達しました。設定画面でプラン変更をご検討ください。");
+  async function readIngredientImageWithOcr(imageDataUrl: string, imageName: string, bypassLimitCheck = false, billingForCount = currentBilling) {
+    if (!bypassLimitCheck && isOcrLimitReached) {
+      setIngredientOcrStatus(`今月のOCR上限${ocrLimit}枚に達しました。追加パックを確認してください。`);
+      setPendingOcrAddonRequest({ imageDataUrl, imageName });
       return;
     }
     setIngredientOcrImageName(imageName);
@@ -1647,7 +1653,7 @@ export function CostNutritionApp() {
         setIngredientOcrStatus(rawText ? "文字は一部読めましたが、登録項目に分けられませんでした。読み取り結果を手直しして「読み込み確認」を押してください。" : "登録に必要な情報を抽出できませんでした。明るい場所で、紙を画面いっぱいに入れて撮り直してください。");
         return;
       }
-      countOcrUsage();
+      countOcrUsage(billingForCount);
       const candidates = validResults.map((item) => {
         const candidate = ingredientFromVisionResult({ ...item, rawText }, ingredientForm);
         const learnedAlias = findIngredientAlias(candidate, data.ingredientAliases);
@@ -2024,11 +2030,13 @@ export function CostNutritionApp() {
 
   const billing = data.billing || defaultBilling;
   const billingMonth = currentMonth();
-  const currentBilling = billing.ocrUsedMonth === billingMonth ? billing : { ...billing, ocrUsedMonth: billingMonth, ocrUsedThisMonth: 0 };
-  const currentPlan = planConfigs[currentBilling.planType] || planConfigs.light;
-  const ocrLimit = currentPlan.ocrLimit;
-  const ocrRemaining = ocrLimit === null ? null : Math.max(0, ocrLimit - currentBilling.ocrUsedThisMonth);
-  const isOcrLimitReached = ocrLimit !== null && currentBilling.ocrUsedThisMonth >= ocrLimit;
+  const currentBilling = billing.ocrUsedMonth === billingMonth
+    ? billing
+    : { ...billing, ocrUsedMonth: billingMonth, ocrUsedThisMonth: 0, ocrAddonPacks: 0 };
+  const ocrLimit = currentBilling.ocrBaseLimit + currentBilling.ocrAddonPacks * currentBilling.ocrAddonPackSize;
+  const ocrRemaining = isAdminSession ? null : Math.max(0, ocrLimit - currentBilling.ocrUsedThisMonth);
+  const monthlyCharge = currentBilling.baseMonthlyPrice + currentBilling.ocrAddonPacks * currentBilling.ocrAddonPrice;
+  const isOcrLimitReached = !isAdminSession && currentBilling.ocrUsedThisMonth >= ocrLimit;
 
   function saveBilling(nextBilling: BillingSettings) {
     commit({
@@ -2037,50 +2045,53 @@ export function CostNutritionApp() {
     });
   }
 
-  function updatePlanType(planType: BillingPlanType) {
-    if (planType === currentBilling.planType) return;
-    setPendingPlanType(planType);
-  }
-
-  function confirmPlanChange() {
-    if (!pendingPlanType) return;
-    const nextPlan = planConfigs[pendingPlanType];
-    saveBilling({
-      ...currentBilling,
-      planType: pendingPlanType,
-      planBillingMonth: billingMonth,
-      planAgreedAt: now(),
-      planChangeHistory: [
-        ...(currentBilling.planChangeHistory || []),
-        {
-          id: createId("billing"),
-          planType: pendingPlanType,
-          billingMonth,
-          agreedAt: now(),
-          priceLabel: nextPlan.price,
-        },
-      ],
-    });
-    setPendingPlanType(null);
-  }
-
   function resetOcrUsage() {
     saveBilling({
       ...currentBilling,
       ocrUsedMonth: billingMonth,
       ocrUsedThisMonth: 0,
+      ocrAddonPacks: 0,
     });
   }
 
-  function countOcrUsage() {
+  function countOcrUsage(billingForCount = currentBilling) {
     commit({
       ...data,
       billing: {
-        ...currentBilling,
+        ...billingForCount,
         ocrUsedMonth: billingMonth,
-        ocrUsedThisMonth: currentBilling.ocrUsedThisMonth + 1,
+        ocrUsedThisMonth: billingForCount.ocrUsedThisMonth + 1,
       },
     });
+  }
+
+  function confirmOcrAddonPack() {
+    if (!pendingOcrAddonRequest) return;
+    const request = pendingOcrAddonRequest;
+    const nextBilling: BillingSettings = {
+      ...currentBilling,
+      ocrUsedMonth: billingMonth,
+      ocrAddonPacks: currentBilling.ocrAddonPacks + 1,
+      ocrAddonHistory: [
+        ...(currentBilling.ocrAddonHistory || []),
+        {
+          id: createId("billing"),
+          billingMonth,
+          agreedAt: now(),
+          addonPacksAfterPurchase: currentBilling.ocrAddonPacks + 1,
+          addedLimit: currentBilling.ocrAddonPackSize,
+          price: currentBilling.ocrAddonPrice,
+        },
+      ],
+    };
+    commit({
+      ...data,
+      billing: nextBilling,
+    });
+    setPendingOcrAddonRequest(null);
+    window.setTimeout(() => {
+      void readIngredientImageWithOcr(request.imageDataUrl, request.imageName, true, nextBilling);
+    }, 0);
   }
 
   function syncIngredientName(value: string) {
@@ -3371,13 +3382,15 @@ export function CostNutritionApp() {
               <div>
                 <p className="text-xs font-black text-blue-700">ご利用プラン</p>
                 <h3 className="mt-1 text-xl font-black text-blue-950">
-                  現在のプラン: {currentPlan.label} <span className="text-base text-blue-700">（{currentPlan.price}）</span>
+                  月額1,400円スタート <span className="text-base text-blue-700">（OCR月30枚込み）</span>
                 </h3>
-                <p className="mt-2 text-sm font-bold text-neutral-700">{currentPlan.description}</p>
+                <p className="mt-2 text-sm font-bold text-neutral-700">
+                  30枚を超える場合は、その月だけ +500円でOCRを50枚追加できます。管理者キーでは追加料金は発生しません。
+                </p>
                 <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                  <MiniStatus label="今月のOCR利用" value={`${currentBilling.ocrUsedThisMonth}枚`} />
-                  <MiniStatus label="OCR上限" value={ocrLimit === null ? "実質無制限" : `${ocrLimit}枚/月`} />
-                  <MiniStatus label="残りOCR枚数" value={ocrRemaining === null ? "実質無制限" : `${ocrRemaining}枚`} tone={isOcrLimitReached ? "danger" : ocrRemaining !== null && ocrRemaining <= 10 ? "warn" : "normal"} />
+                  <MiniStatus label="今月のOCR利用" value={isAdminSession ? "管理者" : `${currentBilling.ocrUsedThisMonth}枚`} />
+                  <MiniStatus label="OCR上限" value={isAdminSession ? "制限なし" : `${ocrLimit}枚/月`} />
+                  <MiniStatus label="今月の請求目安" value={isAdminSession ? "なし" : yen(monthlyCharge)} tone={currentBilling.ocrAddonPacks > 0 ? "warn" : "normal"} />
                 </div>
               </div>
               <button
@@ -3705,37 +3718,34 @@ export function CostNutritionApp() {
         </div>
       )}
 
-      {pendingPlanType && (
+      {pendingOcrAddonRequest && (
         <div className="fixed inset-0 z-[70] grid place-items-center bg-black/50 p-3">
           <section className="w-full max-w-md rounded-md border border-blue-200 bg-white p-5 shadow-2xl">
-            <p className="text-xs font-black text-blue-700">プラン変更の確認</p>
-            <h2 className="mt-1 text-xl font-black text-neutral-950">
-              {planConfigs[pendingPlanType].label}へ変更しますか？
-            </h2>
+            <p className="text-xs font-black text-blue-700">OCR追加パックの確認</p>
+            <h2 className="mt-1 text-xl font-black text-neutral-950">今月のみOCRを50枚追加しますか？</h2>
             <div className="mt-3 rounded-md border border-blue-100 bg-blue-50 p-3">
-              <p className="text-sm font-black text-blue-950">
-                {billingMonth}分の請求対象プラン: {planConfigs[pendingPlanType].label}
-              </p>
-              <p className="mt-1 text-lg font-black text-blue-800">{planConfigs[pendingPlanType].price}</p>
-              <p className="mt-2 text-sm font-bold text-neutral-700">
-                OCR {planConfigs[pendingPlanType].ocrLimit === null ? "実質無制限" : `月${planConfigs[pendingPlanType].ocrLimit}枚まで`}
-              </p>
+              <p className="text-sm font-black text-blue-950">{billingMonth}分の追加料金: +{yen(currentBilling.ocrAddonPrice)}</p>
+              <p className="mt-1 text-lg font-black text-blue-800">OCR上限 {ocrLimit}枚 → {ocrLimit + currentBilling.ocrAddonPackSize}枚</p>
+              <p className="mt-2 text-sm font-bold text-neutral-700">「はい」を押すと、このままAI画像読み取りを続けます。</p>
             </div>
             <p className="mt-3 text-sm font-bold leading-7 text-neutral-700">
-              同意すると、今月分はこのプランで請求対象として記録されます。請求は後日請求書をお送りさせていただき、銀行振込となります。
+              請求は後日請求書をお送りさせていただき、銀行振込となります。今月分のみ加算され、翌月は自動で月額1,400円・OCR30枚に戻ります。
             </p>
             <div className="mt-5 grid grid-cols-2 gap-3">
               <button
                 className="min-h-12 rounded-md border border-neutral-300 bg-white px-4 py-2 font-black text-neutral-700"
-                onClick={() => setPendingPlanType(null)}
+                onClick={() => {
+                  setPendingOcrAddonRequest(null);
+                  setIngredientOcrStatus("OCR追加をキャンセルしました。読み取りは停止しました。");
+                }}
               >
-                キャンセル
+                いいえ
               </button>
               <button
                 className="min-h-12 rounded-md bg-blue-700 px-4 py-2 font-black text-white shadow-sm hover:bg-blue-800"
-                onClick={confirmPlanChange}
+                onClick={confirmOcrAddonPack}
               >
-                同意して変更
+                はい
               </button>
             </div>
           </section>
@@ -5635,64 +5645,59 @@ export function CostNutritionApp() {
           <section className="mb-4 rounded-md border border-blue-200 bg-blue-50 p-4">
             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
               <div>
-                <p className="text-xs font-black text-blue-700">料金プラン</p>
-                <h3 className="mt-1 text-xl font-black text-blue-950">現在のプラン: {currentPlan.label}</h3>
+                <p className="text-xs font-black text-blue-700">料金</p>
+                <h3 className="mt-1 text-xl font-black text-blue-950">月額1,400円スタート</h3>
                 <p className="mt-2 text-sm font-bold text-neutral-700">
-                  今月のOCR利用枚数と残り枚数を、ダッシュボードにも表示します。
+                  OCRは月30枚まで込み。30枚を超えると、その月だけ +500円でOCRを50枚追加できます。
                 </p>
                 <p className="mt-2 text-xs font-black text-blue-800">
-                  請求対象月: {currentBilling.planBillingMonth || billingMonth} / 最終同意: {currentBilling.planAgreedAt ? new Date(currentBilling.planAgreedAt).toLocaleDateString("ja-JP") : "未記録"}
+                  請求対象月: {billingMonth} / 追加パック: {isAdminSession ? "管理者のため対象外" : `${currentBilling.ocrAddonPacks}回`}
                 </p>
               </div>
               <div className="rounded-md border border-blue-200 bg-white p-3 text-right">
                 <p className="text-xs font-black text-blue-700">OCR利用状況</p>
                 <p className="mt-1 text-lg font-black text-neutral-950">
-                  {currentBilling.ocrUsedThisMonth} / {ocrLimit === null ? "実質無制限" : `${ocrLimit}枚`}
+                  {isAdminSession ? "管理者" : `${currentBilling.ocrUsedThisMonth} / ${ocrLimit}枚`}
                 </p>
                 <p className={`mt-1 text-xs font-black ${isOcrLimitReached ? "text-red-700" : "text-blue-700"}`}>
-                  残り {ocrRemaining === null ? "実質無制限" : `${ocrRemaining}枚`}
+                  {isAdminSession ? "月額・追加料金なし" : `残り ${ocrRemaining}枚 / 請求目安 ${yen(monthlyCharge)}`}
                 </p>
               </div>
             </div>
 
-            <div className="mt-4 grid gap-3 lg:grid-cols-3">
-              {(["light", "standard", "pro"] as BillingPlanType[]).map((planType) => {
-                const plan = planConfigs[planType];
-                const selected = currentBilling.planType === planType;
-                return (
-                  <button
-                    key={planType}
-                    className={`min-h-36 rounded-md border-2 p-4 text-left shadow-sm transition-colors ${
-                      selected ? "border-blue-700 bg-blue-700 text-white" : "border-blue-200 bg-white text-neutral-900 hover:bg-blue-50"
-                    }`}
-                    onClick={() => updatePlanType(planType)}
-                  >
-                    <span className="block text-xl font-black">{plan.label}</span>
-                    <span className={`mt-1 block text-lg font-black ${selected ? "text-blue-100" : "text-blue-800"}`}>{plan.price}</span>
-                    <span className="mt-3 block text-sm font-bold">
-                      OCR {plan.ocrLimit === null ? "実質無制限" : `月${plan.ocrLimit}枚まで`}
-                    </span>
-                    <span className={`mt-2 block text-xs font-bold ${selected ? "text-white/80" : "text-neutral-500"}`}>{plan.description}</span>
-                  </button>
-                );
-              })}
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <div className="rounded-md border border-blue-200 bg-white p-4">
+                <span className="block text-sm font-black text-blue-700">基本料金</span>
+                <strong className="mt-1 block text-2xl font-black text-blue-950">月額{number(currentBilling.baseMonthlyPrice, 0)}円</strong>
+                <p className="mt-2 text-sm font-bold text-neutral-600">OCR月{currentBilling.ocrBaseLimit}枚まで込み</p>
+              </div>
+              <div className="rounded-md border border-amber-200 bg-white p-4">
+                <span className="block text-sm font-black text-amber-700">追加パック</span>
+                <strong className="mt-1 block text-2xl font-black text-amber-950">+{number(currentBilling.ocrAddonPrice, 0)}円</strong>
+                <p className="mt-2 text-sm font-bold text-neutral-600">その月だけOCR+{currentBilling.ocrAddonPackSize}枚</p>
+              </div>
+              <div className="rounded-md border border-green-200 bg-white p-4">
+                <span className="block text-sm font-black text-green-700">今月の請求目安</span>
+                <strong className="mt-1 block text-2xl font-black text-green-950">{isAdminSession ? "0円" : yen(monthlyCharge)}</strong>
+                <p className="mt-2 text-sm font-bold text-neutral-600">{isAdminSession ? "管理者キーでは加算しません" : `追加${currentBilling.ocrAddonPacks}回分を含む`}</p>
+              </div>
             </div>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-blue-100 bg-white p-3">
               <p className="text-xs font-bold text-neutral-600">
-                PROのOCR実質無制限は、通常の店舗業務の範囲内でのご利用を想定しています。
+                OCR利用枚数と追加パックは1ヶ月ごとに自動でリセットされます。
               </p>
               <button className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-black text-blue-800" onClick={resetOcrUsage}>
                 OCR利用枚数を今月分リセット
               </button>
             </div>
-            {(currentBilling.planChangeHistory || []).length > 0 && (
+            {(currentBilling.ocrAddonHistory || []).length > 0 && (
               <div className="mt-3 rounded-md border border-blue-100 bg-white p-3">
-                <h4 className="text-sm font-black text-blue-950">プラン変更履歴</h4>
+                <h4 className="text-sm font-black text-blue-950">OCR追加パック履歴</h4>
                 <div className="mt-2 grid gap-2">
-                  {currentBilling.planChangeHistory.slice().reverse().slice(0, 5).map((record) => (
+                  {currentBilling.ocrAddonHistory.slice().reverse().slice(0, 5).map((record) => (
                     <div key={record.id} className="flex flex-wrap justify-between gap-2 rounded-md bg-blue-50 px-3 py-2 text-xs font-bold text-blue-950">
                       <span>{record.billingMonth} 請求分</span>
-                      <span>{planConfigs[record.planType]?.label || record.planType} / {record.priceLabel}</span>
+                      <span>+{record.addedLimit}枚 / +{number(record.price, 0)}円</span>
                       <span>{new Date(record.agreedAt).toLocaleDateString("ja-JP")}</span>
                     </div>
                   ))}

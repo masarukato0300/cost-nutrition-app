@@ -171,18 +171,21 @@ export const sampleData: AppData = {
     officialLineUrl: "https://lin.ee/sq52Q9d",
   },
   billing: {
-    planType: "standard",
     ocrUsedMonth: "2026-05",
     ocrUsedThisMonth: 12,
-    planBillingMonth: "2026-05",
-    planAgreedAt: "2026-05-26T00:00:00.000Z",
-    planChangeHistory: [
+    baseMonthlyPrice: 1400,
+    ocrBaseLimit: 30,
+    ocrAddonPacks: 0,
+    ocrAddonPackSize: 50,
+    ocrAddonPrice: 500,
+    ocrAddonHistory: [
       {
-        id: "billing-standard-2026-05",
-        planType: "standard",
+        id: "billing-sample-2026-05",
         billingMonth: "2026-05",
         agreedAt: "2026-05-26T00:00:00.000Z",
-        priceLabel: "月額1,900円",
+        addonPacksAfterPurchase: 0,
+        addedLimit: 0,
+        price: 0,
       },
     ],
   },

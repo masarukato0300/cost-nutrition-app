@@ -7,7 +7,6 @@ export type ProductStatus = "販売中" | "休止中";
 export type PriceHistorySourceType = "manual" | "ocr" | "csv";
 export type WasteItemType = "PRODUCT" | "INGREDIENT" | "INTERMEDIATE";
 export type WasteReason = "売れ残り" | "破損" | "作りすぎ" | "試作" | "品質不良" | "その他";
-export type BillingPlanType = "light" | "standard" | "pro" | "monitor";
 
 export type Nutrition = {
   calories: number;
@@ -118,17 +117,20 @@ export type OnboardingSupportSettings = {
 };
 
 export type BillingSettings = {
-  planType: BillingPlanType;
   ocrUsedMonth: string;
   ocrUsedThisMonth: number;
-  planBillingMonth: string;
-  planAgreedAt: string;
-  planChangeHistory: Array<{
+  baseMonthlyPrice: number;
+  ocrBaseLimit: number;
+  ocrAddonPacks: number;
+  ocrAddonPackSize: number;
+  ocrAddonPrice: number;
+  ocrAddonHistory: Array<{
     id: string;
-    planType: BillingPlanType;
     billingMonth: string;
     agreedAt: string;
-    priceLabel: string;
+    addonPacksAfterPurchase: number;
+    addedLimit: number;
+    price: number;
   }>;
 };
 
