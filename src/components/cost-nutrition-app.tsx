@@ -91,6 +91,7 @@ const pages = [
   { key: "label", label: "ラベル表示" },
   { key: "csv", label: "CSV出力" },
   { key: "settings", label: "設定" },
+  { key: "ocrQueue", label: "OCR保留・削除" },
   { key: "master", label: "原材料マスター" },
 ] as const;
 
@@ -103,7 +104,7 @@ const navGroups = [
   { key: "costs", label: "原価・値上げ", description: "原価計算、値上げ、イベント、人件費", pages: ["cost", "impact", "event", "labor", "set"] },
   { key: "display", label: "表示・ラベル", description: "栄養成分、アレルゲン、ラベル", pages: ["nutrition", "allergen", "label"] },
   { key: "operation", label: "現場管理", description: "仕込み、発注、廃棄、月間原価", pages: ["production", "order", "waste", "monthly"] },
-  { key: "data", label: "データ管理", description: "商品一覧、カテゴリ、原材料一覧、CSV出力、設定", pages: ["productList", "productCategory", "master", "csv", "settings"] },
+  { key: "data", label: "データ管理", description: "商品一覧、カテゴリ、原材料一覧、OCR候補、CSV出力、設定", pages: ["productList", "productCategory", "master", "ocrQueue", "csv", "settings"] },
 ] as const satisfies Array<{ key: string; label: string; description: string; pages: PageNavKey[] }>;
 const pageTones: Record<PageNavKey, { navActive: string; navIdle: string; topCard: string; mark: string }> = {
   top: {
@@ -237,6 +238,12 @@ const pageTones: Record<PageNavKey, { navActive: string; navIdle: string; topCar
     navIdle: "border-slate-500 bg-slate-50 text-slate-900 hover:bg-slate-100",
     topCard: "border-slate-100 bg-slate-50/70 hover:border-slate-400",
     mark: "bg-slate-500",
+  },
+  ocrQueue: {
+    navActive: "border-amber-800 bg-amber-600 text-white shadow-sm",
+    navIdle: "border-amber-500 bg-amber-50 text-amber-900 hover:bg-amber-100",
+    topCard: "border-amber-100 bg-amber-50/70 hover:border-amber-400",
+    mark: "bg-amber-500",
   },
   master: {
     navActive: "border-cyan-700 bg-cyan-600 text-white shadow-sm",
@@ -554,6 +561,7 @@ function NavPictogram({ pageKey }: { pageKey: PageNavKey }) {
     label: <><path className={common} d="M4 5h10l6 6-9 9-7-7V5Z" /><circle className={common} cx="9" cy="10" r="1" /></>,
     csv: <><path className={common} d="M6 3h9l3 3v15H6z" /><path className={common} d="M15 3v4h4" /><path className={common} d="M8 14h8M8 17h8M8 11h4" /></>,
     settings: <><circle className={common} cx="12" cy="12" r="3" /><path className={common} d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" /></>,
+    ocrQueue: <><path className={common} d="M5 4h14v16H5z" /><path className={common} d="M8 8h8M8 12h8M8 16h5" /><path className={common} d="m16 15 2 2 3-4" /></>,
     master: <><ellipse className={common} cx="12" cy="6" rx="7" ry="3" /><path className={common} d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6" /><path className={common} d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3" /></>,
   };
 
@@ -788,6 +796,7 @@ function topPageDescription(pageKey: PageKey) {
     label: "確認用ラベルテキストを作成",
     csv: "原材料や商品原価をCSVで出力",
     settings: "公式LINEや初期設定サポート期間を管理",
+    ocrQueue: "OCR候補の保留・削除を確認",
     master: "登録済み原材料を一覧確認",
   };
   return descriptions[pageKey];
@@ -1006,7 +1015,7 @@ type OcrCrop = {
   height: number;
 };
 
-type OcrCandidateStatus = "未処理" | "反映済み" | "スキップ";
+type OcrCandidateStatus = "未処理" | "反映済み" | "保留" | "削除";
 
 const defaultOcrCrop: OcrCrop = { x: 4, y: 5, width: 92, height: 88 };
 
@@ -1784,29 +1793,50 @@ export function CostNutritionApp() {
   }
 
   function showNextIngredientOcrCandidateSoon(nextIndex: number) {
-    const nextCandidate = ingredientOcrCandidates[nextIndex];
-    if (!nextCandidate) return;
+    const nextCandidateIndex = ingredientOcrCandidates.findIndex((_, index) => index >= nextIndex && (ingredientOcrCandidateStatuses[index] || "未処理") === "未処理");
+    const nextCandidate = ingredientOcrCandidates[nextCandidateIndex];
+    if (!nextCandidate || nextCandidateIndex < 0) return;
     window.setTimeout(() => {
-      setIngredientOcrCandidateIndex(nextIndex);
+      setIngredientOcrCandidateIndex(nextCandidateIndex);
       setIngredientOcrCandidate(nextCandidate);
       setSelectedOcrDuplicateIngredientId("");
-      setIngredientOcrStatus(`${nextIndex + 1}件目を確認してください。`);
+      setIngredientOcrStatus(`${nextCandidateIndex + 1}件目を確認してください。`);
     }, 250);
   }
 
-  function skipIngredientOcrCandidate() {
+  function updateIngredientOcrCandidateStatus(status: "保留" | "削除") {
     const nextIndex = ingredientOcrCandidateIndex + 1;
     const currentIndex = ingredientOcrCandidateIndex;
     setIngredientOcrCandidateIndex(nextIndex);
-    setIngredientOcrCandidateStatuses((statuses) => ({ ...statuses, [currentIndex]: "スキップ" }));
+    setIngredientOcrCandidateStatuses((statuses) => ({ ...statuses, [currentIndex]: status }));
     setSelectedOcrDuplicateIngredientId("");
     setIngredientOcrCandidate(null);
+    const remainingCount = ingredientOcrCandidates.filter((_, index) => index > currentIndex && (ingredientOcrCandidateStatuses[index] || "未処理") === "未処理").length;
     setIngredientOcrStatus(
-      nextIndex < ingredientOcrCandidates.length
-        ? `${ingredientOcrCandidateIndex + 1}件目をスキップしました。次の候補を表示します。`
-        : "最後の候補をスキップしました。",
+      remainingCount > 0
+        ? `${ingredientOcrCandidateIndex + 1}件目を${status}にしました。次の候補を表示します。`
+        : `${ingredientOcrCandidateIndex + 1}件目を${status}にしました。未処理候補はありません。`,
     );
     showNextIngredientOcrCandidateSoon(nextIndex);
+  }
+
+  function clearDeletedIngredientOcrCandidates() {
+    if (!confirm("削除一覧を空にしますか？\n削除に入っているOCR候補だけを一覧から消します。")) return;
+    const nextCandidates: Ingredient[] = [];
+    const nextStatuses: Record<number, OcrCandidateStatus> = {};
+    ingredientOcrCandidates.forEach((candidate, index) => {
+      const status = ingredientOcrCandidateStatuses[index] || "未処理";
+      if (status === "削除") return;
+      const nextIndex = nextCandidates.length;
+      nextCandidates.push(candidate);
+      if (status !== "未処理") nextStatuses[nextIndex] = status;
+    });
+    setIngredientOcrCandidates(nextCandidates);
+    setIngredientOcrCandidateStatuses(nextStatuses);
+    setIngredientOcrCandidate(null);
+    setSelectedOcrDuplicateIngredientId("");
+    setIngredientOcrCandidateIndex(0);
+    setIngredientOcrStatus("削除一覧を空にしました。");
   }
 
   const selectedProduct = data.products.find((product) => product.id === selectedProductId) ?? data.products[0];
@@ -3946,7 +3976,9 @@ export function CostNutritionApp() {
                   ? "border-amber-300 bg-amber-50 text-amber-900"
                   : status === "反映済み"
                     ? "border-teal-300 bg-teal-50 text-teal-900"
-                    : "border-neutral-300 bg-neutral-50 text-neutral-600";
+                    : status === "保留"
+                      ? "border-blue-300 bg-blue-50 text-blue-900"
+                      : "border-red-300 bg-red-50 text-red-900";
                 return (
                   <div key={`${candidate.name}-${candidate.packageName}-${index}`} className="grid gap-2 rounded-md border border-neutral-200 p-3 md:grid-cols-[88px_1fr_100px] md:items-center">
                     <span className={`rounded-md border px-2 py-1 text-center text-xs font-black ${statusClass}`}>
@@ -3964,7 +3996,7 @@ export function CostNutritionApp() {
                       className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-bold text-white"
                       onClick={() => openIngredientOcrCandidateFromList(index)}
                     >
-                      開く
+                      {status === "保留" ? "編集" : "開く"}
                     </button>
                   </div>
                 );
@@ -4033,11 +4065,14 @@ export function CostNutritionApp() {
               <button className="rounded-md border border-neutral-300 bg-white px-4 py-2 font-bold text-neutral-700" onClick={() => setIngredientOcrCandidate(null)}>
                 戻る
               </button>
-              <button className="rounded-md border-2 border-amber-500 bg-white px-5 py-3 font-black text-amber-800" onClick={skipIngredientOcrCandidate}>
-                スキップする
+              <button className="rounded-md border-2 border-blue-500 bg-white px-5 py-3 font-black text-blue-800" onClick={() => updateIngredientOcrCandidateStatus("保留")}>
+                保留
+              </button>
+              <button className="rounded-md border-2 border-red-500 bg-white px-5 py-3 font-black text-red-800" onClick={() => updateIngredientOcrCandidateStatus("削除")}>
+                削除
               </button>
               <button className="rounded-md bg-teal-700 px-5 py-3 font-black text-white" onClick={applyIngredientOcrCandidate}>
-                反映させる
+                反映
               </button>
             </div>
           </section>
@@ -4111,8 +4146,16 @@ export function CostNutritionApp() {
                 >
                   OCR候補一覧を開く
                 </button>
+                <button
+                  className="rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-black text-amber-900"
+                  onClick={() => setActivePage("ocrQueue")}
+                >
+                  保留・削除一覧
+                </button>
                 <span className="text-xs font-bold text-neutral-600">
                   未処理 {ingredientOcrCandidates.filter((_, index) => (ingredientOcrCandidateStatuses[index] || "未処理") === "未処理").length}件 /
+                  保留 {ingredientOcrCandidates.filter((_, index) => ingredientOcrCandidateStatuses[index] === "保留").length}件 /
+                  削除 {ingredientOcrCandidates.filter((_, index) => ingredientOcrCandidateStatuses[index] === "削除").length}件 /
                   全{ingredientOcrCandidates.length}件
                 </span>
               </div>
@@ -5640,6 +5683,63 @@ export function CostNutritionApp() {
         </Panel>
       )}
 
+      {activePage === "ocrQueue" && (
+        <Panel title="OCR保留・削除">
+          <section className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900">
+            OCRで読み取った候補のうち、保留にしたものと削除にしたものを確認できます。保留は編集から確認POPUPに戻せます。
+          </section>
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <section className="rounded-md border border-blue-200 bg-blue-50 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-lg font-black text-blue-950">保留一覧</h3>
+                <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-blue-800">
+                  {ingredientOcrCandidates.filter((_, index) => ingredientOcrCandidateStatuses[index] === "保留").length}件
+                </span>
+              </div>
+              <div className="mt-3 grid gap-2">
+                {ingredientOcrCandidates.map((candidate, index) => ({ candidate, index })).filter(({ index }) => ingredientOcrCandidateStatuses[index] === "保留").map(({ candidate, index }) => (
+                  <div key={`hold-${candidate.name}-${candidate.packageName}-${index}`} className="rounded-md border border-blue-100 bg-white p-3">
+                    <p className="font-black text-neutral-900">{index + 1}. {candidate.packageName || candidate.name || "名称未取得"}</p>
+                    <p className="mt-1 text-xs font-bold text-neutral-500">
+                      原材料名: {candidate.name || "-"} / 内容量: {number(candidate.packageAmountGram)}{candidate.packageUnit} / 価格: {yen(candidate.price)}
+                    </p>
+                    <button className="mt-3 rounded-md bg-blue-700 px-4 py-2 text-sm font-black text-white" onClick={() => openIngredientOcrCandidateFromList(index)}>
+                      編集
+                    </button>
+                  </div>
+                ))}
+                {ingredientOcrCandidates.every((_, index) => ingredientOcrCandidateStatuses[index] !== "保留") && <EmptyState text="保留中のOCR候補はありません。" />}
+              </div>
+            </section>
+
+            <section className="rounded-md border border-red-200 bg-red-50 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-lg font-black text-red-950">削除一覧</h3>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-red-800">
+                    {ingredientOcrCandidates.filter((_, index) => ingredientOcrCandidateStatuses[index] === "削除").length}件
+                  </span>
+                  <button className="rounded-md bg-red-700 px-3 py-2 text-xs font-black text-white" onClick={clearDeletedIngredientOcrCandidates}>
+                    空にする
+                  </button>
+                </div>
+              </div>
+              <div className="mt-3 grid gap-2">
+                {ingredientOcrCandidates.map((candidate, index) => ({ candidate, index })).filter(({ index }) => ingredientOcrCandidateStatuses[index] === "削除").map(({ candidate, index }) => (
+                  <div key={`deleted-${candidate.name}-${candidate.packageName}-${index}`} className="rounded-md border border-red-100 bg-white p-3">
+                    <p className="font-black text-neutral-900">{index + 1}. {candidate.packageName || candidate.name || "名称未取得"}</p>
+                    <p className="mt-1 text-xs font-bold text-neutral-500">
+                      原材料名: {candidate.name || "-"} / 内容量: {number(candidate.packageAmountGram)}{candidate.packageUnit} / 価格: {yen(candidate.price)}
+                    </p>
+                  </div>
+                ))}
+                {ingredientOcrCandidates.every((_, index) => ingredientOcrCandidateStatuses[index] !== "削除") && <EmptyState text="削除一覧は空です。" />}
+              </div>
+            </section>
+          </div>
+        </Panel>
+      )}
+
       {activePage === "settings" && (
         <Panel title="設定">
           <section className="mb-4 rounded-md border border-blue-200 bg-blue-50 p-4">
@@ -6036,7 +6136,7 @@ function HelpGuide({
     },
     {
       title: "4. 確認して保存",
-      body: "原材料名、製品名、内容量、価格を確認して、合っていれば保存します。重複候補はスキップできます。",
+      body: "原材料名、製品名、内容量、価格を確認して、保留・削除・反映を選べます。",
       label: "確認",
     },
   ];
@@ -6115,7 +6215,7 @@ function HelpGuide({
           <HelpArrow />
           <HelpBox title="AI読み取り" body="原材料名、製品名、内容量、単価を候補化" />
           <HelpArrow />
-          <HelpBox title="確認POPUP" body="合っていれば反映、重複ならスキップも可能" />
+          <HelpBox title="確認POPUP" body="合っていれば反映、迷ったら保留、不要なら削除" />
         </div>
       </section>
 
@@ -6226,7 +6326,7 @@ function OcrPhoneFrame() {
           </div>
           <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] font-black">
             <div className="rounded bg-teal-700 py-1 text-center text-white">反映</div>
-            <div className="rounded bg-white py-1 text-center text-teal-800">スキップ</div>
+            <div className="rounded bg-white py-1 text-center text-teal-800">保留</div>
           </div>
         </div>
       </div>
