@@ -60,6 +60,6 @@ export async function POST(request: Request) {
       updated_at: new Date().toISOString(),
     }),
   });
-  if (!updateResponse.ok) return NextResponse.json({ ok: false, error: "クラウド保存に失敗しました。" }, { status: 500 });
+  if (!updateResponse.ok) return NextResponse.json({ ok: false, error: "Supabase保存に失敗しました。" }, { status: 500 });
   return NextResponse.json({ ok: true, cloudConfigured: true });
 }

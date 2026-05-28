@@ -1349,11 +1349,13 @@ function playButtonClickSound() {
 export function CostNutritionApp() {
   const ingredientCameraInputRef = useRef<HTMLInputElement | null>(null);
   const ingredientPhotoInputRef = useRef<HTMLInputElement | null>(null);
+  const saveRequestSeqRef = useRef(0);
+  const editedBeforeInitialCloudLoadRef = useRef(false);
   const [activePage, setActivePage] = useState<PageKey>("top");
   const [stores, setStores] = useState<StoreAccount[]>([{ id: defaultStoreId, pin: "0000", createdAt: now(), updatedAt: now() }]);
   const [currentStoreId, setCurrentStoreId] = useState(defaultStoreId);
   const [currentStorePin, setCurrentStorePin] = useState("");
-  const [cloudSyncStatus, setCloudSyncStatus] = useState("この端末に保存中");
+  const [cloudSyncStatus, setCloudSyncStatus] = useState("この端末に一時保存中");
   const [data, setData] = useState<AppData>(sampleData);
   const [selectedProductId, setSelectedProductId] = useState(sampleData.products[0]?.id ?? "");
   const [ingredientForm, setIngredientForm] = useState<Ingredient>(() => emptyIngredient());
@@ -1436,7 +1438,7 @@ export function CostNutritionApp() {
       setCurrentStoreId(loadedStoreId);
       setCurrentStorePin(hasActiveSession ? sessionStorePin : "");
       setIsAdminSession(hasActiveSession ? sessionIsAdmin : false);
-      setCloudSyncStatus(hasActiveSession && sessionStorePin ? "Supabase共有中" : "この端末に保存中");
+      setCloudSyncStatus(hasActiveSession && sessionStorePin ? "Supabaseから読み込み中..." : "この端末に一時保存中");
       setSwitchStoreId(loadedStoreId);
       setAuthStoreName(rememberedLogin.storeName || loadedStoreId);
       setAuthPin(rememberedLogin.pin);
@@ -1461,6 +1463,10 @@ export function CostNutritionApp() {
             if (!cloud.cloudConfigured || !cloud.ok || !cloud.data) return;
             const cloudData = normalizeData(cloud.data);
             window.localStorage.setItem(storeDataKey(loadedStoreId), JSON.stringify(cloudData));
+            if (editedBeforeInitialCloudLoadRef.current) {
+              setCloudSyncStatus("Supabase共有済み / 端末編集あり");
+              return;
+            }
             setData(cloudData);
             setSelectedProductId(cloudData.products[0]?.id ?? "");
             setRecipeProductSelectId("");
@@ -1478,7 +1484,7 @@ export function CostNutritionApp() {
             setCloudSyncStatus(cloud.isAdmin ? "管理者キーでログイン中" : "Supabase共有済み");
           })
           .catch(() => {
-            setCloudSyncStatus("端末保存済み / Supabase未同期");
+            setCloudSyncStatus("端末内に一時保存しました / Supabase未同期");
           });
       }
     });
@@ -1494,23 +1500,30 @@ export function CostNutritionApp() {
   }, []);
 
   function commit(nextData: AppData) {
+    editedBeforeInitialCloudLoadRef.current = true;
     setData(nextData);
     window.localStorage.setItem(storeDataKey(currentStoreId), JSON.stringify(nextData));
     if (currentStorePin) {
+      const saveSeq = saveRequestSeqRef.current + 1;
+      saveRequestSeqRef.current = saveSeq;
       setCloudSyncStatus("Supabase保存中...");
       void saveCloudStoreData(currentStoreId, currentStorePin, nextData)
         .then((result) => {
-          setCloudSyncStatus(result.cloudConfigured ? "Supabase共有済み" : "この端末に保存中");
+          if (saveSeq === saveRequestSeqRef.current) {
+            setCloudSyncStatus(result.cloudConfigured ? "Supabase共有済み" : "この端末に一時保存中");
+          }
         })
         .catch(() => {
-          setCloudSyncStatus("端末保存済み / Supabase未同期");
+          if (saveSeq === saveRequestSeqRef.current) {
+            setCloudSyncStatus("端末内に一時保存しました / Supabase未同期");
+          }
         });
     } else {
-      setCloudSyncStatus("この端末に保存中");
+      setCloudSyncStatus("この端末に一時保存中");
     }
   }
 
-  function applyStoreSession(storeId: string, pin: string, nextData: AppData, syncStatus = "この端末に保存中", isAdmin = false) {
+  function applyStoreSession(storeId: string, pin: string, nextData: AppData, syncStatus = "この端末に一時保存中", isAdmin = false) {
     const existingStore = stores.find((store) => store.id === storeId);
     if (!existingStore) {
       const nextStores = [...stores, { id: storeId, pin, createdAt: now(), updatedAt: now() }];
@@ -3362,6 +3375,11 @@ export function CostNutritionApp() {
           <p className="mt-1 text-xs font-bold text-neutral-500">
             現在の店舗: {currentStoreId} / {cloudSyncStatus}
           </p>
+          {cloudSyncStatus.includes("未同期") ? (
+            <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-black text-amber-900">
+              Supabaseへ接続できませんでした。端末内に一時保存しています。通信が戻ったらもう一度保存してください。
+            </p>
+          ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
           <button className="rounded-md border border-teal-200 bg-teal-50 px-4 py-2 font-bold text-teal-800" onClick={openStoreModal}>
