@@ -1436,7 +1436,7 @@ export function CostNutritionApp() {
       setCurrentStoreId(loadedStoreId);
       setCurrentStorePin(hasActiveSession ? sessionStorePin : "");
       setIsAdminSession(hasActiveSession ? sessionIsAdmin : false);
-      setCloudSyncStatus(hasActiveSession && sessionStorePin ? "クラウド共有中" : "この端末に保存中");
+      setCloudSyncStatus(hasActiveSession && sessionStorePin ? "Supabase共有中" : "この端末に保存中");
       setSwitchStoreId(loadedStoreId);
       setAuthStoreName(rememberedLogin.storeName || loadedStoreId);
       setAuthPin(rememberedLogin.pin);
@@ -1454,6 +1454,33 @@ export function CostNutritionApp() {
       setLaborForm(emptyLaborCost(loadedData.products.find((product) => !product.isIntermediateMaterial)?.id ?? ""));
       setSelectedSetProductId(loadedData.products.find((product) => product.category === "ギフト")?.id ?? loadedData.products.find((product) => !product.isIntermediateMaterial)?.id ?? "");
       setSetProductItemForm(emptySetProductItem(loadedData.products.find((product) => product.category === "ギフト")?.id ?? "", loadedData.products.find((product) => !product.isIntermediateMaterial && product.category !== "ギフト")?.id ?? ""));
+      if (hasActiveSession && sessionStorePin) {
+        setCloudSyncStatus("Supabaseから読み込み中...");
+        void authCloudStore("login", loadedStoreId, sessionStorePin)
+          .then((cloud) => {
+            if (!cloud.cloudConfigured || !cloud.ok || !cloud.data) return;
+            const cloudData = normalizeData(cloud.data);
+            window.localStorage.setItem(storeDataKey(loadedStoreId), JSON.stringify(cloudData));
+            setData(cloudData);
+            setSelectedProductId(cloudData.products[0]?.id ?? "");
+            setRecipeProductSelectId("");
+            setRecipeIngredientId(cloudData.ingredients[0]?.id ?? "");
+            setImpactIngredientId(cloudData.ingredients[4]?.id ?? cloudData.ingredients[0]?.id ?? "");
+            setImpactNewPrice(cloudData.ingredients[4]?.price + 100 || 0);
+            setSelectedEventPlanId(cloudData.eventPlans[0]?.id ?? "");
+            setEventImpactIngredientId(cloudData.ingredients.find((ingredient) => ingredient.id === "ing-butter")?.id ?? cloudData.ingredients[0]?.id ?? "");
+            setEventImpactNewPrice(cloudData.ingredients.find((ingredient) => ingredient.id === "ing-butter")?.price ?? cloudData.ingredients[0]?.price ?? 0);
+            setLaborForm(emptyLaborCost(cloudData.products.find((product) => !product.isIntermediateMaterial)?.id ?? ""));
+            setSelectedSetProductId(cloudData.products.find((product) => product.category === "ギフト")?.id ?? cloudData.products.find((product) => !product.isIntermediateMaterial)?.id ?? "");
+            setSetProductItemForm(emptySetProductItem(cloudData.products.find((product) => product.category === "ギフト")?.id ?? "", cloudData.products.find((product) => !product.isIntermediateMaterial && product.category !== "ギフト")?.id ?? ""));
+            setIsAdminSession(Boolean(cloud.isAdmin));
+            window.sessionStorage.setItem(storeSessionAdminStorageKey, String(Boolean(cloud.isAdmin)));
+            setCloudSyncStatus(cloud.isAdmin ? "管理者キーでログイン中" : "Supabase共有済み");
+          })
+          .catch(() => {
+            setCloudSyncStatus("端末保存済み / Supabase未同期");
+          });
+      }
     });
   }, []);
 
@@ -1470,13 +1497,13 @@ export function CostNutritionApp() {
     setData(nextData);
     window.localStorage.setItem(storeDataKey(currentStoreId), JSON.stringify(nextData));
     if (currentStorePin) {
-      setCloudSyncStatus("クラウド保存中...");
+      setCloudSyncStatus("Supabase保存中...");
       void saveCloudStoreData(currentStoreId, currentStorePin, nextData)
         .then((result) => {
-          setCloudSyncStatus(result.cloudConfigured ? "クラウド共有済み" : "この端末に保存中");
+          setCloudSyncStatus(result.cloudConfigured ? "Supabase共有済み" : "この端末に保存中");
         })
         .catch(() => {
-          setCloudSyncStatus("端末保存済み / クラウド未同期");
+          setCloudSyncStatus("端末保存済み / Supabase未同期");
         });
     } else {
       setCloudSyncStatus("この端末に保存中");
@@ -1543,11 +1570,11 @@ export function CostNutritionApp() {
       const cloud = await authCloudStore(authModalMode, storeName, authPin);
       if (cloud.cloudConfigured && cloud.ok && cloud.data) {
         saveRememberedLogin(storeName, authPin, rememberAuthPin);
-        applyStoreSession(storeName, authPin, normalizeData(cloud.data), cloud.isAdmin ? "管理者キーでログイン中" : "クラウド共有済み", Boolean(cloud.isAdmin));
+        applyStoreSession(storeName, authPin, normalizeData(cloud.data), cloud.isAdmin ? "管理者キーでログイン中" : "Supabase共有済み", Boolean(cloud.isAdmin));
         return;
       }
     } catch (error) {
-      alert(error instanceof Error ? error.message : "クラウドログインに失敗しました。");
+      alert(error instanceof Error ? error.message : "Supabaseログインに失敗しました。");
       return;
     }
 
@@ -1611,11 +1638,11 @@ export function CostNutritionApp() {
       if (cloud.cloudConfigured && cloud.ok && cloud.data) {
         setNewStoreId("");
         setNewStorePin("");
-        applyStoreSession(id, newStorePin, normalizeData(cloud.data), "クラウド共有済み");
+        applyStoreSession(id, newStorePin, normalizeData(cloud.data), "Supabase共有済み");
         return;
       }
     } catch (error) {
-      alert(error instanceof Error ? error.message : "クラウド店舗作成に失敗しました。");
+      alert(error instanceof Error ? error.message : "Supabase店舗作成に失敗しました。");
       return;
     }
 
@@ -1640,7 +1667,7 @@ export function CostNutritionApp() {
     try {
       const cloud = await authCloudStore("login", switchStoreId, switchStorePin);
       if (cloud.cloudConfigured && cloud.ok && cloud.data) {
-        applyStoreSession(switchStoreId, switchStorePin, normalizeData(cloud.data), cloud.isAdmin ? "管理者キーでログイン中" : "クラウド共有済み", Boolean(cloud.isAdmin));
+        applyStoreSession(switchStoreId, switchStorePin, normalizeData(cloud.data), cloud.isAdmin ? "管理者キーでログイン中" : "Supabase共有済み", Boolean(cloud.isAdmin));
         return;
       }
     } catch {
@@ -3688,7 +3715,7 @@ export function CostNutritionApp() {
               </button>
             </div>
             <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-900">
-              現在はMVP用の簡易PINです。正式リリース時はクラウドDBとログイン機能に移行する想定です。
+              ログイン後の店舗データはSupabaseに保存され、別端末でも同じ店舗IDとPINで共有できます。
             </div>
           </section>
         </div>
