@@ -35,6 +35,7 @@ const currentStoreStorageKey = "cost-nutrition-label-mvp-current-store-v1";
 const storeSessionStorageKey = "cost-nutrition-label-mvp-store-session-v1";
 const storeSessionPinStorageKey = "cost-nutrition-label-mvp-store-session-pin-v1";
 const storeSessionAdminStorageKey = "cost-nutrition-label-mvp-store-session-admin-v1";
+const rememberedLoginStorageKey = "cost-nutrition-label-mvp-remember-login-v1";
 const allergenOptions = ["卵", "乳", "小麦", "えび", "かに", "くるみ", "そば", "落花生"];
 const officialLineUrl = "https://lin.ee/sq52Q9d";
 const defaultOnboardingSupport: OnboardingSupportSettings = {
@@ -298,6 +299,11 @@ type CloudStoreAuthResponse = {
   isAdmin?: boolean;
   error?: string;
 };
+type RememberedLogin = {
+  storeName: string;
+  pin: string;
+  rememberPin: boolean;
+};
 
 function yen(value: number) {
   return new Intl.NumberFormat("ja-JP", { style: "currency", currency: "JPY", maximumFractionDigits: 1 }).format(value || 0);
@@ -446,6 +452,30 @@ function loadData(storeId = defaultStoreId): AppData {
   } catch {
     return sampleData;
   }
+}
+
+function loadRememberedLogin(): RememberedLogin {
+  if (typeof window === "undefined") return { storeName: "", pin: "", rememberPin: false };
+  try {
+    const saved = window.localStorage.getItem(rememberedLoginStorageKey);
+    if (!saved) return { storeName: "", pin: "", rememberPin: false };
+    const parsed = JSON.parse(saved) as Partial<RememberedLogin>;
+    return {
+      storeName: parsed.storeName || "",
+      pin: parsed.rememberPin ? parsed.pin || "" : "",
+      rememberPin: Boolean(parsed.rememberPin),
+    };
+  } catch {
+    return { storeName: "", pin: "", rememberPin: false };
+  }
+}
+
+function saveRememberedLogin(storeName: string, pin: string, rememberPin: boolean) {
+  window.localStorage.setItem(rememberedLoginStorageKey, JSON.stringify({
+    storeName,
+    pin: rememberPin ? pin : "",
+    rememberPin,
+  }));
 }
 
 async function authCloudStore(mode: "login" | "create", storeName: string, pin: string): Promise<CloudStoreAuthResponse> {
@@ -1352,6 +1382,7 @@ export function CostNutritionApp() {
   const [authModalMode, setAuthModalMode] = useState<AuthModalMode>("login");
   const [authStoreName, setAuthStoreName] = useState("");
   const [authPin, setAuthPin] = useState("");
+  const [rememberAuthPin, setRememberAuthPin] = useState(false);
   const [isLineConsentOpen, setIsLineConsentOpen] = useState(false);
   const [isAdminSession, setIsAdminSession] = useState(false);
   const [pendingOcrAddonRequest, setPendingOcrAddonRequest] = useState<{ imageDataUrl: string; imageName: string } | null>(null);
@@ -1394,6 +1425,7 @@ export function CostNutritionApp() {
   useEffect(() => {
     queueMicrotask(() => {
       const loadedStores = loadStores();
+      const rememberedLogin = loadRememberedLogin();
       const sessionStoreId = window.sessionStorage.getItem(storeSessionStorageKey);
       const sessionStorePin = window.sessionStorage.getItem(storeSessionPinStorageKey) || "";
       const sessionIsAdmin = window.sessionStorage.getItem(storeSessionAdminStorageKey) === "true";
@@ -1406,7 +1438,9 @@ export function CostNutritionApp() {
       setIsAdminSession(hasActiveSession ? sessionIsAdmin : false);
       setCloudSyncStatus(hasActiveSession && sessionStorePin ? "クラウド共有中" : "この端末に保存中");
       setSwitchStoreId(loadedStoreId);
-      setAuthStoreName(loadedStoreId);
+      setAuthStoreName(rememberedLogin.storeName || loadedStoreId);
+      setAuthPin(rememberedLogin.pin);
+      setRememberAuthPin(rememberedLogin.rememberPin);
       setIsAuthModalOpen(!hasActiveSession);
       setData(loadedData);
       setSelectedProductId(loadedData.products[0]?.id ?? "");
@@ -1508,6 +1542,7 @@ export function CostNutritionApp() {
     try {
       const cloud = await authCloudStore(authModalMode, storeName, authPin);
       if (cloud.cloudConfigured && cloud.ok && cloud.data) {
+        saveRememberedLogin(storeName, authPin, rememberAuthPin);
         applyStoreSession(storeName, authPin, normalizeData(cloud.data), cloud.isAdmin ? "管理者キーでログイン中" : "クラウド共有済み", Boolean(cloud.isAdmin));
         return;
       }
@@ -1526,6 +1561,7 @@ export function CostNutritionApp() {
       setStores(nextStores);
       saveStores(nextStores);
       window.localStorage.setItem(storeDataKey(storeName), JSON.stringify(sampleData));
+      saveRememberedLogin(storeName, authPin, rememberAuthPin);
       loadStoreData(storeName, authPin);
       return;
     }
@@ -1539,6 +1575,7 @@ export function CostNutritionApp() {
       alert("PINコードが違います。");
       return;
     }
+    saveRememberedLogin(store.id, authPin, rememberAuthPin);
     loadStoreData(store.id, authPin);
   }
 
@@ -1551,7 +1588,7 @@ export function CostNutritionApp() {
     setCloudSyncStatus("ログアウト中");
     setAuthModalMode("login");
     setAuthStoreName(currentStoreId);
-    setAuthPin("");
+    setAuthPin(rememberAuthPin ? authPin : "");
     setIsAuthModalOpen(true);
   }
 
@@ -3635,6 +3672,17 @@ export function CostNutritionApp() {
               ) : (
                 <TextInput label="4桁PINコード" value={authPin} onChange={setAuthPin} onEnter={submitAuthStore} />
               )}
+              <label className="flex min-h-11 items-center gap-3 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm font-black text-neutral-700">
+                <input
+                  type="checkbox"
+                  checked={rememberAuthPin}
+                  onChange={(event) => setRememberAuthPin(event.target.checked)}
+                />
+                この端末にIDとPINを保存する
+              </label>
+              <p className="text-xs font-bold text-neutral-500">
+                共用PCではチェックしないでください。店舗IDは次回入力を楽にするため自動で記憶されます。
+              </p>
               <button className="rounded-md bg-teal-700 px-4 py-3 text-base font-black text-white" onClick={submitAuthStore}>
                 {authModalMode === "create" ? "店舗を作成して始める" : "ログインして始める"}
               </button>
