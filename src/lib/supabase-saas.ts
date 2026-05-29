@@ -60,8 +60,21 @@ type AuthResponse = {
     id?: string;
     email?: string;
   };
+  id?: string;
+  email?: string;
+  session?: {
+    access_token?: string;
+    refresh_token?: string;
+    expires_at?: number;
+    user?: {
+      id?: string;
+      email?: string;
+    };
+  } | null;
+  error?: string;
   error_description?: string;
   msg?: string;
+  message?: string;
 };
 
 function supabaseUrl() {
@@ -95,21 +108,43 @@ function authHeaders(token?: string) {
 async function readJson<T>(response: Response): Promise<T> {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const message = (payload as AuthResponse).error_description || (payload as AuthResponse).msg || "Supabaseとの通信に失敗しました。";
+    console.error("Supabase request failed", { status: response.status, payload });
+    const message = (payload as AuthResponse).error_description
+      || (payload as AuthResponse).message
+      || (payload as AuthResponse).msg
+      || (payload as AuthResponse).error
+      || "Supabaseとの通信に失敗しました。";
     throw new Error(message);
   }
   return payload as T;
 }
 
 function toSession(payload: AuthResponse): SaaSAuthSession {
-  if (!payload.access_token || !payload.user?.id) throw new Error("ログイン情報を取得できませんでした。");
+  const accessToken = payload.access_token || payload.session?.access_token;
+  const refreshToken = payload.refresh_token || payload.session?.refresh_token || "";
+  const expiresAt = payload.expires_at || payload.session?.expires_at || 0;
+  const user = payload.user || payload.session?.user || { id: payload.id, email: payload.email };
+  if (!accessToken || !user?.id) {
+    console.error("Supabase Auth returned no usable session", payload);
+    const hasUser = Boolean(user?.id);
+    const detail = JSON.stringify({
+      hasAccessToken: Boolean(accessToken),
+      hasUser,
+      email: user?.email || payload.email || "",
+      message: payload.message || payload.msg || payload.error_description || payload.error || "",
+    });
+    if (hasUser && !accessToken) {
+      throw new Error(`Supabase Authでユーザーは作成されましたが、ログイン用セッションが返っていません。メール確認がONになっている可能性が高いです。SupabaseのAuthentication > Providers > Emailで「Confirm email」をOFFにしてください。詳細: ${detail}`);
+    }
+    throw new Error(`Supabase Authのログイン情報を取得できませんでした。詳細: ${detail}`);
+  }
   return {
-    accessToken: payload.access_token,
-    refreshToken: payload.refresh_token || "",
-    expiresAt: payload.expires_at || 0,
+    accessToken,
+    refreshToken,
+    expiresAt,
     user: {
-      id: payload.user.id,
-      email: payload.user.email || "",
+      id: user.id,
+      email: user.email || "",
     },
   };
 }
@@ -142,7 +177,21 @@ export async function signUpWithEmail(email: string, password: string) {
     headers: authHeaders(),
     body: JSON.stringify({ email, password }),
   });
-  return toSession(await readJson<AuthResponse>(response));
+  const payload = await readJson<AuthResponse>(response);
+  console.info("Supabase signup response", {
+    hasAccessToken: Boolean(payload.access_token || payload.session?.access_token),
+    hasUser: Boolean(payload.user?.id || payload.id || payload.session?.user?.id),
+    email: payload.user?.email || payload.email || payload.session?.user?.email || email,
+    message: payload.message || payload.msg || payload.error_description || payload.error || "",
+  });
+  if (payload.access_token || payload.session?.access_token) return toSession(payload);
+  try {
+    return await signInWithEmail(email, password);
+  } catch (error) {
+    console.error("Supabase signup succeeded but immediate signin failed", { payload, error });
+    const reason = error instanceof Error ? error.message : "自動ログインに失敗しました。";
+    throw new Error(`新規登録は受け付けられましたが、自動ログインできませんでした。${reason}`);
+  }
 }
 
 export async function signInWithEmail(email: string, password: string) {
@@ -152,7 +201,14 @@ export async function signInWithEmail(email: string, password: string) {
     headers: authHeaders(),
     body: JSON.stringify({ email, password }),
   });
-  return toSession(await readJson<AuthResponse>(response));
+  const payload = await readJson<AuthResponse>(response);
+  console.info("Supabase signin response", {
+    hasAccessToken: Boolean(payload.access_token || payload.session?.access_token),
+    hasUser: Boolean(payload.user?.id || payload.id || payload.session?.user?.id),
+    email: payload.user?.email || payload.email || payload.session?.user?.email || email,
+    message: payload.message || payload.msg || payload.error_description || payload.error || "",
+  });
+  return toSession(payload);
 }
 
 export async function sendPasswordReset(email: string) {

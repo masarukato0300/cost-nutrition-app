@@ -1675,6 +1675,7 @@ export function CostNutritionApp() {
       await activateSaaSSession(session, saasStoreName.trim() || email, data, true);
       setSaasAuthMessage("");
     } catch (error) {
+      console.error("Supabase Auth flow failed", error);
       setSaasAuthMessage(error instanceof Error ? error.message : "Supabase Authに失敗しました。");
     }
   }
@@ -3897,7 +3898,7 @@ export function CostNutritionApp() {
                   />
                 </label>
                 {saasAuthMessage ? (
-                  <p className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs font-black text-amber-900">{saasAuthMessage}</p>
+                  <p className="whitespace-pre-wrap rounded-md border border-amber-200 bg-amber-50 p-2 text-xs font-black text-amber-900">{saasAuthMessage}</p>
                 ) : null}
                 <div className="grid grid-cols-2 gap-2">
                   <button className="rounded-md bg-teal-700 px-4 py-3 text-sm font-black text-white" onClick={submitSaaSAuth}>
