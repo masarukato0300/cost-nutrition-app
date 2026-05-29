@@ -25,6 +25,22 @@ import {
 } from "@/lib/calculations";
 import { sampleData } from "@/lib/sample-data";
 import { standardNutritionFoods } from "@/lib/standard-nutrition";
+import {
+  clearSaaSAuthSession,
+  ensureStoreForUser,
+  isSaaSSupabaseConfigured,
+  loadAppDataFromSupabase,
+  loadSaaSAuthSession,
+  saveAppDataToSupabase,
+  saveSaaSAuthSession,
+  sendPasswordReset,
+  signInWithEmail,
+  signOutSaaS,
+  signUpWithEmail,
+  type SaaSAuthSession,
+  type SaaSStore,
+  type SaaSUserProfile,
+} from "@/lib/supabase-saas";
 import type { StandardNutritionFood } from "@/lib/standard-nutrition";
 import type { ActualCostRecord, AppData, BillingSettings, EventPlan, EventSimulationRow, Ingredient, IngredientAlias, LaborCost, MaterialType, MonthlyTheoryRow, OnboardingSupportSettings, PriceImpactRow, Product, ProductLaborCostSummary, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow, SalesRecord, SetProductCostSummary, SetProductItem, WasteItemType, WasteMonthlySummary, WasteReason, WasteRecord } from "@/lib/types";
 
@@ -1385,6 +1401,15 @@ export function CostNutritionApp() {
   const [authStoreName, setAuthStoreName] = useState("");
   const [authPin, setAuthPin] = useState("");
   const [rememberAuthPin, setRememberAuthPin] = useState(false);
+  const [saasAuthMode, setSaasAuthMode] = useState<"login" | "signup">("login");
+  const [saasEmail, setSaasEmail] = useState("");
+  const [saasPassword, setSaasPassword] = useState("");
+  const [saasStoreName, setSaasStoreName] = useState("");
+  const [saasSession, setSaasSession] = useState<SaaSAuthSession | null>(null);
+  const [saasStore, setSaasStore] = useState<SaaSStore | null>(null);
+  const [saasProfile, setSaasProfile] = useState<SaaSUserProfile | null>(null);
+  const [saasAuthMessage, setSaasAuthMessage] = useState("");
+  const [lastSyncedAt, setLastSyncedAt] = useState("");
   const [isLineConsentOpen, setIsLineConsentOpen] = useState(false);
   const [isAdminSession, setIsAdminSession] = useState(false);
   const [pendingOcrAddonRequest, setPendingOcrAddonRequest] = useState<{ imageDataUrl: string; imageName: string } | null>(null);
@@ -1428,6 +1453,7 @@ export function CostNutritionApp() {
     queueMicrotask(() => {
       const loadedStores = loadStores();
       const rememberedLogin = loadRememberedLogin();
+      const rememberedSaaSSession = loadSaaSAuthSession();
       const sessionStoreId = window.sessionStorage.getItem(storeSessionStorageKey);
       const sessionStorePin = window.sessionStorage.getItem(storeSessionPinStorageKey) || "";
       const sessionIsAdmin = window.sessionStorage.getItem(storeSessionAdminStorageKey) === "true";
@@ -1456,7 +1482,13 @@ export function CostNutritionApp() {
       setLaborForm(emptyLaborCost(loadedData.products.find((product) => !product.isIntermediateMaterial)?.id ?? ""));
       setSelectedSetProductId(loadedData.products.find((product) => product.category === "ギフト")?.id ?? loadedData.products.find((product) => !product.isIntermediateMaterial)?.id ?? "");
       setSetProductItemForm(emptySetProductItem(loadedData.products.find((product) => product.category === "ギフト")?.id ?? "", loadedData.products.find((product) => !product.isIntermediateMaterial && product.category !== "ギフト")?.id ?? ""));
-      if (hasActiveSession && sessionStorePin) {
+      if (rememberedSaaSSession) {
+        setSaasSession(rememberedSaaSSession);
+        setSaasEmail(rememberedSaaSSession.user.email);
+        setCloudSyncStatus("Supabaseから読み込み中...");
+        void activateSaaSSession(rememberedSaaSSession, rememberedSaaSSession.user.email, loadedData, false);
+      }
+      if (!rememberedSaaSSession && hasActiveSession && sessionStorePin) {
         setCloudSyncStatus("Supabaseから読み込み中...");
         void authCloudStore("login", loadedStoreId, sessionStorePin)
           .then((cloud) => {
@@ -1488,6 +1520,8 @@ export function CostNutritionApp() {
           });
       }
     });
+  // 初回起動時だけ、端末バックアップとSupabaseのどちらを表示するか決めます。
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -1503,7 +1537,23 @@ export function CostNutritionApp() {
     editedBeforeInitialCloudLoadRef.current = true;
     setData(nextData);
     window.localStorage.setItem(storeDataKey(currentStoreId), JSON.stringify(nextData));
-    if (currentStorePin) {
+    if (saasSession && saasStore) {
+      const saveSeq = saveRequestSeqRef.current + 1;
+      saveRequestSeqRef.current = saveSeq;
+      setCloudSyncStatus("Supabase保存中...");
+      void saveAppDataToSupabase(saasSession, saasStore.id, nextData)
+        .then(() => {
+          if (saveSeq === saveRequestSeqRef.current) {
+            setLastSyncedAt(new Date().toLocaleString("ja-JP"));
+            setCloudSyncStatus("Supabase共有済み");
+          }
+        })
+        .catch(() => {
+          if (saveSeq === saveRequestSeqRef.current) {
+            setCloudSyncStatus("クラウド保存に失敗しました。端末内に一時保存しました。");
+          }
+        });
+    } else if (currentStorePin) {
       const saveSeq = saveRequestSeqRef.current + 1;
       saveRequestSeqRef.current = saveSeq;
       setCloudSyncStatus("Supabase保存中...");
@@ -1559,6 +1609,100 @@ export function CostNutritionApp() {
     setAuthPin("");
     setIsStoreModalOpen(false);
     setStoreModalMode("switch");
+  }
+
+  function applySupabaseData(nextData: AppData, storeId: string) {
+    const normalized = normalizeData(nextData);
+    window.localStorage.setItem(storeDataKey(storeId), JSON.stringify(normalized));
+    setData(normalized);
+    setSelectedProductId(normalized.products[0]?.id ?? "");
+    setRecipeProductSelectId("");
+    setRecipeIngredientId(normalized.ingredients[0]?.id ?? "");
+    setImpactIngredientId(normalized.ingredients[4]?.id ?? normalized.ingredients[0]?.id ?? "");
+    setImpactNewPrice(normalized.ingredients[4]?.price + 100 || 0);
+    setSelectedEventPlanId(normalized.eventPlans[0]?.id ?? "");
+    setEventImpactIngredientId(normalized.ingredients.find((ingredient) => ingredient.id === "ing-butter")?.id ?? normalized.ingredients[0]?.id ?? "");
+    setEventImpactNewPrice(normalized.ingredients.find((ingredient) => ingredient.id === "ing-butter")?.price ?? normalized.ingredients[0]?.price ?? 0);
+    setLaborForm(emptyLaborCost(normalized.products.find((product) => !product.isIntermediateMaterial)?.id ?? ""));
+    setSelectedSetProductId(normalized.products.find((product) => product.category === "ギフト")?.id ?? normalized.products.find((product) => !product.isIntermediateMaterial)?.id ?? "");
+    setSetProductItemForm(emptySetProductItem(normalized.products.find((product) => product.category === "ギフト")?.id ?? "", normalized.products.find((product) => !product.isIntermediateMaterial && product.category !== "ギフト")?.id ?? ""));
+  }
+
+  async function activateSaaSSession(session: SaaSAuthSession, storeName: string, fallbackData: AppData, askMigration: boolean) {
+    if (!isSaaSSupabaseConfigured()) {
+      setSaasAuthMessage("Supabase Authの環境変数が未設定です。");
+      setCloudSyncStatus("この端末に一時保存中");
+      return;
+    }
+    const { store, profile } = await ensureStoreForUser(session, storeName);
+    setSaasSession(session);
+    setSaasStore(store);
+    setSaasProfile(profile);
+    saveSaaSAuthSession(session);
+    setCurrentStoreId(store.id);
+    window.localStorage.setItem(currentStoreStorageKey, store.id);
+    setCloudSyncStatus("Supabaseから読み込み中...");
+    const cloudData = await loadAppDataFromSupabase(session, store.id);
+    if (cloudData) {
+      applySupabaseData(cloudData, store.id);
+      setLastSyncedAt(new Date().toLocaleString("ja-JP"));
+      setCloudSyncStatus("Supabase共有済み");
+      setIsAuthModalOpen(false);
+      return;
+    }
+    if (!askMigration || window.confirm("この端末に保存されているデータを、クラウドに移行しますか？\n移行すると、同じログインのiPadやMacでもデータを共有できます。")) {
+      await saveAppDataToSupabase(session, store.id, fallbackData);
+      applySupabaseData(fallbackData, store.id);
+      setLastSyncedAt(new Date().toLocaleString("ja-JP"));
+      setCloudSyncStatus("Supabase共有済み");
+    } else {
+      setCloudSyncStatus("Supabaseログイン済み / 端末データは未移行");
+    }
+    setIsAuthModalOpen(false);
+  }
+
+  async function submitSaaSAuth() {
+    const email = saasEmail.trim();
+    if (!email || !saasPassword) {
+      setSaasAuthMessage("メールアドレスとパスワードを入力してください。");
+      return;
+    }
+    try {
+      setSaasAuthMessage("Supabaseへログイン中...");
+      const session = saasAuthMode === "signup"
+        ? await signUpWithEmail(email, saasPassword)
+        : await signInWithEmail(email, saasPassword);
+      await activateSaaSSession(session, saasStoreName.trim() || email, data, true);
+      setSaasAuthMessage("");
+    } catch (error) {
+      setSaasAuthMessage(error instanceof Error ? error.message : "Supabase Authに失敗しました。");
+    }
+  }
+
+  async function resetSaaSPassword() {
+    if (!saasEmail.trim()) {
+      setSaasAuthMessage("パスワード再設定用のメールアドレスを入力してください。");
+      return;
+    }
+    try {
+      await sendPasswordReset(saasEmail.trim());
+      setSaasAuthMessage("パスワード再設定メールを送信しました。");
+    } catch (error) {
+      setSaasAuthMessage(error instanceof Error ? error.message : "パスワード再設定に失敗しました。");
+    }
+  }
+
+  async function syncSaaSNow() {
+    if (!saasSession || !saasStore) return;
+    try {
+      setCloudSyncStatus("Supabaseから読み込み中...");
+      const cloudData = await loadAppDataFromSupabase(saasSession, saasStore.id);
+      if (cloudData) applySupabaseData(cloudData, saasStore.id);
+      setLastSyncedAt(new Date().toLocaleString("ja-JP"));
+      setCloudSyncStatus("Supabase共有済み");
+    } catch {
+      setCloudSyncStatus("Supabaseへ接続できませんでした。端末内バックアップを表示しています。");
+    }
   }
 
   function loadStoreData(storeId: string, pin = "") {
@@ -1620,10 +1764,17 @@ export function CostNutritionApp() {
   }
 
   function logoutStore() {
+    if (saasSession) {
+      void signOutSaaS(saasSession).catch(() => clearSaaSAuthSession());
+    }
     window.sessionStorage.removeItem(storeSessionStorageKey);
     window.sessionStorage.removeItem(storeSessionPinStorageKey);
     window.sessionStorage.removeItem(storeSessionAdminStorageKey);
     setCurrentStorePin("");
+    setSaasSession(null);
+    setSaasStore(null);
+    setSaasProfile(null);
+    setLastSyncedAt("");
     setIsAdminSession(false);
     setCloudSyncStatus("ログアウト中");
     setAuthModalMode("login");
@@ -3375,6 +3526,19 @@ export function CostNutritionApp() {
           <p className="mt-1 text-xs font-bold text-neutral-500">
             現在の店舗: {currentStoreId} / {cloudSyncStatus}
           </p>
+          {saasSession && saasStore ? (
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-black text-teal-800">
+              <span className="rounded-full bg-teal-50 px-3 py-1">
+                {saasSession.user.email} / {saasStore.name} / {saasProfile?.role || "owner"} / {saasStore.plan}
+              </span>
+              <span className="rounded-full bg-blue-50 px-3 py-1 text-blue-800">
+                最終同期: {lastSyncedAt || "未同期"}
+              </span>
+              <button className="rounded-full border border-teal-300 bg-white px-3 py-1 text-teal-800" onClick={syncSaaSNow}>
+                同期する
+              </button>
+            </div>
+          ) : null}
           {cloudSyncStatus.includes("未同期") ? (
             <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-black text-amber-900">
               Supabaseへ接続できませんでした。端末内に一時保存しています。通信が戻ったらもう一度保存してください。
@@ -3694,6 +3858,61 @@ export function CostNutritionApp() {
               </h2>
               <p className="mt-2 text-sm font-bold text-neutral-500">
                 店舗名と4桁PINで店舗データを開きます。
+              </p>
+            </div>
+            <div className="mt-4 rounded-md border-2 border-teal-200 bg-teal-50 p-3">
+              <p className="text-xs font-black text-teal-700">販売版ログイン Supabase Auth</p>
+              <p className="mt-1 text-sm font-bold text-teal-950">
+                他端末共有・店舗別データ分離はこちらを使います。
+              </p>
+              <div className="mt-3 grid grid-cols-2 gap-2 rounded-md border border-teal-200 bg-white p-1">
+                <button
+                  className={`rounded px-3 py-2 font-black ${saasAuthMode === "login" ? "bg-teal-700 text-white" : "bg-white text-neutral-700"}`}
+                  onClick={() => setSaasAuthMode("login")}
+                >
+                  ログイン
+                </button>
+                <button
+                  className={`rounded px-3 py-2 font-black ${saasAuthMode === "signup" ? "bg-teal-700 text-white" : "bg-white text-neutral-700"}`}
+                  onClick={() => setSaasAuthMode("signup")}
+                >
+                  新規登録
+                </button>
+              </div>
+              <div className="mt-3 grid gap-2">
+                {saasAuthMode === "signup" ? (
+                  <TextInput label="店舗名" value={saasStoreName} onChange={setSaasStoreName} />
+                ) : null}
+                <TextInput label="メールアドレス" value={saasEmail} onChange={setSaasEmail} onEnter={submitSaaSAuth} />
+                <label className="grid gap-1 text-xs font-black text-neutral-600">
+                  パスワード
+                  <input
+                    className="min-h-11 rounded-md border border-neutral-300 bg-white px-3 py-2 text-base text-neutral-950"
+                    type="password"
+                    value={saasPassword}
+                    onChange={(event) => setSaasPassword(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") void submitSaaSAuth();
+                    }}
+                  />
+                </label>
+                {saasAuthMessage ? (
+                  <p className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs font-black text-amber-900">{saasAuthMessage}</p>
+                ) : null}
+                <div className="grid grid-cols-2 gap-2">
+                  <button className="rounded-md bg-teal-700 px-4 py-3 text-sm font-black text-white" onClick={submitSaaSAuth}>
+                    {saasAuthMode === "signup" ? "登録して始める" : "ログイン"}
+                  </button>
+                  <button className="rounded-md border border-teal-300 bg-white px-4 py-3 text-sm font-black text-teal-800" onClick={resetSaaSPassword}>
+                    パスワード再設定
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="mt-4 rounded-md border border-neutral-200 bg-neutral-50 p-3">
+              <p className="text-xs font-black text-neutral-500">旧デモ用ログイン</p>
+              <p className="mt-1 text-xs font-bold text-neutral-500">
+                既存テスト用です。販売時は上のメールログインを使います。
               </p>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-2 rounded-md border border-neutral-200 bg-neutral-50 p-1">
