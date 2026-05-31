@@ -27,6 +27,7 @@ import { sampleData } from "@/lib/sample-data";
 import { standardNutritionFoods } from "@/lib/standard-nutrition";
 import {
   clearSaaSAuthSession,
+  ensureManagementShopForUser,
   ensureStoreForUser,
   isSaaSSupabaseConfigured,
   loadAppDataFromSupabase,
@@ -1635,6 +1636,9 @@ export function CostNutritionApp() {
       return;
     }
     const { store, profile } = await ensureStoreForUser(session, storeName);
+    void ensureManagementShopForUser(session, storeName).catch((error) => {
+      console.warn("AI経営判断用の店舗作成は後で再試行します。", error);
+    });
     setSaasSession(session);
     setSaasStore(store);
     setSaasProfile(profile);

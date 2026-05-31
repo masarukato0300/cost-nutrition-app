@@ -299,6 +299,40 @@ export async function ensureStoreForUser(session: SaaSAuthSession, storeName: st
   return { profile: mapProfile(newProfiles[0] || {}), store };
 }
 
+export async function ensureManagementShopForUser(session: SaaSAuthSession, shopName: string) {
+  const { url } = requireConfig();
+  const memberResponse = await fetch(`${url}/rest/v1/shop_members?user_id=eq.${encodeURIComponent(session.user.id)}&select=shop_id,role&limit=1`, {
+    headers: authHeaders(session.accessToken),
+    cache: "no-store",
+  });
+  const existingMembers = await readJson<Array<{ shop_id: string; role: string }>>(memberResponse);
+  if (existingMembers[0]?.shop_id) return existingMembers[0].shop_id;
+
+  const shopResponse = await fetch(`${url}/rest/v1/shops`, {
+    method: "POST",
+    headers: { ...authHeaders(session.accessToken), Prefer: "return=representation" },
+    body: JSON.stringify({
+      name: shopName || session.user.email || "店舗",
+      plan: "trial",
+    }),
+  });
+  const shops = await readJson<Array<{ id: string }>>(shopResponse);
+  const shopId = shops[0]?.id;
+  if (!shopId) throw new Error("AI経営判断用の店舗を作成できませんでした。");
+
+  const shopMemberResponse = await fetch(`${url}/rest/v1/shop_members`, {
+    method: "POST",
+    headers: { ...authHeaders(session.accessToken), Prefer: "return=minimal" },
+    body: JSON.stringify({
+      shop_id: shopId,
+      user_id: session.user.id,
+      role: "owner",
+    }),
+  });
+  await readJson<Record<string, unknown>>(shopMemberResponse);
+  return shopId;
+}
+
 async function fetchTable<T>(session: SaaSAuthSession, table: string, storeId: string, mapper: (row: Record<string, unknown>) => T) {
   const { url } = requireConfig();
   const response = await fetch(`${url}/rest/v1/${table}?store_id=eq.${encodeURIComponent(storeId)}&select=*`, {
