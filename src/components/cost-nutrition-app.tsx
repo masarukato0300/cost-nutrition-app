@@ -42,6 +42,7 @@ import {
   type SaaSStore,
   type SaaSUserProfile,
 } from "@/lib/supabase-saas";
+import { buildManagementDecisionSummary, type ProductManagementMetric } from "@/lib/management-analysis";
 import type { StandardNutritionFood } from "@/lib/standard-nutrition";
 import type { ActualCostRecord, AppData, BillingSettings, EventPlan, EventSimulationRow, Ingredient, IngredientAlias, LaborCost, MaterialType, MonthlyTheoryRow, OnboardingSupportSettings, PriceImpactRow, Product, ProductLaborCostSummary, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow, SalesRecord, SetProductCostSummary, SetProductItem, WasteItemType, WasteMonthlySummary, WasteReason, WasteRecord } from "@/lib/types";
 
@@ -96,6 +97,7 @@ const pages = [
   { key: "productCategory", label: "商品カテゴリ" },
   { key: "recipe", label: "レシピ登録" },
   { key: "cost", label: "原価計算" },
+  { key: "management", label: "経営判断" },
   { key: "nutrition", label: "栄養成分計算" },
   { key: "allergen", label: "アレルゲン一覧" },
   { key: "production", label: "仕込み量逆算" },
@@ -119,7 +121,7 @@ type WasteCategoryKey = (typeof wasteCategories)[number]["key"];
 const mainNavPageKeys: PageNavKey[] = ["top", "help", "manage"];
 const bottomNavPageKeys: PageNavKey[] = ["ingredient", "product", "recipe"];
 const navGroups = [
-  { key: "costs", label: "原価・値上げ", description: "原価計算、値上げ、イベント、人件費", pages: ["cost", "impact", "event", "labor", "set"] },
+  { key: "costs", label: "原価・値上げ", description: "経営判断、原価計算、値上げ、イベント、人件費", pages: ["management", "cost", "impact", "event", "labor", "set"] },
   { key: "display", label: "表示・ラベル", description: "栄養成分、アレルゲン、ラベル", pages: ["nutrition", "allergen", "label"] },
   { key: "operation", label: "現場管理", description: "仕込み、発注、廃棄、月間原価", pages: ["production", "order", "waste", "monthly"] },
   { key: "data", label: "データ管理", description: "商品一覧、カテゴリ、原材料一覧、OCR候補、CSV出力、設定", pages: ["productList", "productCategory", "master", "ocrQueue", "csv", "settings"] },
@@ -178,6 +180,12 @@ const pageTones: Record<PageNavKey, { navActive: string; navIdle: string; topCar
     navIdle: "border-orange-500 bg-orange-50 text-orange-900 hover:bg-orange-100",
     topCard: "border-orange-100 bg-orange-50/70 hover:border-orange-400",
     mark: "bg-orange-500",
+  },
+  management: {
+    navActive: "border-emerald-800 bg-emerald-700 text-white shadow-sm",
+    navIdle: "border-emerald-500 bg-emerald-50 text-emerald-900 hover:bg-emerald-100",
+    topCard: "border-emerald-100 bg-emerald-50/70 hover:border-emerald-400",
+    mark: "bg-emerald-600",
   },
   nutrition: {
     navActive: "border-lime-700 bg-lime-600 text-white shadow-sm",
@@ -307,6 +315,14 @@ type RecentPriceImpact = {
   oldPrice: number;
   newPrice: number;
   rows: PriceImpactRow[];
+};
+type ManagementAiResult = {
+  summary?: string;
+  price_actions?: string[];
+  growth_actions?: string[];
+  waste_actions?: string[];
+  diagnosis_comment?: string;
+  next_steps?: string[];
 };
 type CloudStoreAuthResponse = {
   ok: boolean;
@@ -595,6 +611,7 @@ function NavPictogram({ pageKey }: { pageKey: PageNavKey }) {
     productCategory: <><path className={common} d="M4 5h7v7H4zM13 5h7v7h-7zM4 14h7v5H4zM13 14h7v5h-7z" /></>,
     recipe: <><path className={common} d="M7 4h10v17H7z" /><path className={common} d="M9 8h6M9 12h6M9 16h4" /><path className={common} d="M10 3h4" /></>,
     cost: <><circle className={common} cx="12" cy="12" r="9" /><path className={common} d="M8 7l4 5 4-5M9 13h6M9 16h6" /></>,
+    management: <><path className={common} d="M4 18h16" /><path className={common} d="M6 15l4-5 3 3 5-7" /><path className={common} d="M16 6h3v3" /><path className={common} d="M5 21h14" /></>,
     nutrition: <><path className={common} d="M5 13c0-5 4-8 11-8 0 7-3 11-8 11-2 0-3-1-3-3Z" /><path className={common} d="M8 16c2-4 5-6 8-8" /></>,
     allergen: <><path className={common} d="M12 3 22 20H2L12 3Z" /><path className={common} d="M12 9v5" /><path className={common} d="M12 18h.01" /></>,
     production: <><path className={common} d="M4 18h16" /><path className={common} d="M7 18V9l5-4 5 4v9" /><path className={common} d="M9 13h6" /></>,
@@ -829,6 +846,7 @@ function topPageDescription(pageKey: PageKey) {
     productCategory: "商品カテゴリを追加・削除",
     recipe: "製品名から材料を選び、使用量を入力",
     cost: "材料原価と包材込み原価を確認",
+    management: "売上、粗利、廃棄から経営判断を確認",
     nutrition: "レシピから栄養成分表示を計算",
     allergen: "商品ごとのアレルゲンを一覧確認",
     production: "予定数から必要材料を逆算",
@@ -1435,6 +1453,13 @@ export function CostNutritionApp() {
   const [wasteReason, setWasteReason] = useState<WasteReason>("売れ残り");
   const [wasteSummaryMonth, setWasteSummaryMonth] = useState(currentMonth());
   const [monthlyTargetMonth, setMonthlyTargetMonth] = useState("2026-05");
+  const [managementAiResult, setManagementAiResult] = useState<ManagementAiResult | null>(null);
+  const [managementAiStatus, setManagementAiStatus] = useState("");
+  const [managementDiagnosisAnswers, setManagementDiagnosisAnswers] = useState({
+    goal: "",
+    concern: "",
+    strength: "",
+  });
   const [actualCostForm, setActualCostForm] = useState<ActualCostRecord>(() => ({ ...emptyActualCostRecord(), month: "2026-05" }));
   const [eventPlanForm, setEventPlanForm] = useState<EventPlan>(() => emptyEventPlan());
   const [selectedEventPlanId, setSelectedEventPlanId] = useState(sampleData.eventPlans[0]?.id ?? "");
@@ -1707,6 +1732,44 @@ export function CostNutritionApp() {
       setCloudSyncStatus("Supabase共有済み");
     } catch {
       setCloudSyncStatus("Supabaseへ接続できませんでした。端末内バックアップを表示しています。");
+    }
+  }
+
+  async function createManagementAiComment() {
+    if (!saasSession) {
+      setManagementAiStatus("AIコメントは販売版ログイン後に使えます。先にメールログインしてください。");
+      return;
+    }
+    try {
+      setManagementAiStatus("AI経営コメントを作成中...");
+      setManagementAiResult(null);
+      const response = await fetch("/api/management-ai-comment", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${saasSession.accessToken}`,
+        },
+        body: JSON.stringify({
+          featureName: "management_decision_comment",
+          summary: {
+            month: managementSummary.month,
+            totalSalesAmount: managementSummary.totalSalesAmount,
+            totalGrossProfit: managementSummary.totalGrossProfit,
+            averageCostRate: managementSummary.averageCostRate,
+            wasteCostAmount: managementSummary.wasteCostAmount,
+            priceIncreaseCandidates: managementSummary.priceIncreaseCandidates,
+            growthCandidates: managementSummary.growthCandidates,
+            wasteRiskProducts: managementSummary.wasteRiskProducts,
+          },
+          diagnosisAnswers: managementDiagnosisAnswers,
+        }),
+      });
+      const payload = await response.json() as { ok?: boolean; result?: ManagementAiResult; error?: string };
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "AI経営コメントを作成できませんでした。");
+      setManagementAiResult(payload.result || null);
+      setManagementAiStatus("AI経営コメントを作成しました。");
+    } catch (error) {
+      setManagementAiStatus(error instanceof Error ? error.message : "AI経営コメントを作成できませんでした。");
     }
   }
 
@@ -2192,6 +2255,10 @@ export function CostNutritionApp() {
   );
   const monthlyTheory = useMemo(
     () => calculateMonthlyTheoryCost(data, monthlyTargetMonth),
+    [data, monthlyTargetMonth],
+  );
+  const managementSummary = useMemo(
+    () => buildManagementDecisionSummary(data, monthlyTargetMonth),
     [data, monthlyTargetMonth],
   );
   const selectedEventPlan = data.eventPlans.find((eventPlan) => eventPlan.id === selectedEventPlanId) ?? data.eventPlans[0] ?? null;
@@ -5233,6 +5300,122 @@ export function CostNutritionApp() {
         </Panel>
       )}
 
+      {activePage === "management" && (
+        <Panel title="経営判断">
+          <div className="grid gap-4">
+            <section className="rounded-md border border-emerald-100 bg-emerald-50 p-4">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black text-emerald-700">売上・粗利・廃棄から判断</p>
+                  <h2 className="mt-1 text-xl font-black text-neutral-950">今月の経営判断</h2>
+                  <p className="mt-1 text-sm font-bold text-neutral-600">
+                    AIに計算させず、アプリ側で集計した数字をもとに判断します。
+                  </p>
+                </div>
+                <label className="grid gap-1 text-xs font-black text-neutral-600">
+                  対象月
+                  <input
+                    type="month"
+                    value={monthlyTargetMonth}
+                    onChange={(event) => setMonthlyTargetMonth(event.target.value)}
+                    className="min-h-11 rounded-md border border-emerald-200 bg-white px-3 py-2 text-base text-neutral-950"
+                  />
+                </label>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <StatCard label="売上" value={yen(managementSummary.totalSalesAmount)} tone="blue" />
+                <StatCard label="粗利" value={yen(managementSummary.totalGrossProfit)} tone="green" />
+                <StatCard label="平均原価率" value={percent(managementSummary.averageCostRate)} tone={managementSummary.averageCostRate >= 40 ? "red" : managementSummary.averageCostRate >= 35 ? "amber" : "green"} />
+                <StatCard label="廃棄原価" value={yen(managementSummary.wasteCostAmount)} tone={managementSummary.wasteCostAmount > 0 ? "amber" : "green"} />
+              </div>
+            </section>
+
+            <div className="grid gap-4 lg:grid-cols-3">
+              <section className="rounded-md border border-red-100 bg-red-50 p-4">
+                <h3 className="font-black text-red-950">値上げ候補</h3>
+                <p className="mt-1 text-xs font-bold text-red-700">原価率が高く、販売実績がある商品</p>
+                <div className="mt-3 grid gap-2">
+                  {managementSummary.priceIncreaseCandidates.map((row) => (
+                    <ManagementMetricCard key={row.productId} row={row} actionLabel="売価・サイズを見直す" />
+                  ))}
+                  {managementSummary.priceIncreaseCandidates.length === 0 && <EmptyState text="強い値上げ候補はまだありません。" />}
+                </div>
+              </section>
+
+              <section className="rounded-md border border-blue-100 bg-blue-50 p-4">
+                <h3 className="font-black text-blue-950">伸ばす候補</h3>
+                <p className="mt-1 text-xs font-bold text-blue-700">粗利が出ていて原価率が安定している商品</p>
+                <div className="mt-3 grid gap-2">
+                  {managementSummary.growthCandidates.map((row) => (
+                    <ManagementMetricCard key={row.productId} row={row} actionLabel="売場・予約・SNSで伸ばす" />
+                  ))}
+                  {managementSummary.growthCandidates.length === 0 && <EmptyState text="伸ばす候補は販売数入力後に見えやすくなります。" />}
+                </div>
+              </section>
+
+              <section className="rounded-md border border-amber-100 bg-amber-50 p-4">
+                <h3 className="font-black text-amber-950">作りすぎ・廃棄注意</h3>
+                <p className="mt-1 text-xs font-bold text-amber-700">廃棄数と販売数のバランスを見る商品</p>
+                <div className="mt-3 grid gap-2">
+                  {managementSummary.wasteRiskProducts.map((row) => (
+                    <ManagementMetricCard key={row.productId} row={row} actionLabel="仕込み数を調整する" />
+                  ))}
+                  {managementSummary.wasteRiskProducts.length === 0 && <EmptyState text="廃棄注意商品はありません。" />}
+                </div>
+              </section>
+            </div>
+
+            <section className="rounded-md border border-violet-100 bg-violet-50 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-black text-violet-950">AI経営コメント</h3>
+                  <p className="mt-1 text-sm font-bold text-violet-700">
+                    AIにはレシピ全文ではなく、上の集計済みデータと診断回答だけを送ります。
+                  </p>
+                </div>
+                <button className="rounded-md bg-violet-700 px-4 py-3 font-black text-white" onClick={createManagementAiComment}>
+                  AIコメント作成
+                </button>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                <TextAreaInput
+                  label="今月の目標"
+                  value={managementDiagnosisAnswers.goal}
+                  onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, goal: value }))}
+                  rows={3}
+                />
+                <TextAreaInput
+                  label="今困っていること"
+                  value={managementDiagnosisAnswers.concern}
+                  onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, concern: value }))}
+                  rows={3}
+                />
+                <TextAreaInput
+                  label="お店の強み"
+                  value={managementDiagnosisAnswers.strength}
+                  onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, strength: value }))}
+                  rows={3}
+                />
+              </div>
+              {managementAiStatus ? (
+                <p className="mt-3 rounded-md border border-violet-200 bg-white p-3 text-sm font-black text-violet-900">{managementAiStatus}</p>
+              ) : null}
+              {managementAiResult ? (
+                <div className="mt-3 grid gap-3 rounded-md border border-violet-200 bg-white p-4 text-sm">
+                  <h4 className="font-black text-neutral-950">AIコメント結果</h4>
+                  {managementAiResult.summary ? <p className="font-bold text-neutral-700">{managementAiResult.summary}</p> : null}
+                  <AiActionList title="値上げ・価格施策" items={managementAiResult.price_actions} />
+                  <AiActionList title="伸ばす施策" items={managementAiResult.growth_actions} />
+                  <AiActionList title="廃棄・作りすぎ対策" items={managementAiResult.waste_actions} />
+                  {managementAiResult.diagnosis_comment ? <p className="rounded-md bg-violet-50 p-3 font-bold text-violet-900">{managementAiResult.diagnosis_comment}</p> : null}
+                  <AiActionList title="次にやること" items={managementAiResult.next_steps} />
+                </div>
+              ) : null}
+            </section>
+          </div>
+        </Panel>
+      )}
+
       {activePage === "cost" && (
         <Panel title="原価計算">
           <div className="grid gap-3 md:grid-cols-3">
@@ -6381,6 +6564,56 @@ function EmptyState({ text }: { text: string }) {
   );
 }
 
+function StatCard({ label, value, tone }: { label: string; value: string; tone: "blue" | "green" | "amber" | "red" }) {
+  const toneClass = {
+    blue: "border-blue-200 bg-white text-blue-900",
+    green: "border-emerald-200 bg-white text-emerald-900",
+    amber: "border-amber-200 bg-white text-amber-900",
+    red: "border-red-200 bg-white text-red-900",
+  }[tone];
+  return (
+    <div className={`rounded-md border p-4 shadow-sm ${toneClass}`}>
+      <p className="text-xs font-black opacity-70">{label}</p>
+      <strong className="mt-2 block text-2xl font-black">{value}</strong>
+    </div>
+  );
+}
+
+function ManagementMetricCard({ row, actionLabel }: { row: ProductManagementMetric; actionLabel: string }) {
+  return (
+    <div className="rounded-md border border-white bg-white p-3 shadow-sm">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <strong className="block text-neutral-950">{row.name}</strong>
+          <span className="mt-1 inline-block rounded bg-neutral-100 px-2 py-1 text-[11px] font-black text-neutral-600">{row.category}</span>
+        </div>
+        <CostRateBadge value={row.costRate} />
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-bold text-neutral-600">
+        <span>売上 {yen(row.salesAmount)}</span>
+        <span>粗利 {yen(row.grossProfit)}</span>
+        <span>販売数 {number(row.salesQuantity, 0)}</span>
+        <span>廃棄 {number(row.wasteQuantity, 0)}</span>
+      </div>
+      <p className="mt-3 rounded-md bg-neutral-50 px-3 py-2 text-xs font-black text-neutral-800">{actionLabel}</p>
+    </div>
+  );
+}
+
+function AiActionList({ title, items }: { title: string; items?: string[] }) {
+  if (!items?.length) return null;
+  return (
+    <div>
+      <h5 className="font-black text-neutral-950">{title}</h5>
+      <ul className="mt-2 grid gap-2">
+        {items.map((item) => (
+          <li key={item} className="rounded-md bg-neutral-50 px-3 py-2 font-bold text-neutral-700">{item}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function Metric({
   label,
   value,
@@ -6676,6 +6909,30 @@ function TextInput({
         onKeyDown={(event) => {
           if (event.key === "Enter") onEnter?.();
         }}
+      />
+    </label>
+  );
+}
+
+function TextAreaInput({
+  label,
+  value,
+  onChange,
+  rows = 4,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  rows?: number;
+}) {
+  return (
+    <label className="grid gap-1 font-bold text-neutral-600">
+      <span>{label}</span>
+      <textarea
+        className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-neutral-900 shadow-sm outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+        value={value}
+        rows={rows}
+        onChange={(event) => onChange(event.target.value)}
       />
     </label>
   );
