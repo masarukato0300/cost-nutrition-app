@@ -7,6 +7,8 @@ export type ProductManagementMetric = {
   category: string;
   sellingPrice: number;
   unitCost: number;
+  targetCostRate: number;
+  recommendedPrice: number;
   costRate: number;
   salesQuantity: number;
   salesAmount: number;
@@ -58,12 +60,15 @@ export function buildManagementDecisionSummary(data: AppData, month: string): Ma
       const salesAmount = sales.quantity * sales.sellingPrice;
       const grossProfit = salesAmount - sales.quantity * cost.costPerPiece;
       const grossProfitRate = salesAmount ? (grossProfit / salesAmount) * 100 : 0;
+      const recommendedPrice = product.targetCostRate > 0 ? cost.costPerPiece / (product.targetCostRate / 100) : 0;
       const rowWithoutHint = {
         productId: product.id,
         name: product.name,
         category: product.category,
         sellingPrice: sales.sellingPrice,
         unitCost: cost.costPerPiece,
+        targetCostRate: product.targetCostRate,
+        recommendedPrice,
         costRate: cost.costRate,
         salesQuantity: sales.quantity,
         salesAmount,

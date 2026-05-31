@@ -98,6 +98,7 @@ const pages = [
   { key: "recipe", label: "レシピ登録" },
   { key: "cost", label: "原価計算" },
   { key: "management", label: "経営判断" },
+  { key: "salesAnalysis", label: "売上・粗利" },
   { key: "nutrition", label: "栄養成分計算" },
   { key: "allergen", label: "アレルゲン一覧" },
   { key: "production", label: "仕込み量逆算" },
@@ -122,7 +123,7 @@ type WasteCategoryKey = (typeof wasteCategories)[number]["key"];
 const mainNavPageKeys: PageNavKey[] = ["top", "help", "manage"];
 const bottomNavPageKeys: PageNavKey[] = ["ingredient", "product", "recipe"];
 const navGroups = [
-  { key: "costs", label: "原価・値上げ", description: "経営判断、原価計算、値上げ、イベント、人件費", pages: ["management", "cost", "impact", "event", "labor", "set"] },
+  { key: "costs", label: "原価・値上げ", description: "経営判断、売上粗利、原価計算、値上げ", pages: ["management", "salesAnalysis", "cost", "impact", "event", "labor", "set"] },
   { key: "display", label: "表示・ラベル", description: "栄養成分、アレルゲン、ラベル", pages: ["nutrition", "allergen", "label"] },
   { key: "operation", label: "現場管理", description: "仕込み、発注、廃棄、売上CSV、月間原価", pages: ["production", "order", "waste", "salesImport", "monthly"] },
   { key: "data", label: "データ管理", description: "商品一覧、カテゴリ、原材料一覧、OCR候補、CSV出力、設定", pages: ["productList", "productCategory", "master", "ocrQueue", "csv", "settings"] },
@@ -187,6 +188,12 @@ const pageTones: Record<PageNavKey, { navActive: string; navIdle: string; topCar
     navIdle: "border-emerald-500 bg-emerald-50 text-emerald-900 hover:bg-emerald-100",
     topCard: "border-emerald-100 bg-emerald-50/70 hover:border-emerald-400",
     mark: "bg-emerald-600",
+  },
+  salesAnalysis: {
+    navActive: "border-indigo-800 bg-indigo-700 text-white shadow-sm",
+    navIdle: "border-indigo-500 bg-indigo-50 text-indigo-900 hover:bg-indigo-100",
+    topCard: "border-indigo-100 bg-indigo-50/70 hover:border-indigo-400",
+    mark: "bg-indigo-600",
   },
   nutrition: {
     navActive: "border-lime-700 bg-lime-600 text-white shadow-sm",
@@ -340,6 +347,7 @@ type SalesCsvPreviewRow = {
   salesAmount: number;
   matched: boolean;
 };
+type SalesAnalysisSortKey = "salesAmount" | "grossProfit" | "costRate" | "salesQuantity" | "wasteQuantity";
 type CloudStoreAuthResponse = {
   ok: boolean;
   cloudConfigured?: boolean;
@@ -628,6 +636,7 @@ function NavPictogram({ pageKey }: { pageKey: PageNavKey }) {
     recipe: <><path className={common} d="M7 4h10v17H7z" /><path className={common} d="M9 8h6M9 12h6M9 16h4" /><path className={common} d="M10 3h4" /></>,
     cost: <><circle className={common} cx="12" cy="12" r="9" /><path className={common} d="M8 7l4 5 4-5M9 13h6M9 16h6" /></>,
     management: <><path className={common} d="M4 18h16" /><path className={common} d="M6 15l4-5 3 3 5-7" /><path className={common} d="M16 6h3v3" /><path className={common} d="M5 21h14" /></>,
+    salesAnalysis: <><path className={common} d="M4 19h16" /><path className={common} d="M7 16V9M12 16V5M17 16v-4" /><path className={common} d="M5 7h4l2 4 3-6 2 5h3" /></>,
     nutrition: <><path className={common} d="M5 13c0-5 4-8 11-8 0 7-3 11-8 11-2 0-3-1-3-3Z" /><path className={common} d="M8 16c2-4 5-6 8-8" /></>,
     allergen: <><path className={common} d="M12 3 22 20H2L12 3Z" /><path className={common} d="M12 9v5" /><path className={common} d="M12 18h.01" /></>,
     production: <><path className={common} d="M4 18h16" /><path className={common} d="M7 18V9l5-4 5 4v9" /><path className={common} d="M9 13h6" /></>,
@@ -864,6 +873,7 @@ function topPageDescription(pageKey: PageKey) {
     recipe: "製品名から材料を選び、使用量を入力",
     cost: "材料原価と包材込み原価を確認",
     management: "売上、粗利、廃棄から経営判断を確認",
+    salesAnalysis: "商品別の売上・粗利ランキングを確認",
     nutrition: "レシピから栄養成分表示を計算",
     allergen: "商品ごとのアレルゲンを一覧確認",
     production: "予定数から必要材料を逆算",
@@ -1524,6 +1534,7 @@ export function CostNutritionApp() {
   const [salesCsvStatus, setSalesCsvStatus] = useState("");
   const [salesCsvPreviewRows, setSalesCsvPreviewRows] = useState<SalesCsvPreviewRow[]>([]);
   const [salesCsvFileName, setSalesCsvFileName] = useState("");
+  const [salesAnalysisSort, setSalesAnalysisSort] = useState<SalesAnalysisSortKey>("grossProfit");
   const [managementDiagnosisAnswers, setManagementDiagnosisAnswers] = useState({
     goal: "",
     concern: "",
@@ -2431,6 +2442,14 @@ export function CostNutritionApp() {
     () => buildManagementDecisionSummary(data, monthlyTargetMonth),
     [data, monthlyTargetMonth],
   );
+  const salesAnalysisRows = useMemo(() => {
+    const sortable = [...managementSummary.allRows].filter((row) => (
+      row.salesQuantity > 0 || row.salesAmount > 0 || row.wasteQuantity > 0
+    ));
+    return sortable.sort((a, b) => b[salesAnalysisSort] - a[salesAnalysisSort]);
+  }, [managementSummary.allRows, salesAnalysisSort]);
+  const salesAnalysisHighCostRows = managementSummary.allRows.filter((row) => row.costRate >= 35 && row.salesQuantity > 0);
+  const salesAnalysisNoSalesRows = managementSummary.allRows.filter((row) => row.salesQuantity === 0);
   const selectedEventPlan = data.eventPlans.find((eventPlan) => eventPlan.id === selectedEventPlanId) ?? data.eventPlans[0] ?? null;
   const eventSimulation = useMemo(
     () => calculateEventSimulation(data, selectedEventPlan?.id ?? "", {}),
@@ -5589,6 +5608,103 @@ export function CostNutritionApp() {
         </Panel>
       )}
 
+      {activePage === "salesAnalysis" && (
+        <Panel title="売上・粗利ランキング">
+          <div className="grid gap-4">
+            <section className="rounded-md border border-indigo-100 bg-indigo-50 p-4">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black text-indigo-700">CSV売上 × 商品原価</p>
+                  <h2 className="mt-1 text-xl font-black text-neutral-950">商品別に「売れている・儲かる・危ない」を確認</h2>
+                  <p className="mt-1 text-sm font-bold text-neutral-600">
+                    レジCSV取込または月間理論原価の販売数をもとに、売上・粗利・原価率・廃棄を一覧化します。
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <label className="grid gap-1 text-xs font-black text-neutral-600">
+                    対象月
+                    <input
+                      type="month"
+                      value={monthlyTargetMonth}
+                      onChange={(event) => setMonthlyTargetMonth(event.target.value)}
+                      className="min-h-11 rounded-md border border-indigo-200 bg-white px-3 py-2 text-base text-neutral-950"
+                    />
+                  </label>
+                  <label className="grid gap-1 text-xs font-black text-neutral-600">
+                    並び順
+                    <select
+                      value={salesAnalysisSort}
+                      onChange={(event) => setSalesAnalysisSort(event.target.value as SalesAnalysisSortKey)}
+                      className="min-h-11 rounded-md border border-indigo-200 bg-white px-3 py-2 text-base font-bold text-neutral-950"
+                    >
+                      <option value="grossProfit">粗利が高い順</option>
+                      <option value="salesAmount">売上が高い順</option>
+                      <option value="costRate">原価率が高い順</option>
+                      <option value="salesQuantity">販売数が多い順</option>
+                      <option value="wasteQuantity">廃棄が多い順</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <StatCard label="月間売上" value={yen(managementSummary.totalSalesAmount)} tone="blue" />
+                <StatCard label="月間粗利" value={yen(managementSummary.totalGrossProfit)} tone="green" />
+                <StatCard label="原価率35%以上" value={`${salesAnalysisHighCostRows.length}商品`} tone={salesAnalysisHighCostRows.length ? "amber" : "green"} />
+                <StatCard label="売上未入力" value={`${salesAnalysisNoSalesRows.length}商品`} tone={salesAnalysisNoSalesRows.length ? "amber" : "green"} />
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button className="rounded-md bg-cyan-700 px-4 py-3 font-black text-white" onClick={() => setActivePage("salesImport")}>
+                  レジCSVを取り込む
+                </button>
+                <button className="rounded-md border border-indigo-300 bg-white px-4 py-3 font-black text-indigo-800" onClick={() => setActivePage("management")}>
+                  経営判断へ戻る
+                </button>
+              </div>
+            </section>
+
+            <section className="grid gap-4 lg:grid-cols-3">
+              <div className="rounded-md border border-red-100 bg-red-50 p-4">
+                <h3 className="font-black text-red-950">値上げ候補TOP5</h3>
+                <div className="mt-3 grid gap-2">
+                  {managementSummary.priceIncreaseCandidates.slice(0, 5).map((row) => (
+                    <ManagementMetricCard key={row.productId} row={row} actionLabel={`推奨売価 ${yen(row.recommendedPrice)} 目安`} />
+                  ))}
+                  {managementSummary.priceIncreaseCandidates.length === 0 && <EmptyState text="売上入力後、原価率が高い商品がここに出ます。" />}
+                </div>
+              </div>
+              <div className="rounded-md border border-blue-100 bg-blue-50 p-4">
+                <h3 className="font-black text-blue-950">伸ばす商品TOP5</h3>
+                <div className="mt-3 grid gap-2">
+                  {managementSummary.growthCandidates.slice(0, 5).map((row) => (
+                    <ManagementMetricCard key={row.productId} row={row} actionLabel="売場・予約・SNSで露出を増やす" />
+                  ))}
+                  {managementSummary.growthCandidates.length === 0 && <EmptyState text="粗利が出ている商品がここに出ます。" />}
+                </div>
+              </div>
+              <div className="rounded-md border border-amber-100 bg-amber-50 p-4">
+                <h3 className="font-black text-amber-950">廃棄注意TOP5</h3>
+                <div className="mt-3 grid gap-2">
+                  {managementSummary.wasteRiskProducts.slice(0, 5).map((row) => (
+                    <ManagementMetricCard key={row.productId} row={row} actionLabel="仕込み数・販売時間を見直す" />
+                  ))}
+                  {managementSummary.wasteRiskProducts.length === 0 && <EmptyState text="廃棄ロスを記録するとここに出ます。" />}
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-md border border-neutral-200 bg-white p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="font-black text-neutral-950">商品別ランキング一覧</h3>
+                  <p className="mt-1 text-xs font-bold text-neutral-500">売上・粗利・原価率を見ながら、値上げや販売強化を判断します。</p>
+                </div>
+              </div>
+              <SalesAnalysisTable rows={salesAnalysisRows} />
+            </section>
+          </div>
+        </Panel>
+      )}
+
       {activePage === "cost" && (
         <Panel title="原価計算">
           <div className="grid gap-3 md:grid-cols-3">
@@ -6865,6 +6981,60 @@ function ManagementMetricCard({ row, actionLabel }: { row: ProductManagementMetr
         <span>廃棄 {number(row.wasteQuantity, 0)}</span>
       </div>
       <p className="mt-3 rounded-md bg-neutral-50 px-3 py-2 text-xs font-black text-neutral-800">{actionLabel}</p>
+    </div>
+  );
+}
+
+function SalesAnalysisTable({ rows }: { rows: ProductManagementMetric[] }) {
+  if (rows.length === 0) {
+    return <EmptyState text="売上CSV取込、または月間理論原価で販売数を入れるとランキングが表示されます。" />;
+  }
+  return (
+    <div className="mt-3 overflow-x-auto">
+      <table className="min-w-full text-left text-sm">
+        <thead className="bg-neutral-50 text-xs font-black text-neutral-500">
+          <tr>
+            <th className="p-3">商品</th>
+            <th className="p-3">判定</th>
+            <th className="p-3 text-right">販売数</th>
+            <th className="p-3 text-right">売上</th>
+            <th className="p-3 text-right">粗利</th>
+            <th className="p-3 text-right">原価/個</th>
+            <th className="p-3 text-right">原価率</th>
+            <th className="p-3 text-right">推奨売価</th>
+            <th className="p-3 text-right">廃棄</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const hintClass = row.recommendationHint === "値上げ候補"
+              ? "bg-red-100 text-red-800"
+              : row.recommendationHint === "伸ばす候補"
+                ? "bg-blue-100 text-blue-800"
+                : row.recommendationHint === "廃棄注意"
+                  ? "bg-amber-100 text-amber-800"
+                  : "bg-neutral-100 text-neutral-700";
+            return (
+              <tr key={row.productId} className="border-t border-neutral-100">
+                <td className="p-3">
+                  <strong className="block text-neutral-950">{row.name}</strong>
+                  <span className="mt-1 inline-block rounded bg-neutral-100 px-2 py-1 text-[11px] font-black text-neutral-600">{row.category || "未分類"}</span>
+                </td>
+                <td className="p-3">
+                  <span className={`inline-block rounded px-2 py-1 text-xs font-black ${hintClass}`}>{row.recommendationHint}</span>
+                </td>
+                <td className="p-3 text-right font-bold">{number(row.salesQuantity, 0)}</td>
+                <td className="p-3 text-right font-bold">{yen(row.salesAmount)}</td>
+                <td className="p-3 text-right font-bold">{yen(row.grossProfit)}</td>
+                <td className="p-3 text-right font-bold">{yen(row.unitCost)}</td>
+                <td className="p-3 text-right"><CostRateBadge value={row.costRate} /></td>
+                <td className="p-3 text-right font-bold">{row.targetCostRate > 0 ? yen(row.recommendedPrice) : "-"}</td>
+                <td className="p-3 text-right font-bold">{number(row.wasteQuantity, 0)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
