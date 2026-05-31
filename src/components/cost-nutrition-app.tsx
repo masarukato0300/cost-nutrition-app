@@ -103,6 +103,7 @@ const pages = [
   { key: "production", label: "仕込み量逆算" },
   { key: "order", label: "発注リスト" },
   { key: "waste", label: "廃棄ロス" },
+  { key: "salesImport", label: "売上CSV取込" },
   { key: "monthly", label: "月間理論原価" },
   { key: "event", label: "イベント原価" },
   { key: "labor", label: "人件費原価" },
@@ -123,7 +124,7 @@ const bottomNavPageKeys: PageNavKey[] = ["ingredient", "product", "recipe"];
 const navGroups = [
   { key: "costs", label: "原価・値上げ", description: "経営判断、原価計算、値上げ、イベント、人件費", pages: ["management", "cost", "impact", "event", "labor", "set"] },
   { key: "display", label: "表示・ラベル", description: "栄養成分、アレルゲン、ラベル", pages: ["nutrition", "allergen", "label"] },
-  { key: "operation", label: "現場管理", description: "仕込み、発注、廃棄、月間原価", pages: ["production", "order", "waste", "monthly"] },
+  { key: "operation", label: "現場管理", description: "仕込み、発注、廃棄、売上CSV、月間原価", pages: ["production", "order", "waste", "salesImport", "monthly"] },
   { key: "data", label: "データ管理", description: "商品一覧、カテゴリ、原材料一覧、OCR候補、CSV出力、設定", pages: ["productList", "productCategory", "master", "ocrQueue", "csv", "settings"] },
 ] as const satisfies Array<{ key: string; label: string; description: string; pages: PageNavKey[] }>;
 const pageTones: Record<PageNavKey, { navActive: string; navIdle: string; topCard: string; mark: string }> = {
@@ -216,6 +217,12 @@ const pageTones: Record<PageNavKey, { navActive: string; navIdle: string; topCar
     navIdle: "border-pink-500 bg-pink-50 text-pink-900 hover:bg-pink-100",
     topCard: "border-pink-100 bg-pink-50/70 hover:border-pink-400",
     mark: "bg-pink-500",
+  },
+  salesImport: {
+    navActive: "border-cyan-700 bg-cyan-600 text-white shadow-sm",
+    navIdle: "border-cyan-500 bg-cyan-50 text-cyan-900 hover:bg-cyan-100",
+    topCard: "border-cyan-100 bg-cyan-50/70 hover:border-cyan-400",
+    mark: "bg-cyan-500",
   },
   monthly: {
     navActive: "border-blue-700 bg-blue-600 text-white shadow-sm",
@@ -323,6 +330,15 @@ type ManagementAiResult = {
   waste_actions?: string[];
   diagnosis_comment?: string;
   next_steps?: string[];
+};
+type SalesCsvPreviewRow = {
+  rawProductName: string;
+  productId: string;
+  productName: string;
+  month: string;
+  quantity: number;
+  salesAmount: number;
+  matched: boolean;
 };
 type CloudStoreAuthResponse = {
   ok: boolean;
@@ -617,6 +633,7 @@ function NavPictogram({ pageKey }: { pageKey: PageNavKey }) {
     production: <><path className={common} d="M4 18h16" /><path className={common} d="M7 18V9l5-4 5 4v9" /><path className={common} d="M9 13h6" /></>,
     order: <><path className={common} d="M4 5h2l2 10h9l2-7H7" /><circle className={common} cx="10" cy="20" r="1" /><circle className={common} cx="17" cy="20" r="1" /></>,
     waste: <><path className={common} d="M5 7h14" /><path className={common} d="M9 7V4h6v3" /><path className={common} d="M8 10v10h8V10" /><path className={common} d="M11 11v7M14 11v7" /></>,
+    salesImport: <><path className={common} d="M6 3h9l3 3v15H6z" /><path className={common} d="M15 3v4h4" /><path className={common} d="M8 12h8M8 16h5" /><path className={common} d="m16 15 2 2 3-4" /></>,
     monthly: <><path className={common} d="M4 20h16" /><path className={common} d="M6 16v-4M12 16V7M18 16v-8" /></>,
     event: <><path className={common} d="M5 5h14v15H5z" /><path className={common} d="M8 3v4M16 3v4M5 10h14" /><path className={common} d="m12 13 1 2 2 .2-1.5 1.4.4 2.1-1.9-1-1.9 1 .4-2.1L9 15.2l2-.2 1-2Z" /></>,
     labor: <><circle className={common} cx="12" cy="8" r="3" /><path className={common} d="M5 21c1-5 4-8 7-8s6 3 7 8" /><path className={common} d="M17 4h4v4" /></>,
@@ -852,6 +869,7 @@ function topPageDescription(pageKey: PageKey) {
     production: "予定数から必要材料を逆算",
     order: "必要材料を仕入先別に確認",
     waste: "廃棄や試作ロスを記録",
+    salesImport: "レジCSVを取り込み売上分析に反映",
     monthly: "販売数から理論原価を確認",
     event: "イベント販売の粗利を試算",
     labor: "作業時間から実質原価を確認",
@@ -892,6 +910,54 @@ function downloadCsv(fileName: string, rows: Array<Array<string | number | null 
   link.download = fileName;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+function parseCsvText(text: string) {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let inQuotes = false;
+  const normalized = text.replace(/^\uFEFF/, "");
+  for (let index = 0; index < normalized.length; index += 1) {
+    const char = normalized[index];
+    const nextChar = normalized[index + 1];
+    if (char === '"' && inQuotes && nextChar === '"') {
+      cell += '"';
+      index += 1;
+    } else if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === "," && !inQuotes) {
+      row.push(cell.trim());
+      cell = "";
+    } else if ((char === "\n" || char === "\r") && !inQuotes) {
+      if (char === "\r" && nextChar === "\n") index += 1;
+      row.push(cell.trim());
+      if (row.some(Boolean)) rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += char;
+    }
+  }
+  row.push(cell.trim());
+  if (row.some(Boolean)) rows.push(row);
+  return rows;
+}
+
+function csvHeaderIndex(headers: string[], patterns: RegExp[], fallbackIndex: number) {
+  const index = headers.findIndex((header) => patterns.some((pattern) => pattern.test(normalizeText(header))));
+  return index >= 0 ? index : fallbackIndex;
+}
+
+function csvNumber(value: string) {
+  return Number(String(value || "").replace(/[^\d.-]/g, "")) || 0;
+}
+
+function csvMonth(value: string, fallbackMonth: string) {
+  const normalized = String(value || "").trim();
+  const dateMatch = normalized.match(/(\d{4})[\/\-.年](\d{1,2})/);
+  if (dateMatch) return `${dateMatch[1]}-${dateMatch[2].padStart(2, "0")}`;
+  return fallbackMonth;
 }
 
 function wasteRecordItemName(record: WasteRecord, data: AppData) {
@@ -1455,6 +1521,9 @@ export function CostNutritionApp() {
   const [monthlyTargetMonth, setMonthlyTargetMonth] = useState("2026-05");
   const [managementAiResult, setManagementAiResult] = useState<ManagementAiResult | null>(null);
   const [managementAiStatus, setManagementAiStatus] = useState("");
+  const [salesCsvStatus, setSalesCsvStatus] = useState("");
+  const [salesCsvPreviewRows, setSalesCsvPreviewRows] = useState<SalesCsvPreviewRow[]>([]);
+  const [salesCsvFileName, setSalesCsvFileName] = useState("");
   const [managementDiagnosisAnswers, setManagementDiagnosisAnswers] = useState({
     goal: "",
     concern: "",
@@ -1771,6 +1840,107 @@ export function CostNutritionApp() {
     } catch (error) {
       setManagementAiStatus(error instanceof Error ? error.message : "AI経営コメントを作成できませんでした。");
     }
+  }
+
+  function matchSalesProduct(rawProductName: string) {
+    const normalizedRaw = normalizeText(rawProductName);
+    if (!normalizedRaw) return null;
+    return data.products
+      .filter((product) => !product.isIntermediateMaterial)
+      .map((product) => {
+        const normalizedName = normalizeText(product.name);
+        const score = normalizedName === normalizedRaw
+          ? 100
+          : normalizedName.includes(normalizedRaw) || normalizedRaw.includes(normalizedName)
+            ? Math.min(normalizedName.length, normalizedRaw.length) + 40
+            : ingredientNameMatchScore(normalizedRaw, normalizedName);
+        return { product, score };
+      })
+      .filter((item) => item.score >= 24)
+      .sort((a, b) => b.score - a.score)[0]?.product ?? null;
+  }
+
+  function buildSalesCsvPreview(csvText: string) {
+    const rows = parseCsvText(csvText);
+    if (rows.length < 2) throw new Error("CSVの行が見つかりません。1行目に見出し、2行目以降に売上データが必要です。");
+    const headers = rows[0];
+    const dateIndex = csvHeaderIndex(headers, [/日付|日時|販売日|会計日|soldat|date/], 0);
+    const productIndex = csvHeaderIndex(headers, [/商品名|品名|メニュー|商品|rawproductname|product/], 1);
+    const quantityIndex = csvHeaderIndex(headers, [/数量|個数|点数|qty|quantity/], 2);
+    const salesIndex = csvHeaderIndex(headers, [/売上|金額|税込|合計|小計|sales|amount|total/], 3);
+    const previewRows = rows.slice(1).map((row) => {
+      const rawProductName = row[productIndex] || "";
+      const product = matchSalesProduct(rawProductName);
+      const quantity = Math.max(0, csvNumber(row[quantityIndex] || "1") || 1);
+      const salesAmount = Math.max(0, csvNumber(row[salesIndex] || "0"));
+      return {
+        rawProductName,
+        productId: product?.id || "",
+        productName: product?.name || "未紐づけ",
+        month: csvMonth(row[dateIndex] || "", monthlyTargetMonth),
+        quantity,
+        salesAmount,
+        matched: Boolean(product),
+      };
+    }).filter((row) => row.rawProductName || row.salesAmount || row.quantity);
+    return previewRows;
+  }
+
+  async function readSalesCsvFile(file: File) {
+    setSalesCsvFileName(file.name);
+    setSalesCsvStatus("CSVを読み込み中...");
+    const text = await file.text();
+    const previewRows = buildSalesCsvPreview(text);
+    setSalesCsvPreviewRows(previewRows);
+    const matchedCount = previewRows.filter((row) => row.matched).length;
+    setSalesCsvStatus(`${previewRows.length}行を読み込みました。商品紐づけ ${matchedCount}行 / 未紐づけ ${previewRows.length - matchedCount}行`);
+  }
+
+  function updateSalesCsvPreviewProduct(index: number, productId: string) {
+    const product = data.products.find((item) => item.id === productId);
+    setSalesCsvPreviewRows((rows) => rows.map((row, rowIndex) => (
+      rowIndex === index
+        ? { ...row, productId, productName: product?.name || "未紐づけ", matched: Boolean(product) }
+        : row
+    )));
+  }
+
+  function applySalesCsvPreview() {
+    const validRows = salesCsvPreviewRows.filter((row) => row.productId && row.quantity > 0);
+    if (!validRows.length) {
+      setSalesCsvStatus("反映できる行がありません。未紐づけの商品を選んでください。");
+      return;
+    }
+    const aggregate = new Map<string, { month: string; productId: string; quantity: number; salesAmount: number }>();
+    validRows.forEach((row) => {
+      const key = `${row.month}:${row.productId}`;
+      const current = aggregate.get(key) || { month: row.month, productId: row.productId, quantity: 0, salesAmount: 0 };
+      aggregate.set(key, {
+        ...current,
+        quantity: current.quantity + row.quantity,
+        salesAmount: current.salesAmount + row.salesAmount,
+      });
+    });
+    let nextSalesRecords = data.salesRecords;
+    aggregate.forEach((row) => {
+      const existing = nextSalesRecords.find((record) => record.month === row.month && record.productId === row.productId);
+      const existingAmount = existing ? existing.quantity * existing.sellingPrice : 0;
+      const nextQuantity = (existing?.quantity || 0) + row.quantity;
+      const nextAmount = existingAmount + row.salesAmount;
+      const nextRecord: SalesRecord = {
+        id: existing?.id || createId("sales"),
+        month: row.month,
+        productId: row.productId,
+        quantity: nextQuantity,
+        sellingPrice: nextQuantity ? nextAmount / nextQuantity : 0,
+        memo: `売上CSV取込: ${salesCsvFileName || "CSV"}`,
+        createdAt: existing?.createdAt || now(),
+        updatedAt: now(),
+      };
+      nextSalesRecords = upsertSalesRecord(nextSalesRecords, nextRecord);
+    });
+    commit({ ...data, salesRecords: nextSalesRecords });
+    setSalesCsvStatus(`${validRows.length}行を売上データに反映しました。経営判断と月間理論原価に反映されています。`);
   }
 
   function loadStoreData(storeId: string, pin = "") {
@@ -5376,6 +5546,9 @@ export function CostNutritionApp() {
                 <button className="rounded-md bg-violet-700 px-4 py-3 font-black text-white" onClick={createManagementAiComment}>
                   AIコメント作成
                 </button>
+                <button className="rounded-md border border-cyan-300 bg-white px-4 py-3 font-black text-cyan-800" onClick={() => setActivePage("salesImport")}>
+                  レジCSVを取り込む
+                </button>
               </div>
               <div className="mt-4 grid gap-3 md:grid-cols-3">
                 <TextAreaInput
@@ -5734,6 +5907,102 @@ export function CostNutritionApp() {
                   {wasteSummary.topRows.length === 0 && <p className="text-sm font-bold text-neutral-500">記録するとここに集計されます。</p>}
                 </div>
               </section>
+            </section>
+          </div>
+        </Panel>
+      )}
+
+      {activePage === "salesImport" && (
+        <Panel title="売上CSV取込">
+          <div className="grid gap-4">
+            <section className="rounded-md border border-cyan-100 bg-cyan-50 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black text-cyan-700">レジCSVを経営判断へ反映</p>
+                  <h2 className="mt-1 text-xl font-black text-neutral-950">売上CSVを取り込む</h2>
+                  <p className="mt-2 text-sm font-bold text-neutral-600">
+                    CSVの見出しは「日付」「商品名」「数量」「売上金額」に対応します。商品名は登録済み商品と自動で紐づけます。
+                  </p>
+                </div>
+                <label className="inline-flex min-h-12 cursor-pointer items-center rounded-md bg-cyan-700 px-5 py-3 font-black text-white shadow-sm">
+                  CSVファイルを選択
+                  <input
+                    type="file"
+                    accept=".csv,text/csv"
+                    className="hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) void readSalesCsvFile(file).catch((error) => {
+                        setSalesCsvStatus(error instanceof Error ? error.message : "CSVを読み込めませんでした。");
+                      });
+                      event.currentTarget.value = "";
+                    }}
+                  />
+                </label>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <StatCard label="読込ファイル" value={salesCsvFileName || "未選択"} tone="blue" />
+                <StatCard label="読込行数" value={`${salesCsvPreviewRows.length}行`} tone="green" />
+                <StatCard label="未紐づけ" value={`${salesCsvPreviewRows.filter((row) => !row.matched).length}行`} tone={salesCsvPreviewRows.some((row) => !row.matched) ? "amber" : "green"} />
+              </div>
+              {salesCsvStatus ? (
+                <p className="mt-3 rounded-md border border-cyan-200 bg-white p-3 text-sm font-black text-cyan-900">{salesCsvStatus}</p>
+              ) : null}
+            </section>
+
+            <section className="rounded-md border border-neutral-200 bg-white p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="font-black text-neutral-950">取込プレビュー</h3>
+                  <p className="mt-1 text-xs font-bold text-neutral-500">未紐づけの商品は、商品欄から手動で選べます。</p>
+                </div>
+                <button className="rounded-md bg-cyan-700 px-4 py-2 font-black text-white" onClick={applySalesCsvPreview}>
+                  売上データに反映
+                </button>
+              </div>
+              <div className="mt-3 overflow-x-auto">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="bg-neutral-50 text-xs font-black text-neutral-500">
+                    <tr>
+                      <th className="p-3">月</th>
+                      <th className="p-3">CSV商品名</th>
+                      <th className="p-3">紐づけ商品</th>
+                      <th className="p-3 text-right">数量</th>
+                      <th className="p-3 text-right">売上金額</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {salesCsvPreviewRows.slice(0, 80).map((row, index) => (
+                      <tr key={`${row.rawProductName}-${index}`} className="border-t border-neutral-100">
+                        <td className="p-3 font-bold">{row.month}</td>
+                        <td className="p-3 font-bold">{row.rawProductName || "-"}</td>
+                        <td className="p-3">
+                          <select
+                            className={`min-h-10 rounded-md border px-2 py-1 font-bold ${row.matched ? "border-teal-200 bg-teal-50 text-teal-900" : "border-amber-200 bg-amber-50 text-amber-900"}`}
+                            value={row.productId}
+                            onChange={(event) => updateSalesCsvPreviewProduct(index, event.target.value)}
+                          >
+                            <option value="">未紐づけ</option>
+                            {data.products.filter((product) => !product.isIntermediateMaterial).map((product) => (
+                              <option key={product.id} value={product.id}>{product.name}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="p-3 text-right font-bold">{number(row.quantity, 0)}</td>
+                        <td className="p-3 text-right font-bold">{yen(row.salesAmount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {salesCsvPreviewRows.length === 0 && <EmptyState text="CSVを選択すると、ここに取込内容が表示されます。" />}
+                {salesCsvPreviewRows.length > 80 ? (
+                  <p className="mt-3 text-xs font-bold text-neutral-500">表示は先頭80行までです。反映は読み込んだ全行が対象です。</p>
+                ) : null}
+              </div>
+            </section>
+
+            <section className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-900">
+              CSVの列名が違う場合でも、日付/日時、商品名/品名/メニュー、数量/個数、売上/金額/合計に近い見出しを自動判定します。読み取りにくいCSVは、1列目=日付、2列目=商品名、3列目=数量、4列目=売上金額の順にしてください。
             </section>
           </div>
         </Panel>
