@@ -1,4 +1,4 @@
--- パティスリー原価ガード: store_id 用RLS修復SQL
+-- パティスリー経営ナビ: store_id 用RLS修復SQL
 -- エラー例:
 -- new row violates row-level security policy for table "ingredients"
 --

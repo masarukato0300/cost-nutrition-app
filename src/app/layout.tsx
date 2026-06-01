@@ -2,8 +2,21 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "原価計算＋栄養成分表示 MVP",
-  description: "洋菓子店・飲食店向けの原価計算と栄養成分表示MVP",
+  applicationName: "パティスリー経営ナビ",
+  title: "パティスリー経営ナビ",
+  description:
+    "原価計算・レジ売上・粗利分析・商圏分析をもとに、洋菓子店の経営判断をサポートするアプリです。",
+  appleWebApp: {
+    capable: true,
+    title: "パティスリー経営ナビ",
+  },
+  openGraph: {
+    title: "パティスリー経営ナビ",
+    description:
+      "原価・売上・粗利・商圏から、次の一手が見える。小さな洋菓子店のためのAI経営判断アプリ。",
+    type: "website",
+    locale: "ja_JP",
+  },
 };
 
 export default function RootLayout({

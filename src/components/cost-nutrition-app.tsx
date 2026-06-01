@@ -3874,9 +3874,12 @@ export function CostNutritionApp() {
         <div>
           <p className="flex items-center gap-2 font-bold text-teal-700">
             <span className={`h-3 w-3 rounded-full ${currentTone.mark}`} />
-            洋菓子店・飲食店向け MVP
+            小さな洋菓子店のためのAI経営判断アプリ
           </p>
-          <h1 className="text-2xl font-black md:text-3xl">原価計算＋栄養成分表示</h1>
+          <h1 className="text-2xl font-black md:text-3xl">パティスリー経営ナビ</h1>
+          <p className="mt-1 text-sm font-bold text-neutral-700">
+            原価・売上・粗利・商圏から、次の一手が見える。
+          </p>
           <p className="mt-1 text-xs font-bold text-neutral-500">
             現在の店舗: {currentStoreId} / {cloudSyncStatus}
           </p>
@@ -3975,7 +3978,7 @@ export function CostNutritionApp() {
               <div className="grid gap-4 lg:grid-cols-[1fr_220px] lg:items-center">
                 <div>
                   <p className={`text-xs font-black ${isOnboardingSupportActive ? "text-green-700" : "text-neutral-500"}`}>
-                    公式LINE: パティスリー原価ガード初期設定代行
+                    公式LINE: パティスリー経営ナビ初期設定代行
                   </p>
                   <h3 className="mt-1 text-xl font-black text-neutral-950">
                     {isOnboardingSupportActive ? "初期設定サポート受付中" : "初期設定サポート期間は終了しました"}

@@ -1,6 +1,7 @@
 {
-  "name": "cost-nutrition-label-mvp",
+  "name": "patisserie-management-navi",
   "version": "0.1.0",
+  "description": "原価・売上・粗利・商圏から、次の一手が見える。小さな洋菓子店のためのAI経営判断アプリ。",
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
