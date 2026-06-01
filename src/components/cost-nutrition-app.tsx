@@ -99,6 +99,7 @@ const pages = [
   { key: "cost", label: "原価計算" },
   { key: "management", label: "経営判断" },
   { key: "salesAnalysis", label: "売上・粗利" },
+  { key: "commercialArea", label: "商圏分析" },
   { key: "nutrition", label: "栄養成分計算" },
   { key: "allergen", label: "アレルゲン一覧" },
   { key: "production", label: "仕込み量逆算" },
@@ -123,7 +124,7 @@ type WasteCategoryKey = (typeof wasteCategories)[number]["key"];
 const mainNavPageKeys: PageNavKey[] = ["top", "help", "manage"];
 const bottomNavPageKeys: PageNavKey[] = ["ingredient", "product", "recipe"];
 const navGroups = [
-  { key: "costs", label: "原価・値上げ", description: "経営判断、売上粗利、原価計算、値上げ", pages: ["management", "salesAnalysis", "cost", "impact", "event", "labor", "set"] },
+  { key: "costs", label: "原価・値上げ", description: "経営判断、売上粗利、商圏、原価計算", pages: ["management", "salesAnalysis", "commercialArea", "cost", "impact", "event", "labor", "set"] },
   { key: "display", label: "表示・ラベル", description: "栄養成分、アレルゲン、ラベル", pages: ["nutrition", "allergen", "label"] },
   { key: "operation", label: "現場管理", description: "仕込み、発注、廃棄、売上CSV、月間原価", pages: ["production", "order", "waste", "salesImport", "monthly"] },
   { key: "data", label: "データ管理", description: "商品一覧、カテゴリ、原材料一覧、OCR候補、CSV出力、設定", pages: ["productList", "productCategory", "master", "ocrQueue", "csv", "settings"] },
@@ -194,6 +195,12 @@ const pageTones: Record<PageNavKey, { navActive: string; navIdle: string; topCar
     navIdle: "border-indigo-500 bg-indigo-50 text-indigo-900 hover:bg-indigo-100",
     topCard: "border-indigo-100 bg-indigo-50/70 hover:border-indigo-400",
     mark: "bg-indigo-600",
+  },
+  commercialArea: {
+    navActive: "border-slate-800 bg-slate-700 text-white shadow-sm",
+    navIdle: "border-slate-500 bg-slate-50 text-slate-900 hover:bg-slate-100",
+    topCard: "border-slate-100 bg-slate-50/70 hover:border-slate-400",
+    mark: "bg-slate-600",
   },
   nutrition: {
     navActive: "border-lime-700 bg-lime-600 text-white shadow-sm",
@@ -336,6 +343,8 @@ type ManagementAiResult = {
   growth_actions?: string[];
   waste_actions?: string[];
   diagnosis_comment?: string;
+  fit_actions?: string[];
+  questions_to_confirm?: string[];
   next_steps?: string[];
 };
 type SalesCsvPreviewRow = {
@@ -348,6 +357,25 @@ type SalesCsvPreviewRow = {
   matched: boolean;
 };
 type SalesAnalysisSortKey = "salesAmount" | "grossProfit" | "costRate" | "salesQuantity" | "wasteQuantity";
+type CommercialAreaPlace = {
+  id: string;
+  name: string;
+  address: string;
+  rating: number | null;
+  reviewCount: number;
+};
+type CommercialAreaResult = {
+  formattedAddress: string;
+  latitude: number;
+  longitude: number;
+  radiusKm: number;
+  groups: Array<{
+    key: string;
+    label: string;
+    places: CommercialAreaPlace[];
+  }>;
+  note?: string;
+};
 type CloudStoreAuthResponse = {
   ok: boolean;
   cloudConfigured?: boolean;
@@ -637,6 +665,7 @@ function NavPictogram({ pageKey }: { pageKey: PageNavKey }) {
     cost: <><circle className={common} cx="12" cy="12" r="9" /><path className={common} d="M8 7l4 5 4-5M9 13h6M9 16h6" /></>,
     management: <><path className={common} d="M4 18h16" /><path className={common} d="M6 15l4-5 3 3 5-7" /><path className={common} d="M16 6h3v3" /><path className={common} d="M5 21h14" /></>,
     salesAnalysis: <><path className={common} d="M4 19h16" /><path className={common} d="M7 16V9M12 16V5M17 16v-4" /><path className={common} d="M5 7h4l2 4 3-6 2 5h3" /></>,
+    commercialArea: <><path className={common} d="M12 21s7-5.2 7-11a7 7 0 1 0-14 0c0 5.8 7 11 7 11Z" /><circle className={common} cx="12" cy="10" r="2.5" /><path className={common} d="M4 21h16" /></>,
     nutrition: <><path className={common} d="M5 13c0-5 4-8 11-8 0 7-3 11-8 11-2 0-3-1-3-3Z" /><path className={common} d="M8 16c2-4 5-6 8-8" /></>,
     allergen: <><path className={common} d="M12 3 22 20H2L12 3Z" /><path className={common} d="M12 9v5" /><path className={common} d="M12 18h.01" /></>,
     production: <><path className={common} d="M4 18h16" /><path className={common} d="M7 18V9l5-4 5 4v9" /><path className={common} d="M9 13h6" /></>,
@@ -874,6 +903,7 @@ function topPageDescription(pageKey: PageKey) {
     cost: "材料原価と包材込み原価を確認",
     management: "売上、粗利、廃棄から経営判断を確認",
     salesAnalysis: "商品別の売上・粗利ランキングを確認",
+    commercialArea: "住所から周辺競合店を確認",
     nutrition: "レシピから栄養成分表示を計算",
     allergen: "商品ごとのアレルゲンを一覧確認",
     production: "予定数から必要材料を逆算",
@@ -1535,10 +1565,23 @@ export function CostNutritionApp() {
   const [salesCsvPreviewRows, setSalesCsvPreviewRows] = useState<SalesCsvPreviewRow[]>([]);
   const [salesCsvFileName, setSalesCsvFileName] = useState("");
   const [salesAnalysisSort, setSalesAnalysisSort] = useState<SalesAnalysisSortKey>("grossProfit");
+  const [commercialAreaAddress, setCommercialAreaAddress] = useState("");
+  const [commercialAreaRadiusKm, setCommercialAreaRadiusKm] = useState(5);
+  const [commercialAreaStatus, setCommercialAreaStatus] = useState("");
+  const [commercialAreaResult, setCommercialAreaResult] = useState<CommercialAreaResult | null>(null);
+  const [isCommercialAreaLoading, setIsCommercialAreaLoading] = useState(false);
   const [managementDiagnosisAnswers, setManagementDiagnosisAnswers] = useState({
-    goal: "",
+    purpose: "",
     concern: "",
+    constraint: "",
     strength: "",
+    customerValue: "",
+    roleBalance: "",
+    idealWorkload: "",
+    productBurden: "",
+    noCompromise: "",
+    localSupporters: "",
+    smallExperiment: "",
   });
   const [actualCostForm, setActualCostForm] = useState<ActualCostRecord>(() => ({ ...emptyActualCostRecord(), month: "2026-05" }));
   const [eventPlanForm, setEventPlanForm] = useState<EventPlan>(() => emptyEventPlan());
@@ -1850,6 +1893,35 @@ export function CostNutritionApp() {
       setManagementAiStatus("AI経営コメントを作成しました。");
     } catch (error) {
       setManagementAiStatus(error instanceof Error ? error.message : "AI経営コメントを作成できませんでした。");
+    }
+  }
+
+  async function runCommercialAreaAnalysis() {
+    const address = commercialAreaAddress.trim();
+    if (!address) {
+      setCommercialAreaStatus("住所を入力してください。");
+      return;
+    }
+    try {
+      setIsCommercialAreaLoading(true);
+      setCommercialAreaStatus("住所と周辺店舗を調べています...");
+      setCommercialAreaResult(null);
+      const response = await fetch("/api/commercial-area-analysis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          address,
+          radiusKm: commercialAreaRadiusKm,
+        }),
+      });
+      const payload = await response.json() as { ok?: boolean; error?: string } & CommercialAreaResult;
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "商圏分析に失敗しました。");
+      setCommercialAreaResult(payload);
+      setCommercialAreaStatus("周辺競合を取得しました。");
+    } catch (error) {
+      setCommercialAreaStatus(error instanceof Error ? error.message : "商圏分析に失敗しました。");
+    } finally {
+      setIsCommercialAreaLoading(false);
     }
   }
 
@@ -5559,7 +5631,7 @@ export function CostNutritionApp() {
                 <div>
                   <h3 className="font-black text-violet-950">AI経営コメント</h3>
                   <p className="mt-1 text-sm font-bold text-violet-700">
-                    AIにはレシピ全文ではなく、上の集計済みデータと診断回答だけを送ります。
+                    売上を無理に増やす提案ではなく、大切にしたいこと・制約・強みを一緒に整理します。
                   </p>
                 </div>
                 <button className="rounded-md bg-violet-700 px-4 py-3 font-black text-white" onClick={createManagementAiComment}>
@@ -5569,23 +5641,77 @@ export function CostNutritionApp() {
                   レジCSVを取り込む
                 </button>
               </div>
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <div className="mt-4 rounded-md border border-violet-200 bg-white p-3 text-sm font-bold text-violet-900">
+                AIにはレシピ全文ではなく、集計済みの数字と下の回答だけを送ります。小さな店では「忙しくすれば解決」ではなく、続けられる利益構造を優先して見ます。
+              </div>
+              <div className="mt-3 rounded-md border border-dashed border-violet-300 bg-white/80 p-3 text-xs font-bold text-violet-800">
+                全部埋めなくても使えます。分かるところだけ入れるほど、「その店に合う施策」に寄せやすくなります。
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
                 <TextAreaInput
-                  label="今月の目標"
-                  value={managementDiagnosisAnswers.goal}
-                  onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, goal: value }))}
+                  label="この店は何のためにありますか？"
+                  value={managementDiagnosisAnswers.purpose}
+                  onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, purpose: value }))}
                   rows={3}
                 />
                 <TextAreaInput
-                  label="今困っていること"
+                  label="今、一番しんどいこと"
                   value={managementDiagnosisAnswers.concern}
                   onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, concern: value }))}
                   rows={3}
                 />
                 <TextAreaInput
-                  label="お店の強み"
+                  label="これ以上増やしたくない負担・本当の制約"
+                  value={managementDiagnosisAnswers.constraint}
+                  onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, constraint: value }))}
+                  rows={3}
+                />
+                <TextAreaInput
+                  label="すでにある強み"
                   value={managementDiagnosisAnswers.strength}
                   onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, strength: value }))}
+                  rows={3}
+                />
+                <TextAreaInput
+                  label="お客様は何を買っていると思いますか？"
+                  value={managementDiagnosisAnswers.customerValue}
+                  onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, customerValue: value }))}
+                  rows={3}
+                />
+                <TextAreaInput
+                  label="夫婦・スタッフの役割で無理がある所"
+                  value={managementDiagnosisAnswers.roleBalance}
+                  onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, roleBalance: value }))}
+                  rows={3}
+                />
+                <TextAreaInput
+                  label="理想の働き方・これくらいなら続けられる状態"
+                  value={managementDiagnosisAnswers.idealWorkload}
+                  onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, idealWorkload: value }))}
+                  rows={3}
+                />
+                <TextAreaInput
+                  label="人気だけど時間や体力を奪っている商品"
+                  value={managementDiagnosisAnswers.productBurden}
+                  onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, productBurden: value }))}
+                  rows={3}
+                />
+                <TextAreaInput
+                  label="絶対に落としたくない品質・関係性"
+                  value={managementDiagnosisAnswers.noCompromise}
+                  onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, noCompromise: value }))}
+                  rows={3}
+                />
+                <TextAreaInput
+                  label="この店がなくなると困る人・喜んでくれる人"
+                  value={managementDiagnosisAnswers.localSupporters}
+                  onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, localSupporters: value }))}
+                  rows={3}
+                />
+                <TextAreaInput
+                  label="試してみてもよさそうな小さな実験"
+                  value={managementDiagnosisAnswers.smallExperiment}
+                  onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, smallExperiment: value }))}
                   rows={3}
                 />
               </div>
@@ -5600,6 +5726,8 @@ export function CostNutritionApp() {
                   <AiActionList title="伸ばす施策" items={managementAiResult.growth_actions} />
                   <AiActionList title="廃棄・作りすぎ対策" items={managementAiResult.waste_actions} />
                   {managementAiResult.diagnosis_comment ? <p className="rounded-md bg-violet-50 p-3 font-bold text-violet-900">{managementAiResult.diagnosis_comment}</p> : null}
+                  <AiActionList title="この店に合いそうな施策" items={managementAiResult.fit_actions} />
+                  <AiActionList title="追加で確認したい問い" items={managementAiResult.questions_to_confirm} />
                   <AiActionList title="次にやること" items={managementAiResult.next_steps} />
                 </div>
               ) : null}
@@ -5701,6 +5829,87 @@ export function CostNutritionApp() {
               </div>
               <SalesAnalysisTable rows={salesAnalysisRows} />
             </section>
+          </div>
+        </Panel>
+      )}
+
+      {activePage === "commercialArea" && (
+        <Panel title="商圏分析">
+          <div className="grid gap-4">
+            <section className="rounded-md border border-slate-100 bg-slate-50 p-4">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black text-slate-700">住所から周辺競合を確認</p>
+                  <h2 className="mt-1 text-xl font-black text-neutral-950">周辺のケーキ屋・パン屋・カフェを調べる</h2>
+                  <p className="mt-1 text-sm font-bold text-neutral-600">
+                    まずは競合店数のMVPです。人口・所得・年齢層は次の段階で追加できます。
+                  </p>
+                </div>
+                <button
+                  className="rounded-md bg-slate-800 px-5 py-3 font-black text-white disabled:cursor-not-allowed disabled:bg-slate-400"
+                  onClick={runCommercialAreaAnalysis}
+                  disabled={isCommercialAreaLoading}
+                >
+                  {isCommercialAreaLoading ? "調査中..." : "周辺競合を調べる"}
+                </button>
+              </div>
+              <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_220px]">
+                <TextInput
+                  label="店舗住所"
+                  value={commercialAreaAddress}
+                  onChange={setCommercialAreaAddress}
+                  placeholder="例：奈良県奈良市〇〇町1-2-3"
+                />
+                <label className="grid gap-1 font-bold text-neutral-600">
+                  <span>半径</span>
+                  <select
+                    value={commercialAreaRadiusKm}
+                    onChange={(event) => setCommercialAreaRadiusKm(Number(event.target.value))}
+                    className="min-h-11 rounded-md border border-neutral-200 bg-white px-3 py-2 text-neutral-900 shadow-sm outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                  >
+                    <option value={1}>1km</option>
+                    <option value={3}>3km</option>
+                    <option value={5}>5km</option>
+                    <option value={10}>10km</option>
+                  </select>
+                </label>
+              </div>
+              {commercialAreaStatus ? (
+                <p className="mt-3 rounded-md border border-slate-200 bg-white p-3 text-sm font-black text-slate-900">{commercialAreaStatus}</p>
+              ) : null}
+            </section>
+
+            {commercialAreaResult ? (
+              <>
+                <section className="rounded-md border border-neutral-200 bg-white p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="font-black text-neutral-950">分析地点</h3>
+                      <p className="mt-1 text-sm font-bold text-neutral-600">{commercialAreaResult.formattedAddress}</p>
+                      <p className="mt-1 text-xs font-bold text-neutral-500">
+                        緯度 {number(commercialAreaResult.latitude, 5)} / 経度 {number(commercialAreaResult.longitude, 5)} / 半径 {commercialAreaResult.radiusKm}km
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {commercialAreaResult.groups.map((group) => (
+                        <StatCard key={group.key} label={group.label} value={`${group.places.length}件`} tone={group.places.length >= 15 ? "red" : group.places.length >= 8 ? "amber" : "green"} />
+                      ))}
+                    </div>
+                  </div>
+                  {commercialAreaResult.note ? (
+                    <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-900">{commercialAreaResult.note}</p>
+                  ) : null}
+                </section>
+
+                <section className="grid gap-4 lg:grid-cols-3">
+                  {commercialAreaResult.groups.map((group) => (
+                    <CommercialAreaGroupCard key={group.key} group={group} />
+                  ))}
+                </section>
+              </>
+            ) : (
+              <EmptyState text="住所を入力して「周辺競合を調べる」を押すと、競合候補が表示されます。" />
+            )}
           </div>
         </Panel>
       )}
@@ -7039,6 +7248,35 @@ function SalesAnalysisTable({ rows }: { rows: ProductManagementMetric[] }) {
   );
 }
 
+function CommercialAreaGroupCard({ group }: { group: CommercialAreaResult["groups"][number] }) {
+  return (
+    <section className="rounded-md border border-neutral-200 bg-white p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h3 className="font-black text-neutral-950">{group.label}</h3>
+          <p className="mt-1 text-xs font-bold text-neutral-500">近い競合候補</p>
+        </div>
+        <span className="rounded-md bg-slate-100 px-3 py-2 text-sm font-black text-slate-800">{group.places.length}件</span>
+      </div>
+      <div className="mt-3 grid gap-2">
+        {group.places.slice(0, 10).map((place) => (
+          <div key={place.id} className="rounded-md border border-neutral-100 bg-neutral-50 p-3 text-sm">
+            <strong className="block text-neutral-950">{place.name}</strong>
+            <p className="mt-1 text-xs font-bold text-neutral-500">{place.address || "住所情報なし"}</p>
+            <p className="mt-2 text-xs font-black text-slate-700">
+              評価 {place.rating ? number(place.rating, 1) : "-"} / 口コミ {number(place.reviewCount, 0)}件
+            </p>
+          </div>
+        ))}
+        {group.places.length === 0 && <EmptyState text="この条件では候補が見つかりませんでした。" />}
+        {group.places.length > 10 ? (
+          <p className="text-xs font-bold text-neutral-500">表示は上位10件です。</p>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
 function AiActionList({ title, items }: { title: string; items?: string[] }) {
   if (!items?.length) return null;
   return (
@@ -7332,11 +7570,13 @@ function TextInput({
   value,
   onChange,
   onEnter,
+  placeholder,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   onEnter?: () => void;
+  placeholder?: string;
 }) {
   return (
     <label className="grid gap-1 font-bold text-neutral-600">
@@ -7344,6 +7584,7 @@ function TextInput({
       <input
         className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-neutral-900 shadow-sm outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
         value={value}
+        placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Enter") onEnter?.();
