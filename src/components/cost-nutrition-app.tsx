@@ -868,6 +868,10 @@ function standardNutritionScore(food: StandardNutritionFood, query: string) {
   const normalizedQuery = normalizeText(query);
   if (!normalizedQuery) return 0;
   const normalizedName = normalizeText(food.name);
+  if (/牛乳|ミルク/.test(normalizedQuery) && normalizedName.includes("普通牛乳")) return 120;
+  if (/牛乳|ミルク/.test(normalizedQuery) && normalizedName.includes("牛乳")) return 80;
+  if (/生クリーム|フレッシュクリーム|クリーム/.test(normalizedQuery) && normalizedName.includes("クリーム")) return 70;
+  if (/全卵|卵|玉子|液卵/.test(normalizedQuery) && normalizedName.includes("全卵")) return 90;
   if (normalizedName.includes(normalizedQuery)) return normalizedQuery.length + 20;
   if (normalizedQuery.includes(normalizedName)) return normalizedName.length + 10;
   return ingredientSearchTerms({
@@ -1492,7 +1496,20 @@ export function CostNutritionApp() {
   const ingredientPhotoInputRef = useRef<HTMLInputElement | null>(null);
   const saveRequestSeqRef = useRef(0);
   const editedBeforeInitialCloudLoadRef = useRef(false);
-  const [activePage, setActivePage] = useState<PageKey>("top");
+  const [activePage, setActivePageState] = useState<PageKey>("top");
+  const previousPageRef = useRef<PageKey>("top");
+  function setActivePage(page: PageKey) {
+    if (page !== activePage) previousPageRef.current = activePage;
+    setActivePageState(page);
+  }
+  function goToPreviousPage() {
+    const previousPage = previousPageRef.current;
+    if (previousPage && previousPage !== activePage) {
+      setActivePageState(previousPage);
+    } else {
+      setActivePageState("top");
+    }
+  }
   const [stores, setStores] = useState<StoreAccount[]>([{ id: defaultStoreId, pin: "0000", createdAt: now(), updatedAt: now() }]);
   const [currentStoreId, setCurrentStoreId] = useState(defaultStoreId);
   const [currentStorePin, setCurrentStorePin] = useState("");
@@ -1571,6 +1588,10 @@ export function CostNutritionApp() {
   const [commercialAreaResult, setCommercialAreaResult] = useState<CommercialAreaResult | null>(null);
   const [isCommercialAreaLoading, setIsCommercialAreaLoading] = useState(false);
   const [managementDiagnosisAnswers, setManagementDiagnosisAnswers] = useState({
+    currentScale: "",
+    futureScale: "",
+    mainGoal: "",
+    decisionStage: "",
     purpose: "",
     concern: "",
     constraint: "",
@@ -5021,6 +5042,9 @@ export function CostNutritionApp() {
             </div>
           )}
           <div className="mt-3 flex flex-wrap gap-2">
+            <button className="rounded-md border border-neutral-300 bg-white px-4 py-2 font-bold text-neutral-700" onClick={goToPreviousPage}>
+              戻る
+            </button>
             <button className="rounded-md bg-teal-700 px-4 py-2 font-bold text-white" onClick={saveIngredient}>
               原材料を保存
             </button>
@@ -5631,7 +5655,7 @@ export function CostNutritionApp() {
                 <div>
                   <h3 className="font-black text-violet-950">AI経営コメント</h3>
                   <p className="mt-1 text-sm font-bold text-violet-700">
-                    売上を無理に増やす提案ではなく、大切にしたいこと・制約・強みを一緒に整理します。
+                    まず規模感と目標を確認し、その店に合う問いと施策を一緒に整理します。
                   </p>
                 </div>
                 <button className="rounded-md bg-violet-700 px-4 py-3 font-black text-white" onClick={createManagementAiComment}>
@@ -5642,78 +5666,126 @@ export function CostNutritionApp() {
                 </button>
               </div>
               <div className="mt-4 rounded-md border border-violet-200 bg-white p-3 text-sm font-bold text-violet-900">
-                AIにはレシピ全文ではなく、集計済みの数字と下の回答だけを送ります。小さな店では「忙しくすれば解決」ではなく、続けられる利益構造を優先して見ます。
+                AIにはレシピ全文ではなく、集計済みの数字と下の回答だけを送ります。現状の規模と目指す規模に合わせて、次に考えるべき問いを出します。
               </div>
               <div className="mt-3 rounded-md border border-dashed border-violet-300 bg-white/80 p-3 text-xs font-bold text-violet-800">
                 全部埋めなくても使えます。分かるところだけ入れるほど、「その店に合う施策」に寄せやすくなります。
               </div>
-              <div className="mt-4 grid gap-3 md:grid-cols-2">
-                <TextAreaInput
-                  label="この店は何のためにありますか？"
-                  value={managementDiagnosisAnswers.purpose}
-                  onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, purpose: value }))}
-                  rows={3}
-                />
-                <TextAreaInput
-                  label="今、一番しんどいこと"
-                  value={managementDiagnosisAnswers.concern}
-                  onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, concern: value }))}
-                  rows={3}
-                />
-                <TextAreaInput
-                  label="これ以上増やしたくない負担・本当の制約"
-                  value={managementDiagnosisAnswers.constraint}
-                  onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, constraint: value }))}
-                  rows={3}
-                />
-                <TextAreaInput
-                  label="すでにある強み"
-                  value={managementDiagnosisAnswers.strength}
-                  onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, strength: value }))}
-                  rows={3}
-                />
-                <TextAreaInput
-                  label="お客様は何を買っていると思いますか？"
-                  value={managementDiagnosisAnswers.customerValue}
-                  onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, customerValue: value }))}
-                  rows={3}
-                />
-                <TextAreaInput
-                  label="夫婦・スタッフの役割で無理がある所"
-                  value={managementDiagnosisAnswers.roleBalance}
-                  onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, roleBalance: value }))}
-                  rows={3}
-                />
-                <TextAreaInput
-                  label="理想の働き方・これくらいなら続けられる状態"
-                  value={managementDiagnosisAnswers.idealWorkload}
-                  onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, idealWorkload: value }))}
-                  rows={3}
-                />
-                <TextAreaInput
-                  label="人気だけど時間や体力を奪っている商品"
-                  value={managementDiagnosisAnswers.productBurden}
-                  onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, productBurden: value }))}
-                  rows={3}
-                />
-                <TextAreaInput
-                  label="絶対に落としたくない品質・関係性"
-                  value={managementDiagnosisAnswers.noCompromise}
-                  onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, noCompromise: value }))}
-                  rows={3}
-                />
-                <TextAreaInput
-                  label="この店がなくなると困る人・喜んでくれる人"
-                  value={managementDiagnosisAnswers.localSupporters}
-                  onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, localSupporters: value }))}
-                  rows={3}
-                />
-                <TextAreaInput
-                  label="試してみてもよさそうな小さな実験"
-                  value={managementDiagnosisAnswers.smallExperiment}
-                  onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, smallExperiment: value }))}
-                  rows={3}
-                />
+              <div className="mt-4 grid gap-4">
+                <section className="rounded-md border border-violet-200 bg-white p-3">
+                  <h4 className="font-black text-violet-950">STEP1 現状と目標</h4>
+                  <p className="mt-1 text-xs font-bold text-violet-700">最初に店の規模感を見ます。ここで答えの方向が変わります。</p>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <TextAreaInput
+                      label="今の規模感"
+                      value={managementDiagnosisAnswers.currentScale}
+                      onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, currentScale: value }))}
+                      placeholder="例：夫婦2人、スタッフ3人、年商、席数、製造数、通販あり/なし"
+                      rows={3}
+                    />
+                    <TextAreaInput
+                      label="将来どの規模にしたいですか？"
+                      value={managementDiagnosisAnswers.futureScale}
+                      onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, futureScale: value }))}
+                      placeholder="例：今のまま楽に続けたい、スタッフを増やしたい、2店舗目、通販を伸ばしたい"
+                      rows={3}
+                    />
+                    <TextAreaInput
+                      label="今いちばん達成したい目標"
+                      value={managementDiagnosisAnswers.mainGoal}
+                      onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, mainGoal: value }))}
+                      placeholder="例：利益を残したい、休日を増やしたい、客単価を上げたい、廃棄を減らしたい"
+                      rows={3}
+                    />
+                    <TextAreaInput
+                      label="今の判断段階"
+                      value={managementDiagnosisAnswers.decisionStage}
+                      onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, decisionStage: value }))}
+                      placeholder="例：何が問題か知りたい、値上げしたい、商品を減らしたい、人を雇うか迷う"
+                      rows={3}
+                    />
+                  </div>
+                </section>
+
+                <section className="rounded-md border border-violet-200 bg-white p-3">
+                  <h4 className="font-black text-violet-950">STEP2 制約・強み・守りたいもの</h4>
+                  <p className="mt-1 text-xs font-bold text-violet-700">数字だけでは決められない条件を確認します。</p>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <TextAreaInput
+                      label="この店は何のためにありますか？"
+                      value={managementDiagnosisAnswers.purpose}
+                      onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, purpose: value }))}
+                      rows={3}
+                    />
+                    <TextAreaInput
+                      label="今、一番しんどいこと"
+                      value={managementDiagnosisAnswers.concern}
+                      onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, concern: value }))}
+                      rows={3}
+                    />
+                    <TextAreaInput
+                      label="これ以上増やしたくない負担・本当の制約"
+                      value={managementDiagnosisAnswers.constraint}
+                      onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, constraint: value }))}
+                      rows={3}
+                    />
+                    <TextAreaInput
+                      label="すでにある強み"
+                      value={managementDiagnosisAnswers.strength}
+                      onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, strength: value }))}
+                      rows={3}
+                    />
+                    <TextAreaInput
+                      label="お客様は何を買っていると思いますか？"
+                      value={managementDiagnosisAnswers.customerValue}
+                      onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, customerValue: value }))}
+                      rows={3}
+                    />
+                    <TextAreaInput
+                      label="夫婦・スタッフの役割で無理がある所"
+                      value={managementDiagnosisAnswers.roleBalance}
+                      onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, roleBalance: value }))}
+                      rows={3}
+                    />
+                  </div>
+                </section>
+
+                <section className="rounded-md border border-violet-200 bg-white p-3">
+                  <h4 className="font-black text-violet-950">STEP3 次の問いにつなげる材料</h4>
+                  <p className="mt-1 text-xs font-bold text-violet-700">ここを入れると、AIが次に聞くべき質問を出しやすくなります。</p>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <TextAreaInput
+                      label="理想の働き方・これくらいなら続けられる状態"
+                      value={managementDiagnosisAnswers.idealWorkload}
+                      onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, idealWorkload: value }))}
+                      rows={3}
+                    />
+                    <TextAreaInput
+                      label="人気だけど時間や体力を奪っている商品"
+                      value={managementDiagnosisAnswers.productBurden}
+                      onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, productBurden: value }))}
+                      rows={3}
+                    />
+                    <TextAreaInput
+                      label="絶対に落としたくない品質・関係性"
+                      value={managementDiagnosisAnswers.noCompromise}
+                      onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, noCompromise: value }))}
+                      rows={3}
+                    />
+                    <TextAreaInput
+                      label="この店がなくなると困る人・喜んでくれる人"
+                      value={managementDiagnosisAnswers.localSupporters}
+                      onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, localSupporters: value }))}
+                      rows={3}
+                    />
+                    <TextAreaInput
+                      label="試してみてもよさそうな小さな実験"
+                      value={managementDiagnosisAnswers.smallExperiment}
+                      onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, smallExperiment: value }))}
+                      rows={3}
+                    />
+                  </div>
+                </section>
               </div>
               {managementAiStatus ? (
                 <p className="mt-3 rounded-md border border-violet-200 bg-white p-3 text-sm font-black text-violet-900">{managementAiStatus}</p>
@@ -7599,11 +7671,13 @@ function TextAreaInput({
   value,
   onChange,
   rows = 4,
+  placeholder,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   rows?: number;
+  placeholder?: string;
 }) {
   return (
     <label className="grid gap-1 font-bold text-neutral-600">
@@ -7612,6 +7686,7 @@ function TextAreaInput({
         className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-neutral-900 shadow-sm outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
         value={value}
         rows={rows}
+        placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
       />
     </label>
