@@ -489,6 +489,13 @@ type ManagementAiResult = {
   };
   frameworks?: Record<string, unknown>;
 };
+type ManagementAiApiResponse = {
+  ok?: boolean;
+  result?: ManagementAiResult;
+  error?: string;
+  diagnosisSessionId?: string;
+  historySaved?: boolean;
+};
 type SalesCsvPreviewRow = {
   rawProductName: string;
   productId: string;
@@ -2091,6 +2098,7 @@ export function CostNutritionApp() {
         },
         body: JSON.stringify({
           featureName: "management_decision_comment",
+          diagnosisSessionId: createId("diag"),
           summary: {
             month: managementSummary.month,
             totalSalesAmount: managementSummary.totalSalesAmount,
@@ -2143,10 +2151,10 @@ export function CostNutritionApp() {
           diagnosisAnswers: managementDiagnosisAnswers,
         }),
       });
-      const payload = await response.json() as { ok?: boolean; result?: ManagementAiResult; error?: string };
+      const payload = await response.json() as ManagementAiApiResponse;
       if (!response.ok || !payload.ok) throw new Error(payload.error || "AI経営コメントを作成できませんでした。");
       setManagementAiResult(payload.result || null);
-      setManagementAiStatus("AI経営コメントを作成しました。");
+      setManagementAiStatus(payload.historySaved ? "AI経営コメントを作成し、診断履歴をSupabaseへ保存しました。" : "AI経営コメントを作成しました。診断履歴の保存は未完了です。");
     } catch (error) {
       setManagementAiStatus(error instanceof Error ? error.message : "AI経営コメントを作成できませんでした。");
     }

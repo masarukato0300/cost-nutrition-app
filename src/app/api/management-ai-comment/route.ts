@@ -19,6 +19,7 @@ type ManagementAiRequest = {
   featureName?: string;
   summary?: unknown;
   diagnosisAnswers?: Record<string, string | string[]>;
+  diagnosisSessionId?: string;
 };
 
 function envConfig() {
@@ -57,7 +58,26 @@ async function getSupabaseUser(supabaseUrl: string, serviceRoleKey: string, acce
   return readJson<SupabaseUser>(response, "ログインユーザーを確認できませんでした。");
 }
 
-async function getUserShop(supabaseUrl: string, serviceRoleKey: string, userId: string) {
+async function getUserStore(supabaseUrl: string, serviceRoleKey: string, userId: string) {
+  const profileResponse = await fetch(`${supabaseUrl}/rest/v1/user_profiles?user_id=eq.${encodeURIComponent(userId)}&select=store_id,role&limit=1`, {
+    headers: {
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+    },
+    cache: "no-store",
+  });
+  if (profileResponse.ok) {
+    const profiles = await readJson<UserProfile[]>(profileResponse, "店舗メンバー情報を確認できませんでした。");
+    const profile = profiles[0];
+    if (profile?.store_id) {
+      if (!["owner", "manager"].includes(profile.role)) throw new Error("AI経営判断を実行できる権限がありません。");
+      return { storeId: profile.store_id, role: profile.role };
+    }
+  } else {
+    const errorPayload = await profileResponse.json().catch(() => ({}));
+    console.warn("user_profiles lookup failed; falling back to shop_members", errorPayload);
+  }
+
   const response = await fetch(`${supabaseUrl}/rest/v1/shop_members?user_id=eq.${encodeURIComponent(userId)}&select=shop_id,role&limit=1`, {
     headers: {
       apikey: serviceRoleKey,
@@ -74,22 +94,10 @@ async function getUserShop(supabaseUrl: string, serviceRoleKey: string, userId: 
     console.warn("shop_members lookup failed; falling back to user_profiles", errorPayload);
   }
   if (!member) {
-    const profileResponse = await fetch(`${supabaseUrl}/rest/v1/user_profiles?user_id=eq.${encodeURIComponent(userId)}&select=store_id,role&limit=1`, {
-      headers: {
-        apikey: serviceRoleKey,
-        Authorization: `Bearer ${serviceRoleKey}`,
-      },
-      cache: "no-store",
-    });
-    const profiles = await readJson<UserProfile[]>(profileResponse, "店舗メンバー情報を確認できませんでした。");
-    const profile = profiles[0];
-    if (profile) {
-      member = { shop_id: profile.store_id, role: profile.role };
-    }
+    throw new Error("このユーザーに紐づく店舗がありません。");
   }
-  if (!member) throw new Error("このユーザーに紐づく店舗がありません。");
   if (!["owner", "manager"].includes(member.role)) throw new Error("AI経営判断を実行できる権限がありません。");
-  return member;
+  return { storeId: member.shop_id, role: member.role };
 }
 
 function compactPayload(body: ManagementAiRequest) {
@@ -103,7 +111,7 @@ async function writeAiUsageLog(
   supabaseUrl: string,
   serviceRoleKey: string,
   params: {
-    shopId: string;
+    storeId: string;
     userId: string;
     featureName: string;
     model: string;
@@ -120,7 +128,7 @@ async function writeAiUsageLog(
       Prefer: "return=minimal",
     },
     body: JSON.stringify({
-      shop_id: params.shopId,
+      store_id: params.storeId,
       user_id: params.userId,
       feature_name: params.featureName,
       model: params.model,
@@ -131,16 +139,90 @@ async function writeAiUsageLog(
   });
 }
 
+async function saveDiagnosisHistory(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  params: {
+    storeId: string;
+    diagnosisSessionId: string;
+    diagnosisAnswers: Record<string, string | string[]>;
+    result: Record<string, unknown>;
+  },
+) {
+  const headers = {
+    apikey: serviceRoleKey,
+    Authorization: `Bearer ${serviceRoleKey}`,
+    "Content-Type": "application/json",
+    Prefer: "return=minimal",
+  };
+  const answerRows = Object.entries(params.diagnosisAnswers)
+    .filter(([, value]) => Array.isArray(value) ? value.length > 0 : String(value || "").trim())
+    .map(([key, value]) => ({
+      store_id: params.storeId,
+      diagnosis_session_id: params.diagnosisSessionId,
+      question_key: key,
+      answer_text: Array.isArray(value) ? value.join("、") : String(value),
+    }));
+  const profileResponse = await fetch(`${supabaseUrl}/rest/v1/management_profiles?on_conflict=store_id`, {
+    method: "POST",
+    headers: {
+      ...headers,
+      Prefer: "resolution=merge-duplicates,return=minimal",
+    },
+    body: JSON.stringify({
+      store_id: params.storeId,
+      business_styles: Array.isArray(params.diagnosisAnswers.storeTypes) ? params.diagnosisAnswers.storeTypes : [],
+      location_types: [
+        params.diagnosisAnswers.locationType,
+        params.diagnosisAnswers.locationVisibility,
+        params.diagnosisAnswers.locationParking,
+        params.diagnosisAnswers.locationVisitType,
+      ].filter((value) => typeof value === "string" && value.trim()),
+      updated_at: new Date().toISOString(),
+    }),
+  });
+  if (!profileResponse.ok) throw new Error("AI診断プロフィールをSupabaseへ保存できませんでした。");
+
+  if (answerRows.length) {
+    const answerResponse = await fetch(`${supabaseUrl}/rest/v1/management_diagnosis_answers`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(answerRows),
+    });
+    if (!answerResponse.ok) throw new Error("AI診断回答をSupabaseへ保存できませんでした。");
+  }
+
+  const resultResponse = await fetch(`${supabaseUrl}/rest/v1/management_diagnosis_results`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      store_id: params.storeId,
+      diagnosis_session_id: params.diagnosisSessionId,
+      summary_json: params.result,
+      swot_json: (params.result.frameworks as Record<string, unknown> | undefined)?.swot || {},
+      three_c_json: (params.result.frameworks as Record<string, unknown> | undefined)?.three_c || {},
+      four_p_json: (params.result.frameworks as Record<string, unknown> | undefined)?.four_p || {},
+      stp_json: (params.result.frameworks as Record<string, unknown> | undefined)?.stp || {},
+      seven_s_json: (params.result.frameworks as Record<string, unknown> | undefined)?.seven_s || {},
+      pest_json: (params.result.frameworks as Record<string, unknown> | undefined)?.pest || {},
+      tows_json: (params.result.frameworks as Record<string, unknown> | undefined)?.tows || {},
+      action_plan_json: params.result.one_week_experiments || params.result.next_steps || [],
+    }),
+  });
+  if (!resultResponse.ok) throw new Error("AI診断結果をSupabaseへ保存できませんでした。");
+}
+
 export async function POST(request: Request) {
   try {
     const { supabaseUrl, serviceRoleKey, openaiApiKey } = envConfig();
     const accessToken = bearerToken(request);
     const user = await getSupabaseUser(supabaseUrl, serviceRoleKey, accessToken);
-    const member = await getUserShop(supabaseUrl, serviceRoleKey, user.id);
+    const member = await getUserStore(supabaseUrl, serviceRoleKey, user.id);
     const body = await request.json() as ManagementAiRequest;
     const model = process.env.OPENAI_MANAGEMENT_MODEL || "gpt-4o-mini";
     const featureName = body.featureName || "management_decision_comment";
     const payload = compactPayload(body);
+    const diagnosisSessionId = body.diagnosisSessionId || crypto.randomUUID();
 
     const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -242,7 +324,7 @@ export async function POST(request: Request) {
     }>(openaiResponse, "AI経営コメントを作成できませんでした。");
 
     await writeAiUsageLog(supabaseUrl, serviceRoleKey, {
-      shopId: member.shop_id,
+      storeId: member.storeId,
       userId: user.id,
       featureName,
       model,
@@ -251,7 +333,21 @@ export async function POST(request: Request) {
     });
 
     const content = openaiPayload.choices?.[0]?.message?.content || "{}";
-    return NextResponse.json({ ok: true, shopId: member.shop_id, result: JSON.parse(content) });
+    const result = JSON.parse(content) as Record<string, unknown>;
+    let historySaved = false;
+    try {
+      await saveDiagnosisHistory(supabaseUrl, serviceRoleKey, {
+        storeId: member.storeId,
+        diagnosisSessionId,
+        diagnosisAnswers: body.diagnosisAnswers || {},
+        result,
+      });
+      historySaved = true;
+    } catch (historyError) {
+      console.warn("management diagnosis history save failed", historyError);
+    }
+
+    return NextResponse.json({ ok: true, storeId: member.storeId, diagnosisSessionId, historySaved, result });
   } catch (error) {
     console.error("management-ai-comment failed", error);
     return NextResponse.json({
