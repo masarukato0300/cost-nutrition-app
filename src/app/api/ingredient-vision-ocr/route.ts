@@ -44,7 +44,43 @@ const schema = {
   },
 } as const;
 
+function supabaseServerConfig() {
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serviceKey) return null;
+  return { url: url.replace(/\/$/, ""), serviceKey };
+}
+
+function bearerToken(request: Request) {
+  const header = request.headers.get("authorization") || "";
+  return header.match(/^Bearer\s+(.+)$/i)?.[1] || "";
+}
+
+async function requireLoggedInUser(request: Request) {
+  const config = supabaseServerConfig();
+  if (!config) return;
+  const token = bearerToken(request);
+  if (!token) throw new Error("AI OCRは販売版ログイン後に使えます。先にメールログインしてください。");
+  const response = await fetch(`${config.url}/auth/v1/user`, {
+    headers: {
+      apikey: config.serviceKey,
+      Authorization: `Bearer ${token}`,
+    },
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error("ログイン情報を確認できませんでした。もう一度ログインしてください。");
+}
+
 export async function POST(request: Request) {
+  try {
+    await requireLoggedInUser(request);
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "ログイン情報を確認できませんでした。" },
+      { status: 401 },
+    );
+  }
+
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return NextResponse.json(

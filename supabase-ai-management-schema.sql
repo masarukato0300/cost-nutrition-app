@@ -142,12 +142,31 @@ create table if not exists public.waste_records (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.management_profiles (
+  id uuid primary key default gen_random_uuid(),
+  shop_id uuid not null references public.shops(id) on delete cascade,
+  business_styles jsonb not null default '[]'::jsonb,
+  location_types jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (shop_id)
+);
+
 create table if not exists public.management_diagnosis_answers (
   id uuid primary key default gen_random_uuid(),
   shop_id uuid not null references public.shops(id) on delete cascade,
   diagnosis_session_id uuid not null,
   question_key text not null,
   answer_text text not null default '',
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.management_external_factors (
+  id uuid primary key default gen_random_uuid(),
+  shop_id uuid not null references public.shops(id) on delete cascade,
+  date date not null default current_date,
+  factors jsonb not null default '{}'::jsonb,
+  memo text not null default '',
   created_at timestamptz not null default now()
 );
 
@@ -258,7 +277,9 @@ alter table public.sales_rows enable row level security;
 alter table public.csv_mapping_rules enable row level security;
 alter table public.product_name_mappings enable row level security;
 alter table public.waste_records enable row level security;
+alter table public.management_profiles enable row level security;
 alter table public.management_diagnosis_answers enable row level security;
+alter table public.management_external_factors enable row level security;
 alter table public.management_diagnosis_results enable row level security;
 alter table public.ai_usage_logs enable row level security;
 alter table public.audit_logs enable row level security;
@@ -309,7 +330,9 @@ begin
     'csv_mapping_rules',
     'product_name_mappings',
     'waste_records',
+    'management_profiles',
     'management_diagnosis_answers',
+    'management_external_factors',
     'management_diagnosis_results',
     'ai_usage_logs',
     'audit_logs'

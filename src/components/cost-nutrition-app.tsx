@@ -55,6 +55,127 @@ const storeSessionPinStorageKey = "cost-nutrition-label-mvp-store-session-pin-v1
 const storeSessionAdminStorageKey = "cost-nutrition-label-mvp-store-session-admin-v1";
 const rememberedLoginStorageKey = "cost-nutrition-label-mvp-remember-login-v1";
 const allergenOptions = ["卵", "乳", "小麦", "えび", "かに", "くるみ", "そば", "落花生"];
+const managementStoreTypeOptions = [
+  "ひとり店主モード",
+  "夫婦・家族経営モード",
+  "有名店・ホテル修行経験あり",
+  "フランス・海外修行経験あり",
+  "本格派・ブランド価値重視",
+  "世間・天気・イベントに左右されやすい",
+  "地域イベント依存型",
+  "季節商品依存型",
+  "SNS・流行影響型",
+  "立地ハンデ店舗",
+  "ビル上階型",
+  "路地裏・奥まった立地",
+  "幹線道路から入りにくい",
+  "抜け道沿いで車が止まりにくい",
+  "目立たない外観",
+  "駐車場がわかりにくい",
+  "通りすがり客が少ない",
+  "目的来店型にしたい",
+  "地域密着型",
+  "ギフト・焼き菓子中心",
+  "予約・オーダー商品中心",
+];
+const managementQuestionGroups = [
+  {
+    title: "お店の基本質問",
+    description: "まずは店主さんの感覚を言葉にします。全部埋めなくても大丈夫です。",
+    questions: [
+      { key: "purpose", label: "このお店は、何のために存在していると思いますか？" },
+      { key: "concern", label: "今、一番しんどいことは何ですか？" },
+      { key: "customerValue", label: "お客様は、ケーキやパンそのもの以外に何を買っていると思いますか？" },
+      { key: "localSupporters", label: "この店がなくなると困る人は誰ですか？" },
+      { key: "noCompromise", label: "これからも絶対に守りたい品質・関係性・価値観は何ですか？" },
+      { key: "smallExperiment", label: "今週試してもよさそうな小さな実験はありますか？" },
+    ],
+  },
+  {
+    title: "働き方・体制：ひとり店主向け",
+    description: "負担を増やさず、続けられる形にするための質問です。",
+    storeTypes: ["ひとり店主モード"],
+    questions: [
+      { key: "soloHardestTask", label: "1日の中で一番しんどい作業は何ですか？" },
+      { key: "soloTimeConsumingProduct", label: "一番時間を奪っている商品は何ですか？" },
+      { key: "soloWantToStopProduct", label: "売れているけど、正直やめたい商品はありますか？" },
+      { key: "soloEnoughRest", label: "休みは十分に取れていますか？" },
+      { key: "soloProductCountControl", label: "商品数は今のままで管理できていますか？" },
+      { key: "soloSameDayBurden", label: "当日対応で負担になっていることはありますか？" },
+      { key: "soloPriceIncreaseFear", label: "値上げに対して一番不安なことは何ですか？" },
+      { key: "soloHeavyService", label: "お客様に喜ばれているけど、負担が大きいサービスはありますか？" },
+      { key: "soloNoMoreWork", label: "これ以上増やしたくない仕事は何ですか？" },
+      { key: "soloLowBurdenGrowth", label: "増やしても負担が少ない商品や仕事は何ですか？" },
+    ],
+  },
+  {
+    title: "働き方・体制：夫婦・家族経営向け",
+    description: "数字の前に、役割と負担の偏りを確認します。",
+    storeTypes: ["夫婦・家族経営モード"],
+    questions: [
+      { key: "familyRoleBalance", label: "2人または家族の役割分担は、今のままで無理がありませんか？" },
+      { key: "familyConflictPoint", label: "夫婦や家族で意見が分かれやすいことは何ですか？" },
+      { key: "familyUnevenBurden", label: "どちらか一方に負担が偏っている作業はありますか？" },
+      { key: "familyWorkStyleFirst", label: "売上よりも先に整えたい働き方はありますか？" },
+      { key: "familyAtmosphere", label: "家族経営だからこそ大切にしている空気感や関係性はありますか？" },
+    ],
+  },
+  {
+    title: "商品・技術・ブランド：修行経験・ブランド型向け",
+    description: "技術や世界観を、利益が残る価値として伝えるための質問です。",
+    storeTypes: ["有名店・ホテル修行経験あり", "フランス・海外修行経験あり", "本格派・ブランド価値重視"],
+    questions: [
+      { key: "brandTrainingPlace", label: "どこで修行されましたか？" },
+      { key: "brandCoreTechnique", label: "その経験で一番大切にしている技術や考え方は何ですか？" },
+      { key: "brandSignatureProduct", label: "お店の世界観を一番表している商品はどれですか？" },
+      { key: "brandStoryToTell", label: "お客様にもっと伝えたい商品の背景はありますか？" },
+      { key: "brandUnderpricedCraft", label: "素材や製法にこだわっているのに、価格に反映できていない商品はありますか？" },
+      { key: "brandHardToExplain", label: "本格的すぎて、お客様に伝わりにくい商品はありますか？" },
+      { key: "brandLaborHeavyProduct", label: "売れているけど、手間がかかりすぎる商品はありますか？" },
+      { key: "brandHighPriceConfidence", label: "高単価でも自信を持って売れる商品はありますか？" },
+      { key: "brandReservationPotential", label: "予約商品として伸ばせそうな商品はありますか？" },
+      { key: "brandKeepForValue", label: "お店のブランドを高めるために、あえて残したい商品はありますか？" },
+    ],
+  },
+  {
+    title: "外部要因：世間・天気・イベントに左右される店向け",
+    description: "売れない日を自分のせいにしすぎず、波を前提に仕込みを考える質問です。",
+    storeTypes: ["世間・天気・イベントに左右されやすい", "地域イベント依存型", "季節商品依存型", "SNS・流行影響型"],
+    questions: [
+      { key: "weatherSalesImpact", label: "売上が天気に左右されやすいと感じますか？" },
+      { key: "weatherRainWeakProduct", label: "雨の日に売れにくい商品はありますか？" },
+      { key: "weatherHotStrongProduct", label: "暑い日に売れやすい商品はありますか？" },
+      { key: "weatherColdStrongProduct", label: "寒い日に売れやすい商品はありますか？" },
+      { key: "weatherLocalEventImpact", label: "地域イベントや学校行事で売上が変わりますか？" },
+      { key: "weatherPaydayImpact", label: "給料日前後で客単価が変わると感じますか？" },
+      { key: "weatherTrendProducts", label: "SNSや流行に合わせて商品を出すことがありますか？" },
+      { key: "weatherTrendBurden", label: "流行商品を作ることに負担を感じますか？" },
+      { key: "weatherInflationChange", label: "物価高でお客様の買い方が変わったと感じますか？" },
+      { key: "weatherSelfBlame", label: "売上が悪い日に「自分のせい」と感じてしまうことはありますか？" },
+    ],
+  },
+  {
+    title: "立地・来店ハードル：立地ハンデ店舗向け",
+    description: "通りすがりに頼りにくい店ほど、目的来店の導線を確認します。",
+    storeTypes: ["立地ハンデ店舗", "ビル上階型", "路地裏・奥まった立地", "幹線道路から入りにくい", "抜け道沿いで車が止まりにくい", "目立たない外観", "駐車場がわかりにくい", "通りすがり客が少ない", "目的来店型にしたい"],
+    questions: [
+      { key: "locationStreetVisible", label: "お店は通りから見えやすいですか？" },
+      { key: "locationEasyToFind", label: "お客様は迷わず来店できますか？" },
+      { key: "locationPedestrians", label: "店前の道は歩行者が多いですか？" },
+      { key: "locationHardToStopCar", label: "車は多いけれど止まりにくい道ですか？" },
+      { key: "locationParkingClear", label: "駐車場はわかりやすいですか？" },
+      { key: "locationWelcomingExterior", label: "初めてのお客様が入りやすい外観ですか？" },
+      { key: "locationRoadDistance", label: "幹線道路から何本くらい中に入りますか？" },
+      { key: "locationFloor", label: "お店は何階にありますか？" },
+      { key: "locationShopTypeVisible", label: "外から何のお店かわかりますか？" },
+      { key: "locationSignReadable", label: "看板は一瞬で読めますか？" },
+      { key: "locationOfferClear", label: "店名よりも「何が買えるか」が伝わっていますか？" },
+      { key: "locationGooglePhotos", label: "Googleマップに外観・駐車場・入口写真がありますか？" },
+      { key: "locationReservationFlow", label: "予約や取り置き導線はありますか？" },
+      { key: "locationVisitorType", label: "通りすがり客と目的来店客、どちらが多いですか？" },
+    ],
+  },
+] as const;
 const officialLineUrl = "https://lin.ee/sq52Q9d";
 const defaultOnboardingSupport: OnboardingSupportSettings = {
   onboardingSupportEnabled: false,
@@ -339,13 +460,34 @@ type RecentPriceImpact = {
 };
 type ManagementAiResult = {
   summary?: string;
+  store_type_insight?: string;
+  number_alerts?: string[];
+  owner_constraints?: string[];
+  external_factor_possibilities?: string[];
+  location_area_insights?: string[];
+  priority_focus?: string[];
   price_actions?: string[];
   growth_actions?: string[];
   waste_actions?: string[];
+  reduce_or_reserve_candidates?: string[];
+  no_need_actions?: string[];
   diagnosis_comment?: string;
   fit_actions?: string[];
+  one_week_experiments?: string[];
   questions_to_confirm?: string[];
   next_steps?: string[];
+  friendly_frameworks?: {
+    strengths?: string[];
+    weaknesses?: string[];
+    chances?: string[];
+    risks?: string[];
+    priority_targets?: string[];
+    products_to_grow?: string[];
+    products_to_review?: string[];
+    improvement_ideas?: string[];
+    monthly_top3_actions?: string[];
+  };
+  frameworks?: Record<string, unknown>;
 };
 type SalesCsvPreviewRow = {
   rawProductName: string;
@@ -1588,6 +1730,11 @@ export function CostNutritionApp() {
   const [commercialAreaResult, setCommercialAreaResult] = useState<CommercialAreaResult | null>(null);
   const [isCommercialAreaLoading, setIsCommercialAreaLoading] = useState(false);
   const [managementDiagnosisAnswers, setManagementDiagnosisAnswers] = useState({
+    storeTypes: [] as string[],
+    locationType: "",
+    trainingBackground: "",
+    externalFactors: "",
+    teamStructure: "",
     currentScale: "",
     futureScale: "",
     mainGoal: "",
@@ -1603,6 +1750,55 @@ export function CostNutritionApp() {
     noCompromise: "",
     localSupporters: "",
     smallExperiment: "",
+    soloHardestTask: "",
+    soloTimeConsumingProduct: "",
+    soloWantToStopProduct: "",
+    soloEnoughRest: "",
+    soloProductCountControl: "",
+    soloSameDayBurden: "",
+    soloPriceIncreaseFear: "",
+    soloHeavyService: "",
+    soloNoMoreWork: "",
+    soloLowBurdenGrowth: "",
+    familyRoleBalance: "",
+    familyConflictPoint: "",
+    familyUnevenBurden: "",
+    familyWorkStyleFirst: "",
+    familyAtmosphere: "",
+    brandTrainingPlace: "",
+    brandCoreTechnique: "",
+    brandSignatureProduct: "",
+    brandStoryToTell: "",
+    brandUnderpricedCraft: "",
+    brandHardToExplain: "",
+    brandLaborHeavyProduct: "",
+    brandHighPriceConfidence: "",
+    brandReservationPotential: "",
+    brandKeepForValue: "",
+    weatherSalesImpact: "",
+    weatherRainWeakProduct: "",
+    weatherHotStrongProduct: "",
+    weatherColdStrongProduct: "",
+    weatherLocalEventImpact: "",
+    weatherPaydayImpact: "",
+    weatherTrendProducts: "",
+    weatherTrendBurden: "",
+    weatherInflationChange: "",
+    weatherSelfBlame: "",
+    locationStreetVisible: "",
+    locationEasyToFind: "",
+    locationPedestrians: "",
+    locationHardToStopCar: "",
+    locationParkingClear: "",
+    locationWelcomingExterior: "",
+    locationRoadDistance: "",
+    locationFloor: "",
+    locationShopTypeVisible: "",
+    locationSignReadable: "",
+    locationOfferClear: "",
+    locationGooglePhotos: "",
+    locationReservationFlow: "",
+    locationVisitorType: "",
   });
   const [actualCostForm, setActualCostForm] = useState<ActualCostRecord>(() => ({ ...emptyActualCostRecord(), month: "2026-05" }));
   const [eventPlanForm, setEventPlanForm] = useState<EventPlan>(() => emptyEventPlan());
@@ -1901,9 +2097,48 @@ export function CostNutritionApp() {
             totalGrossProfit: managementSummary.totalGrossProfit,
             averageCostRate: managementSummary.averageCostRate,
             wasteCostAmount: managementSummary.wasteCostAmount,
-            priceIncreaseCandidates: managementSummary.priceIncreaseCandidates,
-            growthCandidates: managementSummary.growthCandidates,
-            wasteRiskProducts: managementSummary.wasteRiskProducts,
+            priceIncreaseCandidates: managementSummary.priceIncreaseCandidates.slice(0, 5).map((row) => ({
+              name: row.name,
+              category: row.category,
+              salesQuantity: row.salesQuantity,
+              salesAmount: row.salesAmount,
+              grossProfit: row.grossProfit,
+              costRate: row.costRate,
+              recommendedPrice: row.recommendedPrice,
+            })),
+            growthCandidates: managementSummary.growthCandidates.slice(0, 5).map((row) => ({
+              name: row.name,
+              category: row.category,
+              salesQuantity: row.salesQuantity,
+              salesAmount: row.salesAmount,
+              grossProfit: row.grossProfit,
+              costRate: row.costRate,
+            })),
+            wasteRiskProducts: managementSummary.wasteRiskProducts.slice(0, 5).map((row) => ({
+              name: row.name,
+              category: row.category,
+              salesQuantity: row.salesQuantity,
+              wasteQuantity: row.wasteQuantity,
+              wasteCostAmount: row.wasteCostAmount,
+              costRate: row.costRate,
+            })),
+            commercialArea: commercialAreaResult
+              ? {
+                  address: commercialAreaResult.formattedAddress,
+                  radiusKm: commercialAreaResult.radiusKm,
+                  radiusLabel: `半径${commercialAreaResult.radiusKm}km`,
+                  competitorCounts: commercialAreaResult.groups.map((group) => ({
+                    label: group.label,
+                    count: group.places.length,
+                    nearbyCompetitors: group.places.slice(0, 8).map((place) => ({
+                      name: place.name,
+                      rating: place.rating,
+                      reviewCount: place.reviewCount,
+                      addressSummary: place.address,
+                    })),
+                  })),
+                }
+              : null,
           },
           diagnosisAnswers: managementDiagnosisAnswers,
         }),
@@ -1923,13 +2158,20 @@ export function CostNutritionApp() {
       setCommercialAreaStatus("住所を入力してください。");
       return;
     }
+    if (isSaaSSupabaseConfigured() && !saasSession) {
+      setCommercialAreaStatus("商圏分析は販売版ログイン後に使えます。先にメールログインしてください。");
+      return;
+    }
     try {
       setIsCommercialAreaLoading(true);
       setCommercialAreaStatus("住所と周辺店舗を調べています...");
       setCommercialAreaResult(null);
       const response = await fetch("/api/commercial-area-analysis", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(saasSession ? { Authorization: `Bearer ${saasSession.accessToken}` } : {}),
+        },
         body: JSON.stringify({
           address,
           radiusKm: commercialAreaRadiusKm,
@@ -2272,9 +2514,15 @@ export function CostNutritionApp() {
   }
 
   async function fetchIngredientOcr(imageDataUrl: string) {
+    if (isSaaSSupabaseConfigured() && !saasSession) {
+      throw new Error("AI OCRは販売版ログイン後に使えます。先にメールログインしてください。");
+    }
     const response = await fetch("/api/ingredient-vision-ocr", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(saasSession ? { Authorization: `Bearer ${saasSession.accessToken}` } : {}),
+      },
       body: JSON.stringify({ imageDataUrl }),
     });
     const json = await response.json();
@@ -3867,6 +4115,9 @@ export function CostNutritionApp() {
   const currentPageDescription = activePage === "top"
     ? "今日見るべき原価率・価格変更・未登録情報をまとめて確認できます。"
     : topPageDescription(activePage === "ocr" ? "ingredient" : activePage);
+  const visibleManagementQuestionGroups = managementQuestionGroups.filter((group) => (
+    !("storeTypes" in group) || group.storeTypes.some((storeType) => managementDiagnosisAnswers.storeTypes.includes(storeType))
+  ));
 
   return (
     <main className="mx-auto flex w-full max-w-7xl flex-col gap-4 p-3 pb-28 text-sm text-neutral-900 md:p-5 md:pb-28">
@@ -5658,7 +5909,7 @@ export function CostNutritionApp() {
                 <div>
                   <h3 className="font-black text-violet-950">AI経営コメント</h3>
                   <p className="mt-1 text-sm font-bold text-violet-700">
-                    まず規模感と目標を確認し、その店に合う問いと施策を一緒に整理します。
+                    店舗タイプ・立地・人員体制・目標を確認し、その店に合う問いと小さな実験を整理します。
                   </p>
                 </div>
                 <button className="rounded-md bg-violet-700 px-4 py-3 font-black text-white" onClick={createManagementAiComment}>
@@ -5669,15 +5920,104 @@ export function CostNutritionApp() {
                 </button>
               </div>
               <div className="mt-4 rounded-md border border-violet-200 bg-white p-3 text-sm font-bold text-violet-900">
-                AIにはレシピ全文ではなく、集計済みの数字と下の回答だけを送ります。現状の規模と目指す規模に合わせて、次に考えるべき問いを出します。
+                AIにはレシピ全文やCSV全文ではなく、集計済みの数字・商圏の件数要約・下の回答だけを送ります。売上拡大だけでなく、疲弊せず利益を残す方向で提案します。
+              </div>
+              <div className="mt-3 rounded-md border border-cyan-200 bg-cyan-50 p-3 text-sm font-bold text-cyan-950">
+                {commercialAreaResult ? (
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="font-black">商圏分析結果をAIコメントに反映します</p>
+                      <p className="mt-1 text-xs">
+                        半径{commercialAreaResult.radiusKm}km / {commercialAreaResult.groups.map((group) => `${group.label}${group.places.length}件`).join("・")}
+                      </p>
+                    </div>
+                    <button className="rounded-md border border-cyan-300 bg-white px-3 py-2 text-xs font-black text-cyan-800" onClick={() => setActivePage("commercialArea")}>
+                      商圏分析を見る
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p>商圏分析を実行すると、周辺競合・カフェ・パン屋の状況もAIコメントに反映できます。</p>
+                    <button className="rounded-md bg-cyan-700 px-3 py-2 text-xs font-black text-white" onClick={() => setActivePage("commercialArea")}>
+                      商圏分析へ
+                    </button>
+                  </div>
+                )}
               </div>
               <div className="mt-3 rounded-md border border-dashed border-violet-300 bg-white/80 p-3 text-xs font-bold text-violet-800">
                 全部埋めなくても使えます。分かるところだけ入れるほど、「その店に合う施策」に寄せやすくなります。
               </div>
               <div className="mt-4 grid gap-4">
                 <section className="rounded-md border border-violet-200 bg-white p-3">
-                  <h4 className="font-black text-violet-950">STEP1 現状と目標</h4>
-                  <p className="mt-1 text-xs font-bold text-violet-700">最初に店の規模感を見ます。ここで答えの方向が変わります。</p>
+                  <h4 className="font-black text-violet-950">STEP1 店舗タイプと置かれている環境</h4>
+                  <p className="mt-1 text-xs font-bold text-violet-700">同じ原価率でも、店のタイプ・立地・人員体制で優先する施策は変わります。</p>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <div className="md:col-span-2">
+                      <p className="text-xs font-black text-neutral-600">お店のタイプを選んでください</p>
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                        {managementStoreTypeOptions.map((option) => {
+                          const checked = managementDiagnosisAnswers.storeTypes.includes(option);
+                          return (
+                            <label
+                              key={option}
+                              className={`flex min-h-11 items-center gap-2 rounded-md border px-3 py-2 text-sm font-black ${
+                                checked ? "border-violet-500 bg-violet-100 text-violet-950" : "border-neutral-200 bg-white text-neutral-700"
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(event) => setManagementDiagnosisAnswers((prev) => ({
+                                  ...prev,
+                                  storeTypes: event.target.checked
+                                    ? [...prev.storeTypes, option]
+                                    : prev.storeTypes.filter((item) => item !== option),
+                                }))}
+                                className="h-4 w-4 accent-violet-700"
+                              />
+                              {option}
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <p className="mt-2 text-xs font-bold text-neutral-500">
+                        複数選べます。近いものだけ選ぶと、AIがその店に合う問いと施策に寄せて考えます。
+                      </p>
+                    </div>
+                    <TextAreaInput
+                      label="立地・商圏の特徴"
+                      value={managementDiagnosisAnswers.locationType}
+                      onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, locationType: value }))}
+                      placeholder="例：住宅街、駅前、観光地、郊外ロードサイド、競合が多い、常連中心"
+                      rows={3}
+                    />
+                    <TextAreaInput
+                      label="店主・職人の修行背景や得意分野"
+                      value={managementDiagnosisAnswers.trainingBackground}
+                      onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, trainingBackground: value }))}
+                      placeholder="例：ホテル出身、個人店出身、焼き菓子が得意、デコレーションが強い、パン中心"
+                      rows={3}
+                    />
+                    <TextAreaInput
+                      label="外部要因・最近気になる変化"
+                      value={managementDiagnosisAnswers.externalFactors}
+                      onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, externalFactors: value }))}
+                      placeholder="例：材料高騰、人手不足、競合出店、客数減、客単価変化、天候、イベント"
+                      rows={3}
+                    />
+                    <TextAreaInput
+                      label="人員体制・役割"
+                      value={managementDiagnosisAnswers.teamStructure}
+                      onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, teamStructure: value }))}
+                      placeholder="例：夫婦2人、製造2人販売1人、パートあり、奥様が接客/SNS/会計"
+                      rows={3}
+                    />
+                  </div>
+                </section>
+
+                <section className="rounded-md border border-violet-200 bg-white p-3">
+                  <h4 className="font-black text-violet-950">STEP2 現状と目標</h4>
+                  <p className="mt-1 text-xs font-bold text-violet-700">店の規模感と目標を見ます。ここで答えの方向が変わります。</p>
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
                     <TextAreaInput
                       label="今の規模感"
@@ -5711,82 +6051,37 @@ export function CostNutritionApp() {
                 </section>
 
                 <section className="rounded-md border border-violet-200 bg-white p-3">
-                  <h4 className="font-black text-violet-950">STEP2 制約・強み・守りたいもの</h4>
-                  <p className="mt-1 text-xs font-bold text-violet-700">数字だけでは決められない条件を確認します。</p>
-                  <div className="mt-3 grid gap-3 md:grid-cols-2">
-                    <TextAreaInput
-                      label="この店は何のためにありますか？"
-                      value={managementDiagnosisAnswers.purpose}
-                      onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, purpose: value }))}
-                      rows={3}
-                    />
-                    <TextAreaInput
-                      label="今、一番しんどいこと"
-                      value={managementDiagnosisAnswers.concern}
-                      onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, concern: value }))}
-                      rows={3}
-                    />
-                    <TextAreaInput
-                      label="これ以上増やしたくない負担・本当の制約"
-                      value={managementDiagnosisAnswers.constraint}
-                      onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, constraint: value }))}
-                      rows={3}
-                    />
-                    <TextAreaInput
-                      label="すでにある強み"
-                      value={managementDiagnosisAnswers.strength}
-                      onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, strength: value }))}
-                      rows={3}
-                    />
-                    <TextAreaInput
-                      label="お客様は何を買っていると思いますか？"
-                      value={managementDiagnosisAnswers.customerValue}
-                      onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, customerValue: value }))}
-                      rows={3}
-                    />
-                    <TextAreaInput
-                      label="夫婦・スタッフの役割で無理がある所"
-                      value={managementDiagnosisAnswers.roleBalance}
-                      onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, roleBalance: value }))}
-                      rows={3}
-                    />
-                  </div>
-                </section>
-
-                <section className="rounded-md border border-violet-200 bg-white p-3">
-                  <h4 className="font-black text-violet-950">STEP3 次の問いにつなげる材料</h4>
-                  <p className="mt-1 text-xs font-bold text-violet-700">ここを入れると、AIが次に聞くべき質問を出しやすくなります。</p>
-                  <div className="mt-3 grid gap-3 md:grid-cols-2">
-                    <TextAreaInput
-                      label="理想の働き方・これくらいなら続けられる状態"
-                      value={managementDiagnosisAnswers.idealWorkload}
-                      onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, idealWorkload: value }))}
-                      rows={3}
-                    />
-                    <TextAreaInput
-                      label="人気だけど時間や体力を奪っている商品"
-                      value={managementDiagnosisAnswers.productBurden}
-                      onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, productBurden: value }))}
-                      rows={3}
-                    />
-                    <TextAreaInput
-                      label="絶対に落としたくない品質・関係性"
-                      value={managementDiagnosisAnswers.noCompromise}
-                      onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, noCompromise: value }))}
-                      rows={3}
-                    />
-                    <TextAreaInput
-                      label="この店がなくなると困る人・喜んでくれる人"
-                      value={managementDiagnosisAnswers.localSupporters}
-                      onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, localSupporters: value }))}
-                      rows={3}
-                    />
-                    <TextAreaInput
-                      label="試してみてもよさそうな小さな実験"
-                      value={managementDiagnosisAnswers.smallExperiment}
-                      onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, smallExperiment: value }))}
-                      rows={3}
-                    />
+                  <h4 className="font-black text-violet-950">STEP3 質問に答えて、判断材料を増やす</h4>
+                  <p className="mt-1 text-xs font-bold text-violet-700">
+                    質問は任意です。お店タイプを選ぶと関連する質問が出ます。入力された内容と売上・原価・廃棄・商圏の数字をAIコメントの判断材料にします。
+                  </p>
+                  <div className="mt-3 grid gap-4">
+                    {visibleManagementQuestionGroups.map((group) => (
+                      <div key={group.title} className="rounded-md border border-violet-100 bg-violet-50/60 p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <h5 className="font-black text-violet-950">{group.title}</h5>
+                            <p className="mt-1 text-xs font-bold text-violet-700">{group.description}</p>
+                          </div>
+                          {"storeTypes" in group ? (
+                            <span className="rounded-full bg-white px-3 py-1 text-[11px] font-black text-violet-700">タイプ選択で表示中</span>
+                          ) : (
+                            <span className="rounded-full bg-white px-3 py-1 text-[11px] font-black text-neutral-600">基本</span>
+                          )}
+                        </div>
+                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                          {group.questions.map((question) => (
+                            <TextAreaInput
+                              key={question.key}
+                              label={question.label}
+                              value={managementDiagnosisAnswers[question.key]}
+                              onChange={(value) => setManagementDiagnosisAnswers((prev) => ({ ...prev, [question.key]: value }))}
+                              rows={3}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </section>
               </div>
@@ -5796,14 +6091,21 @@ export function CostNutritionApp() {
               {managementAiResult ? (
                 <div className="mt-3 grid gap-3 rounded-md border border-violet-200 bg-white p-4 text-sm">
                   <h4 className="font-black text-neutral-950">AIコメント結果</h4>
-                  {managementAiResult.summary ? <p className="font-bold text-neutral-700">{managementAiResult.summary}</p> : null}
-                  <AiActionList title="値上げ・価格施策" items={managementAiResult.price_actions} />
-                  <AiActionList title="伸ばす施策" items={managementAiResult.growth_actions} />
-                  <AiActionList title="廃棄・作りすぎ対策" items={managementAiResult.waste_actions} />
-                  {managementAiResult.diagnosis_comment ? <p className="rounded-md bg-violet-50 p-3 font-bold text-violet-900">{managementAiResult.diagnosis_comment}</p> : null}
-                  <AiActionList title="この店に合いそうな施策" items={managementAiResult.fit_actions} />
-                  <AiActionList title="追加で確認したい問い" items={managementAiResult.questions_to_confirm} />
-                  <AiActionList title="次にやること" items={managementAiResult.next_steps} />
+                  {managementAiResult.summary ? <AiTextBlock title="1. 今の状況の要約" body={managementAiResult.summary} /> : null}
+                  {managementAiResult.store_type_insight ? <AiTextBlock title="2. 店舗タイプから見える特徴" body={managementAiResult.store_type_insight} tone="cyan" /> : null}
+                  <AiActionList title="3. 数字から見える注意点" items={managementAiResult.number_alerts} />
+                  <AiActionList title="4. 店主・お店の制約" items={managementAiResult.owner_constraints} />
+                  <AiActionList title="5. 外部要因の可能性" items={managementAiResult.external_factor_possibilities} />
+                  <AiActionList title="6. 立地・商圏から見える特徴" items={managementAiResult.location_area_insights} />
+                  <AiActionList title="7. 値上げ候補" items={managementAiResult.price_actions} />
+                  <AiActionList title="8. 伸ばすべき商品" items={managementAiResult.growth_actions} />
+                  <AiActionList title="9. 減らす・限定化・予約制にする候補" items={managementAiResult.reduce_or_reserve_candidates || managementAiResult.waste_actions} />
+                  <AiActionList title="10. 今週試す小さな実験" items={managementAiResult.one_week_experiments || managementAiResult.next_steps} />
+                  <AiActionList title="11. 無理にやらなくていいこと" items={managementAiResult.no_need_actions} />
+                  <AiActionList title="12. 追加で確認したい問い" items={managementAiResult.questions_to_confirm} />
+                  {managementAiResult.diagnosis_comment ? <AiTextBlock title="補足コメント" body={managementAiResult.diagnosis_comment} tone="violet" /> : null}
+                  {managementAiResult.friendly_frameworks ? <FriendlyFrameworks frameworks={managementAiResult.friendly_frameworks} /> : null}
+                  {managementAiResult.frameworks ? <FrameworkDetails frameworks={managementAiResult.frameworks} /> : null}
                 </div>
               ) : null}
             </section>
@@ -7363,6 +7665,74 @@ function AiActionList({ title, items }: { title: string; items?: string[] }) {
         ))}
       </ul>
     </div>
+  );
+}
+
+function AiTextBlock({ title, body, tone = "neutral" }: { title: string; body: string; tone?: "neutral" | "cyan" | "violet" }) {
+  const toneClass = tone === "cyan"
+    ? "border-cyan-100 bg-cyan-50 text-cyan-950"
+    : tone === "violet"
+      ? "border-violet-100 bg-violet-50 text-violet-950"
+      : "border-neutral-100 bg-neutral-50 text-neutral-800";
+  return (
+    <section className={`rounded-md border p-3 ${toneClass}`}>
+      <h5 className="font-black">{title}</h5>
+      <p className="mt-2 whitespace-pre-wrap font-bold leading-relaxed">{body}</p>
+    </section>
+  );
+}
+
+function FriendlyFrameworks({ frameworks }: { frameworks: NonNullable<ManagementAiResult["friendly_frameworks"]> }) {
+  const rows = [
+    ["お店の強み", frameworks.strengths],
+    ["今の弱点", frameworks.weaknesses],
+    ["外部チャンス", frameworks.chances],
+    ["注意すべきリスク", frameworks.risks],
+    ["優先ターゲット", frameworks.priority_targets],
+    ["伸ばすべき商品", frameworks.products_to_grow],
+    ["見直すべき商品", frameworks.products_to_review],
+    ["価格・販促・商品・売り場の改善提案", frameworks.improvement_ideas],
+    ["今月やるべき3つの行動", frameworks.monthly_top3_actions],
+  ].filter(([, items]) => Array.isArray(items) && items.length > 0) as Array<[string, string[]]>;
+  if (rows.length === 0) return null;
+  return (
+    <section className="rounded-md border border-emerald-100 bg-emerald-50 p-3">
+      <h5 className="font-black text-emerald-950">やさしい経営整理</h5>
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        {rows.map(([title, items]) => (
+          <div key={title} className="rounded-md bg-white p-3">
+            <strong className="text-emerald-950">{title}</strong>
+            <ul className="mt-2 grid gap-1 text-xs font-bold text-neutral-700">
+              {items.map((item) => <li key={item}>・{item}</li>)}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function FrameworkDetails({ frameworks }: { frameworks: Record<string, unknown> }) {
+  const entries = Object.entries(frameworks).filter(([, value]) => {
+    if (Array.isArray(value)) return value.length > 0;
+    if (value && typeof value === "object") return Object.keys(value).length > 0;
+    return Boolean(value);
+  });
+  if (entries.length === 0) return null;
+  return (
+    <details className="rounded-md border border-slate-200 bg-slate-50 p-3">
+      <summary className="cursor-pointer font-black text-slate-900">詳細フレームで確認する（SWOT / 3C / 4P / STP / TOWSなど）</summary>
+      <div className="mt-3 grid gap-3">
+        {entries.map(([key, value]) => (
+          <section key={key} className="rounded-md bg-white p-3">
+            <h6 className="font-black uppercase text-slate-900">{key}</h6>
+            <pre className="mt-2 whitespace-pre-wrap break-words text-xs font-bold leading-relaxed text-slate-700">
+              {JSON.stringify(value, null, 2)}
+            </pre>
+          </section>
+        ))}
+      </div>
+    </details>
   );
 }
 

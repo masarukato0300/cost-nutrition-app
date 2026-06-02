@@ -48,6 +48,33 @@ function googleMapsApiKey() {
   return process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_PLACES_API_KEY || "";
 }
 
+function supabaseServerConfig() {
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serviceKey) return null;
+  return { url: url.replace(/\/$/, ""), serviceKey };
+}
+
+function bearerToken(request: Request) {
+  const header = request.headers.get("authorization") || "";
+  return header.match(/^Bearer\s+(.+)$/i)?.[1] || "";
+}
+
+async function requireLoggedInUser(request: Request) {
+  const config = supabaseServerConfig();
+  if (!config) return;
+  const token = bearerToken(request);
+  if (!token) throw new Error("商圏分析は販売版ログイン後に使えます。先にメールログインしてください。");
+  const response = await fetch(`${config.url}/auth/v1/user`, {
+    headers: {
+      apikey: config.serviceKey,
+      Authorization: `Bearer ${token}`,
+    },
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error("ログイン情報を確認できませんでした。もう一度ログインしてください。");
+}
+
 async function readGoogleJson<T extends { status?: string; error_message?: string }>(response: Response, label: string): Promise<T> {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(`${label}に失敗しました。`);
@@ -113,6 +140,7 @@ async function searchNearbyPlaces(params: {
 
 export async function POST(request: Request) {
   try {
+    await requireLoggedInUser(request);
     const apiKey = googleMapsApiKey();
     if (!apiKey) {
       return NextResponse.json({

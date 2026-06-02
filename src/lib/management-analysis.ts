@@ -15,6 +15,7 @@ export type ProductManagementMetric = {
   grossProfit: number;
   grossProfitRate: number;
   wasteQuantity: number;
+  wasteCostAmount: number;
   recommendationHint: "値上げ候補" | "伸ばす候補" | "廃棄注意" | "様子見";
 };
 
@@ -61,6 +62,7 @@ export function buildManagementDecisionSummary(data: AppData, month: string): Ma
       const grossProfit = salesAmount - sales.quantity * cost.costPerPiece;
       const grossProfitRate = salesAmount ? (grossProfit / salesAmount) * 100 : 0;
       const recommendedPrice = product.targetCostRate > 0 ? cost.costPerPiece / (product.targetCostRate / 100) : 0;
+      const wasteQuantity = productWasteQuantity(data, product, month);
       const rowWithoutHint = {
         productId: product.id,
         name: product.name,
@@ -74,7 +76,8 @@ export function buildManagementDecisionSummary(data: AppData, month: string): Ma
         salesAmount,
         grossProfit,
         grossProfitRate,
-        wasteQuantity: productWasteQuantity(data, product, month),
+        wasteQuantity,
+        wasteCostAmount: wasteQuantity * cost.costPerPiece,
       };
       return {
         ...rowWithoutHint,
