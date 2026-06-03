@@ -1618,6 +1618,32 @@ const emptySetProductItem = (setProductId = "", childProductId = ""): SetProduct
   updatedAt: now(),
 });
 
+function hasSampleData(targetData: AppData) {
+  const sampleIngredientIds = new Set(sampleData.ingredients.map((ingredient) => ingredient.id));
+  const sampleProductIds = new Set(sampleData.products.map((product) => product.id));
+  const sampleRecipeItemIds = new Set(sampleData.recipeItems.map((item) => item.id));
+  const samplePriceHistoryIds = new Set(sampleData.priceHistories.map((history) => history.id));
+  const sampleSalesRecordIds = new Set(sampleData.salesRecords.map((record) => record.id));
+  const sampleActualCostRecordIds = new Set(sampleData.actualCostRecords.map((record) => record.id));
+  const sampleEventPlanIds = new Set(sampleData.eventPlans.map((plan) => plan.id));
+  const sampleEventPlanItemIds = new Set(sampleData.eventPlanItems.map((item) => item.id));
+  const sampleLaborCostIds = new Set(sampleData.laborCosts.map((record) => record.id));
+  const sampleSetProductItemIds = new Set(sampleData.setProductItems.map((item) => item.id));
+
+  return (
+    targetData.ingredients.some((ingredient) => sampleIngredientIds.has(ingredient.id))
+    || targetData.products.some((product) => sampleProductIds.has(product.id))
+    || targetData.recipeItems.some((item) => sampleRecipeItemIds.has(item.id))
+    || targetData.priceHistories.some((history) => samplePriceHistoryIds.has(history.id))
+    || targetData.salesRecords.some((record) => sampleSalesRecordIds.has(record.id))
+    || targetData.actualCostRecords.some((record) => sampleActualCostRecordIds.has(record.id))
+    || targetData.eventPlans.some((plan) => sampleEventPlanIds.has(plan.id))
+    || targetData.eventPlanItems.some((item) => sampleEventPlanItemIds.has(item.id))
+    || targetData.laborCosts.some((record) => sampleLaborCostIds.has(record.id))
+    || targetData.setProductItems.some((item) => sampleSetProductItemIds.has(item.id))
+  );
+}
+
 function playButtonClickSound() {
   if (typeof window === "undefined") return;
   const audioWindow = window as typeof window & { webkitAudioContext?: typeof AudioContext };
@@ -3280,6 +3306,65 @@ export function CostNutritionApp() {
     alert("新しい商品名を入力するか、商品一覧から商品を選んでください。");
   }
 
+  function clearEntryForm(page: PageKey) {
+    if (page === "ingredient") {
+      setIngredientForm(emptyIngredient());
+      setShowIngredientUnitConversion(false);
+      setNutritionSearchText("");
+      setSelectedStandardNutritionId("");
+      setAppliedStandardNutritionId("");
+      setSelectedOcrDuplicateIngredientId("");
+      setIngredientOcrCandidate(null);
+    }
+    if (page === "product") {
+      setProductForm(emptyProduct());
+    }
+    if (page === "recipe") {
+      setRecipeProductName("");
+      setRecipeProductSelectId("");
+      setRecipeProductIsIntermediate(false);
+      setProductForm(emptyProduct());
+      setIsRecipeProductListOpen(false);
+    }
+  }
+
+  function openEntryPage(page: PageKey) {
+    clearEntryForm(page);
+    setActivePage(page);
+  }
+
+  function registerCurrentProgress() {
+    if (activePage === "ingredient") {
+      if (!ingredientForm.name.trim()) {
+        alert("原材料名を入力すると登録できます。");
+        return;
+      }
+      saveIngredient();
+      return;
+    }
+    if (activePage === "product") {
+      if (!productForm.name.trim()) {
+        alert("商品名を入力すると登録できます。");
+        return;
+      }
+      saveProduct();
+      return;
+    }
+    if (activePage === "recipe") {
+      if (recipeProductName.trim()) {
+        addProductFromRecipeName();
+        return;
+      }
+      if (recipeProductSelectId) {
+        alert("現在のレシピ内容は登録済みです。戻っても内容は残ります。");
+        return;
+      }
+      alert("新しい商品名を入力するか、商品一覧から商品を選んでください。");
+      return;
+    }
+    alert("原材料登録・商品登録・レシピ登録の入力中に使えます。");
+  }
+
   function resolveRecipeTarget(nextRecipeItems: RecipeItem[]) {
     const name = recipeProductName.trim();
     if (!name) {
@@ -4044,6 +4129,7 @@ export function CostNutritionApp() {
   }
 
   function clearSampleOnly() {
+    if (!hasSampleData(data)) return;
     if (!confirm("サンプルデータだけを消去しますか？\n\n手入力で追加したデータは残します。")) return;
     const sampleIngredientIds = new Set(sampleData.ingredients.map((ingredient) => ingredient.id));
     const sampleProductIds = new Set(sampleData.products.map((product) => product.id));
@@ -4126,6 +4212,7 @@ export function CostNutritionApp() {
   const visibleManagementQuestionGroups = managementQuestionGroups.filter((group) => (
     !("storeTypes" in group) || group.storeTypes.some((storeType) => managementDiagnosisAnswers.storeTypes.includes(storeType))
   ));
+  const canClearSampleData = hasSampleData(data);
 
   return (
     <main className="mx-auto flex w-full max-w-7xl flex-col gap-4 p-3 pb-28 text-sm text-neutral-900 md:p-5 md:pb-28">
@@ -4171,8 +4258,19 @@ export function CostNutritionApp() {
           <button className="rounded-md border border-red-200 bg-red-50 px-4 py-2 font-bold text-red-700" onClick={resetSample}>
             サンプルデータに戻す
           </button>
-          <button className="rounded-md border border-orange-200 bg-orange-50 px-4 py-2 font-bold text-orange-700" onClick={clearSampleOnly}>
+          <button
+            className={`rounded-md border px-4 py-2 font-bold ${
+              canClearSampleData
+                ? "border-orange-200 bg-orange-50 text-orange-700"
+                : "cursor-not-allowed border-neutral-200 bg-neutral-100 text-neutral-400"
+            }`}
+            disabled={!canClearSampleData}
+            onClick={clearSampleOnly}
+          >
             サンプルデータだけ消去
+          </button>
+          <button className="rounded-md border border-blue-300 bg-blue-600 px-4 py-2 font-bold text-white shadow-sm" onClick={registerCurrentProgress}>
+            ここまでを登録
           </button>
         </div>
       </header>
@@ -4189,6 +4287,10 @@ export function CostNutritionApp() {
                   isActive ? tone.navActive : tone.navIdle
                 }`}
                 onClick={() => {
+                  if (pageKey === "ingredient" || pageKey === "product" || pageKey === "recipe") {
+                    openEntryPage(pageKey);
+                    return;
+                  }
                   setActivePage(pageKey);
                 }}
               >
@@ -4310,7 +4412,13 @@ export function CostNutritionApp() {
                   <button
                     key={pageKey}
                     className={`min-h-24 rounded-md border p-4 text-left shadow-sm transition-colors ${tone.topCard}`}
-                    onClick={() => setActivePage(pageKey)}
+                    onClick={() => {
+                      if (pageKey === "ingredient" || pageKey === "product" || pageKey === "recipe") {
+                        openEntryPage(pageKey);
+                        return;
+                      }
+                      setActivePage(pageKey);
+                    }}
                   >
                     <span className="flex items-center gap-2 text-lg font-black text-neutral-900">
                       <span className={`grid h-10 w-10 place-items-center rounded-md ${tone.mark} text-white`}>
@@ -4435,7 +4543,7 @@ export function CostNutritionApp() {
       {activePage === "help" && (
         <Panel title="使い方">
           <HelpGuide
-            onNavigate={setActivePage}
+            onNavigate={openEntryPage}
             showOnboardingLine={isOnboardingSupportActive}
             remainingDays={onboardingSupportRemainingDays}
             onOpenLine={openOfficialLine}
@@ -4454,7 +4562,7 @@ export function CostNutritionApp() {
                 className={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-md border-2 px-2 py-2 text-center text-xs font-black transition-colors ${
                   mainNavButtonTone(pageKey, isActive, tone)
                 }`}
-                onClick={() => setActivePage(pageKey)}
+                onClick={() => openEntryPage(pageKey)}
               >
                 <NavPictogram pageKey={pageKey} />
                 <span>{pageLabel(pageKey)}</span>
