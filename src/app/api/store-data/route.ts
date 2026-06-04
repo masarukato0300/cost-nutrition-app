@@ -14,6 +14,10 @@ function supabaseConfig() {
   return { url: url.replace(/\/$/, ""), serviceKey };
 }
 
+function legacyPinLoginEnabled() {
+  return process.env.ENABLE_LEGACY_PIN_LOGIN === "true" || process.env.NODE_ENV !== "production";
+}
+
 function hashPin(pin: string) {
   return createHash("sha256").update(pin).digest("hex");
 }
@@ -32,6 +36,10 @@ function supabaseHeaders(serviceKey: string) {
 }
 
 export async function POST(request: Request) {
+  if (!legacyPinLoginEnabled()) {
+    return NextResponse.json({ ok: false, error: "旧PIN保存APIは移行・管理用途に限定されています。販売版ログインを使ってください。" }, { status: 403 });
+  }
+
   const config = supabaseConfig();
   if (!config) return NextResponse.json({ ok: false, cloudConfigured: false });
 

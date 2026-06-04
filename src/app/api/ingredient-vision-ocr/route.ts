@@ -58,7 +58,7 @@ function bearerToken(request: Request) {
 
 async function requireLoggedInUser(request: Request) {
   const config = supabaseServerConfig();
-  if (!config) return;
+  if (!config) throw new Error("Supabaseサーバー環境変数が未設定です。OCRは販売版ログイン確認ができる環境でのみ使えます。");
   const token = bearerToken(request);
   if (!token) throw new Error("AI OCRは販売版ログイン後に使えます。先にメールログインしてください。");
   const response = await fetch(`${config.url}/auth/v1/user`, {

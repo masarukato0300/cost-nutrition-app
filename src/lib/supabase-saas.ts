@@ -351,6 +351,10 @@ function rowNumber(row: Record<string, unknown>, key: string) {
   return Number(row[key] || 0);
 }
 
+function postgrestListValue(value: unknown) {
+  return `"${String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
 function mapIngredient(row: Record<string, unknown>): Ingredient {
   return {
     id: rowString(row, "id"),
@@ -583,16 +587,30 @@ export async function loadAppDataFromSupabase(session: SaaSAuthSession, storeId:
 
 async function replaceTableRows(session: SaaSAuthSession, table: string, storeId: string, rows: Record<string, unknown>[]) {
   const { url } = requireConfig();
-  await readJson<Record<string, unknown>>(await fetch(`${url}/rest/v1/${table}?store_id=eq.${encodeURIComponent(storeId)}`, {
-    method: "DELETE",
-    headers: authHeaders(session.accessToken),
-  }));
-  if (!rows.length) return;
-  await readJson<Record<string, unknown>>(await fetch(`${url}/rest/v1/${table}`, {
+
+  if (!rows.length) {
+    console.warn(`Skipped empty cloud overwrite for ${table}. This prevents accidental data loss.`);
+    return;
+  }
+
+  await readJson<Record<string, unknown>>(await fetch(`${url}/rest/v1/${table}?on_conflict=id`, {
     method: "POST",
-    headers: { ...authHeaders(session.accessToken), Prefer: "return=minimal" },
+    headers: { ...authHeaders(session.accessToken), Prefer: "resolution=merge-duplicates,return=minimal" },
     body: JSON.stringify(rows),
   }));
+
+  const rowIds = rows.map((row) => row.id).filter((id) => id !== undefined && id !== null && String(id).trim());
+  if (!rowIds.length) return;
+
+  const staleFilter = `id=not.in.(${rowIds.map(postgrestListValue).join(",")})`;
+  try {
+    await readJson<Record<string, unknown>>(await fetch(`${url}/rest/v1/${table}?store_id=eq.${encodeURIComponent(storeId)}&${staleFilter}`, {
+      method: "DELETE",
+      headers: authHeaders(session.accessToken),
+    }));
+  } catch (error) {
+    console.warn(`Cloud stale-row cleanup failed for ${table}. Saved rows were kept.`, error);
+  }
 }
 
 export async function saveAppDataToSupabase(session: SaaSAuthSession, storeId: string, data: AppData) {

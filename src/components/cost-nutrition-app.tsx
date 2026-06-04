@@ -53,7 +53,6 @@ const currentStoreStorageKey = "cost-nutrition-label-mvp-current-store-v1";
 const storeSessionStorageKey = "cost-nutrition-label-mvp-store-session-v1";
 const storeSessionPinStorageKey = "cost-nutrition-label-mvp-store-session-pin-v1";
 const storeSessionAdminStorageKey = "cost-nutrition-label-mvp-store-session-admin-v1";
-const rememberedLoginStorageKey = "cost-nutrition-label-mvp-remember-login-v1";
 const allergenOptions = ["卵", "乳", "小麦", "えび", "かに", "くるみ", "そば", "落花生"];
 const managementStoreTypeOptions = [
   "ひとり店主モード",
@@ -427,7 +426,6 @@ type StoreAccount = {
   updatedAt: string;
 };
 type StoreModalMode = "switch" | "create";
-type AuthModalMode = "login" | "create";
 type OcrPriceCandidate = {
   id: string;
   ingredientId: string;
@@ -532,11 +530,6 @@ type CloudStoreAuthResponse = {
   data?: AppData;
   isAdmin?: boolean;
   error?: string;
-};
-type RememberedLogin = {
-  storeName: string;
-  pin: string;
-  rememberPin: boolean;
 };
 
 function yen(value: number) {
@@ -686,30 +679,6 @@ function loadData(storeId = defaultStoreId): AppData {
   } catch {
     return sampleData;
   }
-}
-
-function loadRememberedLogin(): RememberedLogin {
-  if (typeof window === "undefined") return { storeName: "", pin: "", rememberPin: false };
-  try {
-    const saved = window.localStorage.getItem(rememberedLoginStorageKey);
-    if (!saved) return { storeName: "", pin: "", rememberPin: false };
-    const parsed = JSON.parse(saved) as Partial<RememberedLogin>;
-    return {
-      storeName: parsed.storeName || "",
-      pin: parsed.rememberPin ? parsed.pin || "" : "",
-      rememberPin: Boolean(parsed.rememberPin),
-    };
-  } catch {
-    return { storeName: "", pin: "", rememberPin: false };
-  }
-}
-
-function saveRememberedLogin(storeName: string, pin: string, rememberPin: boolean) {
-  window.localStorage.setItem(rememberedLoginStorageKey, JSON.stringify({
-    storeName,
-    pin: rememberPin ? pin : "",
-    rememberPin,
-  }));
 }
 
 async function authCloudStore(mode: "login" | "create", storeName: string, pin: string): Promise<CloudStoreAuthResponse> {
@@ -1619,29 +1588,23 @@ const emptySetProductItem = (setProductId = "", childProductId = ""): SetProduct
 });
 
 function hasSampleData(targetData: AppData) {
-  const sampleIngredientIds = new Set(sampleData.ingredients.map((ingredient) => ingredient.id));
-  const sampleProductIds = new Set(sampleData.products.map((product) => product.id));
-  const sampleRecipeItemIds = new Set(sampleData.recipeItems.map((item) => item.id));
-  const samplePriceHistoryIds = new Set(sampleData.priceHistories.map((history) => history.id));
-  const sampleSalesRecordIds = new Set(sampleData.salesRecords.map((record) => record.id));
-  const sampleActualCostRecordIds = new Set(sampleData.actualCostRecords.map((record) => record.id));
-  const sampleEventPlanIds = new Set(sampleData.eventPlans.map((plan) => plan.id));
-  const sampleEventPlanItemIds = new Set(sampleData.eventPlanItems.map((item) => item.id));
-  const sampleLaborCostIds = new Set(sampleData.laborCosts.map((record) => record.id));
-  const sampleSetProductItemIds = new Set(sampleData.setProductItems.map((item) => item.id));
-
   return (
-    targetData.ingredients.some((ingredient) => sampleIngredientIds.has(ingredient.id))
-    || targetData.products.some((product) => sampleProductIds.has(product.id))
-    || targetData.recipeItems.some((item) => sampleRecipeItemIds.has(item.id))
-    || targetData.priceHistories.some((history) => samplePriceHistoryIds.has(history.id))
-    || targetData.salesRecords.some((record) => sampleSalesRecordIds.has(record.id))
-    || targetData.actualCostRecords.some((record) => sampleActualCostRecordIds.has(record.id))
-    || targetData.eventPlans.some((plan) => sampleEventPlanIds.has(plan.id))
-    || targetData.eventPlanItems.some((item) => sampleEventPlanItemIds.has(item.id))
-    || targetData.laborCosts.some((record) => sampleLaborCostIds.has(record.id))
-    || targetData.setProductItems.some((item) => sampleSetProductItemIds.has(item.id))
+    targetData.ingredients.some((ingredient) => isUnchangedSampleRecord(ingredient, sampleData.ingredients))
+    || targetData.products.some((product) => isUnchangedSampleRecord(product, sampleData.products))
+    || targetData.recipeItems.some((item) => isUnchangedSampleRecord(item, sampleData.recipeItems))
+    || targetData.priceHistories.some((history) => isUnchangedSampleRecord(history, sampleData.priceHistories))
+    || targetData.salesRecords.some((record) => isUnchangedSampleRecord(record, sampleData.salesRecords))
+    || targetData.actualCostRecords.some((record) => isUnchangedSampleRecord(record, sampleData.actualCostRecords))
+    || targetData.eventPlans.some((plan) => isUnchangedSampleRecord(plan, sampleData.eventPlans))
+    || targetData.eventPlanItems.some((item) => isUnchangedSampleRecord(item, sampleData.eventPlanItems))
+    || targetData.laborCosts.some((record) => isUnchangedSampleRecord(record, sampleData.laborCosts))
+    || targetData.setProductItems.some((item) => isUnchangedSampleRecord(item, sampleData.setProductItems))
   );
+}
+
+function isUnchangedSampleRecord<T extends { id: string }>(record: T, sampleRows: T[]) {
+  const sampleRecord = sampleRows.find((item) => item.id === record.id);
+  return Boolean(sampleRecord && JSON.stringify(record) === JSON.stringify(sampleRecord));
 }
 
 function playButtonClickSound() {
@@ -1714,10 +1677,6 @@ export function CostNutritionApp() {
   const [isStoreModalOpen, setIsStoreModalOpen] = useState(false);
   const [storeModalMode, setStoreModalMode] = useState<StoreModalMode>("switch");
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(true);
-  const [authModalMode, setAuthModalMode] = useState<AuthModalMode>("login");
-  const [authStoreName, setAuthStoreName] = useState("");
-  const [authPin, setAuthPin] = useState("");
-  const [rememberAuthPin, setRememberAuthPin] = useState(false);
   const [saasAuthMode, setSaasAuthMode] = useState<"login" | "signup">("login");
   const [saasEmail, setSaasEmail] = useState("");
   const [saasPassword, setSaasPassword] = useState("");
@@ -1851,7 +1810,6 @@ export function CostNutritionApp() {
   useEffect(() => {
     queueMicrotask(() => {
       const loadedStores = loadStores();
-      const rememberedLogin = loadRememberedLogin();
       const rememberedSaaSSession = loadSaaSAuthSession();
       const sessionStoreId = window.sessionStorage.getItem(storeSessionStorageKey);
       const sessionStorePin = window.sessionStorage.getItem(storeSessionPinStorageKey) || "";
@@ -1865,9 +1823,6 @@ export function CostNutritionApp() {
       setIsAdminSession(hasActiveSession ? sessionIsAdmin : false);
       setCloudSyncStatus(hasActiveSession && sessionStorePin ? "Supabaseから読み込み中..." : "この端末に一時保存中");
       setSwitchStoreId(loadedStoreId);
-      setAuthStoreName(rememberedLogin.storeName || loadedStoreId);
-      setAuthPin(rememberedLogin.pin);
-      setRememberAuthPin(rememberedLogin.rememberPin);
       setIsAuthModalOpen(!hasActiveSession);
       setData(loadedData);
       setSelectedProductId(loadedData.products[0]?.id ?? "");
@@ -2004,8 +1959,6 @@ export function CostNutritionApp() {
     setSwitchStorePin("");
     setActivePage("top");
     setIsAuthModalOpen(false);
-    setAuthStoreName(storeId);
-    setAuthPin("");
     setIsStoreModalOpen(false);
     setStoreModalMode("switch");
   }
@@ -2052,7 +2005,12 @@ export function CostNutritionApp() {
       setIsAuthModalOpen(false);
       return;
     }
-    if (!askMigration || window.confirm("この端末に保存されているデータを、クラウドに移行しますか？\n移行すると、同じログインのiPadやMacでもデータを共有できます。")) {
+    if (!askMigration) {
+      setCloudSyncStatus("Supabaseログイン済み / クラウドデータなし（端末データは未移行）");
+      setIsAuthModalOpen(false);
+      return;
+    }
+    if (window.confirm("この端末に保存されているデータを、クラウドに移行しますか？\n移行すると、同じログインのiPadやMacでもデータを共有できます。")) {
       await saveAppDataToSupabase(session, store.id, fallbackData);
       applySupabaseData(fallbackData, store.id);
       setLastSyncedAt(new Date().toLocaleString("ja-JP"));
@@ -2327,60 +2285,6 @@ export function CostNutritionApp() {
     applyStoreSession(storeId, pin, loadData(storeId));
   }
 
-  async function submitAuthStore() {
-    const storeName = authStoreName.trim();
-    if (!storeName) {
-      alert("店舗名を入力してください。");
-      return;
-    }
-    if (authModalMode === "create" && !/^\d{4}$/.test(authPin)) {
-      alert("PINコードは4桁の数字で入力してください。");
-      return;
-    }
-    if (authModalMode === "login" && !authPin.trim()) {
-      alert("PINコードを入力してください。");
-      return;
-    }
-    try {
-      const cloud = await authCloudStore(authModalMode, storeName, authPin);
-      if (cloud.cloudConfigured && cloud.ok && cloud.data) {
-        saveRememberedLogin(storeName, authPin, rememberAuthPin);
-        applyStoreSession(storeName, authPin, normalizeData(cloud.data), cloud.isAdmin ? "管理者キーでログイン中" : "Supabase共有済み", Boolean(cloud.isAdmin));
-        return;
-      }
-    } catch (error) {
-      alert(error instanceof Error ? error.message : "Supabaseログインに失敗しました。");
-      return;
-    }
-
-    if (authModalMode === "create") {
-      if (stores.some((store) => store.id === storeName)) {
-        alert("同じ店舗名がすでにあります。ログインを選んでください。");
-        return;
-      }
-      const nextStore: StoreAccount = { id: storeName, pin: authPin, createdAt: now(), updatedAt: now() };
-      const nextStores = [...stores, nextStore];
-      setStores(nextStores);
-      saveStores(nextStores);
-      window.localStorage.setItem(storeDataKey(storeName), JSON.stringify(sampleData));
-      saveRememberedLogin(storeName, authPin, rememberAuthPin);
-      loadStoreData(storeName, authPin);
-      return;
-    }
-
-    const store = stores.find((item) => item.id === storeName);
-    if (!store) {
-      alert("この店舗名は登録されていません。新規作成を選んでください。");
-      return;
-    }
-    if (store.pin !== authPin) {
-      alert("PINコードが違います。");
-      return;
-    }
-    saveRememberedLogin(store.id, authPin, rememberAuthPin);
-    loadStoreData(store.id, authPin);
-  }
-
   function logoutStore() {
     if (saasSession) {
       void signOutSaaS(saasSession).catch(() => clearSaaSAuthSession());
@@ -2395,9 +2299,6 @@ export function CostNutritionApp() {
     setLastSyncedAt("");
     setIsAdminSession(false);
     setCloudSyncStatus("ログアウト中");
-    setAuthModalMode("login");
-    setAuthStoreName(currentStoreId);
-    setAuthPin(rememberAuthPin ? authPin : "");
     setIsAuthModalOpen(true);
   }
 
@@ -3012,6 +2913,18 @@ export function CostNutritionApp() {
 
   function saveIngredient() {
     if (!ingredientForm.name.trim()) return;
+    if (!Number.isFinite(ingredientForm.packageAmountGram) || ingredientForm.packageAmountGram <= 0) {
+      alert("内容量は0より大きい数値で入力してください。");
+      return;
+    }
+    if (!Number.isFinite(ingredientForm.price) || ingredientForm.price < 0) {
+      alert("仕入価格は0以上の数値で入力してください。");
+      return;
+    }
+    if (!Number.isFinite(ingredientForm.gramPerUnit) || ingredientForm.gramPerUnit < 0) {
+      alert("単位換算は0以上の数値で入力してください。");
+      return;
+    }
     const isEdit = Boolean(ingredientForm.id);
     const oldIngredient = isEdit ? data.ingredients.find((item) => item.id === ingredientForm.id) : null;
     const inferredCategory = inferIngredientCategory(`${ingredientForm.name} ${ingredientForm.packageName}`);
@@ -3151,6 +3064,25 @@ export function CostNutritionApp() {
 
   function saveProduct() {
     if (!productForm.name.trim()) return;
+    if (!Number.isFinite(productForm.sellingPrice) || productForm.sellingPrice < 0) {
+      alert("販売価格は0以上の数値で入力してください。");
+      return;
+    }
+    if (!Number.isFinite(productForm.targetCostRate) || productForm.targetCostRate <= 0) {
+      alert("目標原価率は0より大きい数値で入力してください。");
+      return;
+    }
+    if (!Number.isFinite(productForm.yieldCount) || productForm.yieldCount <= 0) {
+      alert("出来上がり個数は0より大きい数値で入力してください。");
+      return;
+    }
+    if (
+      [productForm.beforeBakeWeightGram, productForm.afterBakeWeightGram, productForm.weightPerPieceGram]
+        .some((value) => value !== null && (!Number.isFinite(value) || value < 0))
+    ) {
+      alert("重量は0以上の数値で入力してください。");
+      return;
+    }
     const isEdit = Boolean(productForm.id);
     const category = productForm.category || (productForm.isIntermediateMaterial ? "仕込み材料" : productCategoryOptions[0] || "未分類");
     const product: Product = {
@@ -4131,16 +4063,31 @@ export function CostNutritionApp() {
   function clearSampleOnly() {
     if (!hasSampleData(data)) return;
     if (!confirm("サンプルデータだけを消去しますか？\n\n手入力で追加したデータは残します。")) return;
-    const sampleIngredientIds = new Set(sampleData.ingredients.map((ingredient) => ingredient.id));
-    const sampleProductIds = new Set(sampleData.products.map((product) => product.id));
-    const sampleRecipeItemIds = new Set(sampleData.recipeItems.map((item) => item.id));
-    const samplePriceHistoryIds = new Set(sampleData.priceHistories.map((history) => history.id));
-    const sampleSalesRecordIds = new Set(sampleData.salesRecords.map((record) => record.id));
-    const sampleActualCostRecordIds = new Set(sampleData.actualCostRecords.map((record) => record.id));
-    const sampleEventPlanIds = new Set(sampleData.eventPlans.map((plan) => plan.id));
-    const sampleEventPlanItemIds = new Set(sampleData.eventPlanItems.map((item) => item.id));
-    const sampleLaborCostIds = new Set(sampleData.laborCosts.map((record) => record.id));
-    const sampleSetProductItemIds = new Set(sampleData.setProductItems.map((item) => item.id));
+    const sampleIngredientIds = new Set(data.ingredients.filter((ingredient) => isUnchangedSampleRecord(ingredient, sampleData.ingredients)).map((ingredient) => ingredient.id));
+    const sampleProductIds = new Set(data.products.filter((product) => isUnchangedSampleRecord(product, sampleData.products)).map((product) => product.id));
+    const sampleRecipeItemIds = new Set(data.recipeItems.filter((item) => (
+      isUnchangedSampleRecord(item, sampleData.recipeItems)
+      && (sampleIngredientIds.has(item.ingredientId) || sampleProductIds.has(item.productId) || sampleProductIds.has(item.intermediateProductId))
+    )).map((item) => item.id));
+    const samplePriceHistoryIds = new Set(data.priceHistories.filter((history) => (
+      isUnchangedSampleRecord(history, sampleData.priceHistories) || sampleIngredientIds.has(history.ingredientId)
+    )).map((history) => history.id));
+    const sampleSalesRecordIds = new Set(data.salesRecords.filter((record) => (
+      isUnchangedSampleRecord(record, sampleData.salesRecords) || sampleProductIds.has(record.productId)
+    )).map((record) => record.id));
+    const sampleActualCostRecordIds = new Set(data.actualCostRecords.filter((record) => isUnchangedSampleRecord(record, sampleData.actualCostRecords)).map((record) => record.id));
+    const sampleEventPlanIds = new Set(data.eventPlans.filter((plan) => isUnchangedSampleRecord(plan, sampleData.eventPlans)).map((plan) => plan.id));
+    const sampleEventPlanItemIds = new Set(data.eventPlanItems.filter((item) => (
+      isUnchangedSampleRecord(item, sampleData.eventPlanItems)
+      && (sampleEventPlanIds.has(item.eventPlanId) || sampleProductIds.has(item.productId))
+    )).map((item) => item.id));
+    const sampleLaborCostIds = new Set(data.laborCosts.filter((record) => (
+      isUnchangedSampleRecord(record, sampleData.laborCosts) || sampleProductIds.has(record.productId)
+    )).map((record) => record.id));
+    const sampleSetProductItemIds = new Set(data.setProductItems.filter((item) => (
+      isUnchangedSampleRecord(item, sampleData.setProductItems)
+      && (sampleProductIds.has(item.setProductId) || sampleProductIds.has(item.childProductId))
+    )).map((item) => item.id));
 
     const remainingProducts = data.products.filter((product) => !sampleProductIds.has(product.id));
     const nextData: AppData = {
@@ -4576,18 +4523,18 @@ export function CostNutritionApp() {
         <div className="fixed inset-0 z-[60] grid place-items-center bg-black/50 p-3">
           <section className="w-full max-w-md rounded-md border border-neutral-200 bg-white p-5 shadow-2xl">
             <div>
-              <p className="text-xs font-black text-teal-700">店舗ログイン</p>
+              <p className="text-xs font-black text-teal-700">ログイン・新規登録</p>
               <h2 className="mt-1 text-2xl font-black text-neutral-950">
-                {authModalMode === "create" ? "新規作成" : "ログイン"}
+                パティスリー経営ナビ
               </h2>
               <p className="mt-2 text-sm font-bold text-neutral-500">
-                店舗名と4桁PINで店舗データを開きます。
+                メールアドレスとパスワードでログインすると、iPad・Mac・iPhoneで同じ店舗データを共有できます。
               </p>
             </div>
             <div className="mt-4 rounded-md border-2 border-teal-200 bg-teal-50 p-3">
-              <p className="text-xs font-black text-teal-700">販売版ログイン Supabase Auth</p>
+              <p className="text-xs font-black text-teal-700">ログイン・新規登録</p>
               <p className="mt-1 text-sm font-bold text-teal-950">
-                他端末共有・店舗別データ分離はこちらを使います。
+                店舗ごとにデータを分けて安全に保存します。
               </p>
               <div className="mt-3 grid grid-cols-2 gap-2 rounded-md border border-teal-200 bg-white p-1">
                 <button
@@ -4633,50 +4580,8 @@ export function CostNutritionApp() {
                 </div>
               </div>
             </div>
-            <div className="mt-4 rounded-md border border-neutral-200 bg-neutral-50 p-3">
-              <p className="text-xs font-black text-neutral-500">旧デモ用ログイン</p>
-              <p className="mt-1 text-xs font-bold text-neutral-500">
-                既存テスト用です。販売時は上のメールログインを使います。
-              </p>
-            </div>
-            <div className="mt-4 grid grid-cols-2 gap-2 rounded-md border border-neutral-200 bg-neutral-50 p-1">
-              <button
-                className={`rounded px-3 py-2 font-black ${authModalMode === "login" ? "bg-teal-700 text-white" : "bg-white text-neutral-700"}`}
-                onClick={() => setAuthModalMode("login")}
-              >
-                ログイン
-              </button>
-              <button
-                className={`rounded px-3 py-2 font-black ${authModalMode === "create" ? "bg-teal-700 text-white" : "bg-white text-neutral-700"}`}
-                onClick={() => setAuthModalMode("create")}
-              >
-                新規作成
-              </button>
-            </div>
-            <div className="mt-4 grid gap-3">
-              <TextInput label="店舗名" value={authStoreName} onChange={setAuthStoreName} onEnter={submitAuthStore} />
-              {authModalMode === "create" ? (
-                <PinInput label="4桁PINコード" value={authPin} onChange={setAuthPin} />
-              ) : (
-                <TextInput label="4桁PINコード" value={authPin} onChange={setAuthPin} onEnter={submitAuthStore} />
-              )}
-              <label className="flex min-h-11 items-center gap-3 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm font-black text-neutral-700">
-                <input
-                  type="checkbox"
-                  checked={rememberAuthPin}
-                  onChange={(event) => setRememberAuthPin(event.target.checked)}
-                />
-                この端末にIDとPINを保存する
-              </label>
-              <p className="text-xs font-bold text-neutral-500">
-                共用PCではチェックしないでください。店舗IDは次回入力を楽にするため自動で記憶されます。
-              </p>
-              <button className="rounded-md bg-teal-700 px-4 py-3 text-base font-black text-white" onClick={submitAuthStore}>
-                {authModalMode === "create" ? "店舗を作成して始める" : "ログインして始める"}
-              </button>
-            </div>
             <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-900">
-              ログイン後の店舗データはSupabaseに保存され、別端末でも同じ店舗IDとPINで共有できます。
+              ログイン後の店舗データはSupabaseに保存され、別端末でも同じメールログインで共有できます。
             </div>
           </section>
         </div>
