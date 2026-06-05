@@ -2634,7 +2634,7 @@ export function CostNutritionApp() {
     [data.products],
   );
   const visibleIntermediateProducts = activeIngredientCategory === "すべて" || activeIngredientCategory === "中間材料"
-    ? intermediateProducts
+    ? intermediateProducts.filter((product) => product.id !== recipeProductSelectId)
     : [];
   const possibleDuplicateIngredients = useMemo(
     () => findDuplicateIngredients(ingredientForm, data.ingredients).slice(0, 3),
@@ -3152,12 +3152,16 @@ export function CostNutritionApp() {
     setActivePage("product");
   }
 
-  function editRecipeProduct(product: Product) {
+  function selectRecipeProductForEditing(product: Product) {
     setRecipeProductSelectId(product.id);
     setRecipeProductName("");
     setSelectedProductId(product.id);
     setProductForm(product);
     setRecipeProductIsIntermediate(product.isIntermediateMaterial);
+  }
+
+  function editRecipeProduct(product: Product) {
+    selectRecipeProductForEditing(product);
   }
 
   function deleteRecipeForProduct(product: Product) {
@@ -5649,12 +5653,25 @@ export function CostNutritionApp() {
               label="商品"
               value={recipeProductSelectId}
               options={["", ...data.products.map((product) => product.id)]}
-              optionLabels={{ "": "以下の一覧からも選べます", ...Object.fromEntries(data.products.map((product) => [product.id, product.name])) }}
+              optionLabels={{
+                "": "以下の一覧からも選べます",
+                ...Object.fromEntries(data.products.map((product) => [
+                  product.id,
+                  product.isIntermediateMaterial ? `${product.name}（中間材料）` : product.name,
+                ])),
+              }}
               onChange={(value) => {
                 setRecipeProductSelectId(value);
-                if (!value) return;
+                if (!value) {
+                  setRecipeProductName("");
+                  setRecipeProductIsIntermediate(false);
+                  setProductForm(emptyProduct());
+                  return;
+                }
+                const product = data.products.find((item) => item.id === value);
+                if (!product) return;
                 setRecipeProductName("");
-                setSelectedProductId(value);
+                selectRecipeProductForEditing(product);
               }}
             />
             <div className="self-end rounded-md border border-neutral-200 bg-neutral-50 p-3 text-xs font-bold text-neutral-600">
@@ -5855,6 +5872,11 @@ export function CostNutritionApp() {
                 onAmountChange={updateRecipeItemAmount}
                 onItemChange={updateRecipeItem}
               />
+              <div className="mt-3 flex justify-end">
+                <button className="rounded-md bg-teal-700 px-5 py-3 text-sm font-black text-white shadow-sm" onClick={registerCurrentProgress}>
+                  登録
+                </button>
+              </div>
             </div>
           </div>
         </Panel>
