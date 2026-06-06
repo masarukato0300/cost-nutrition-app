@@ -23,6 +23,7 @@ import {
   recipeItemAmountGram,
   upsertSalesRecord,
 } from "@/lib/calculations";
+import { createPatisseriePatisDemoData } from "@/lib/demo-data";
 import { sampleData } from "@/lib/sample-data";
 import { standardNutritionFoods } from "@/lib/standard-nutrition";
 import {
@@ -47,6 +48,9 @@ import type { StandardNutritionFood } from "@/lib/standard-nutrition";
 import type { ActualCostRecord, AppData, BillingSettings, EventPlan, EventSimulationRow, Ingredient, IngredientAlias, LaborCost, MaterialType, MonthlyTheoryRow, OnboardingSupportSettings, PriceImpactRow, Product, ProductLaborCostSummary, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow, SalesRecord, SetProductCostSummary, SetProductItem, WasteItemType, WasteMonthlySummary, WasteReason, WasteRecord } from "@/lib/types";
 
 const defaultStoreId = "デモ店舗";
+const salesDemoStoreId = "00000000-0000-4000-8000-000000000001";
+const salesDemoStoreSlug = "demo-sales-store";
+const salesDemoStoreName = "パティスリー・パティス";
 const legacyStorageKey = "cost-nutrition-label-mvp-v1";
 const storesStorageKey = "cost-nutrition-label-mvp-stores-v1";
 const currentStoreStorageKey = "cost-nutrition-label-mvp-current-store-v1";
@@ -531,6 +535,187 @@ type CloudStoreAuthResponse = {
   isAdmin?: boolean;
   error?: string;
 };
+type DemoLoginResponse = {
+  ok?: boolean;
+  session?: SaaSAuthSession;
+  store?: SaaSStore;
+  profile?: SaaSUserProfile;
+  data?: AppData;
+  demoStoreSlug?: string;
+  error?: string;
+};
+
+function demoPlaces(prefix: string, names: string[], addressPrefix: string): CommercialAreaPlace[] {
+  return names.map((name, index) => ({
+    id: `demo-${prefix}-${index + 1}`,
+    name,
+    address: `${addressPrefix} / 車で約${index + 2}分圏`,
+    rating: [4.4, 4.2, 4.1, 4.0, 3.9][index % 5],
+    reviewCount: 34 + index * 17,
+  }));
+}
+
+function createDemoCommercialAreaResult(): CommercialAreaResult {
+  return {
+    formattedAddress: "ベッドタウン国道沿いテナント（デモ固定データ）",
+    latitude: 35.71025,
+    longitude: 139.5438,
+    radiusKm: 5,
+    groups: [
+      {
+        key: "sweets",
+        label: "洋菓子店",
+        places: demoPlaces("sweets", [
+          "パティスリー ノーブル",
+          "洋菓子工房 アトリエ",
+          "ケーキハウス さくら",
+          "菓子店 メゾンブラン",
+          "スイーツテラス",
+          "パティスリー ルージュ",
+          "焼菓子とケーキ ミモザ",
+          "フランス菓子 ラシーヌ",
+        ], "半径5km内の洋菓子店"),
+      },
+      {
+        key: "bakery",
+        label: "パン屋",
+        places: demoPlaces("bakery", [
+          "ベーカリー朝日",
+          "国道沿いパン工房",
+          "ブーランジェリー ミナミ",
+          "食パン専門店 はる",
+          "天然酵母パン こもれび",
+          "ベイクショップ ルート",
+          "駅前ベーカリー",
+          "パンと珈琲 つむぎ",
+          "町のパン屋 麦",
+          "ファミリーベーカリー",
+          "クロワッサン工房",
+        ], "半径5km内のパン屋"),
+      },
+      {
+        key: "cafe",
+        label: "カフェ",
+        places: demoPlaces("cafe", [
+          "カフェ リーフ",
+          "喫茶ハイウェイ",
+          "カフェ モーニング",
+          "コーヒースタンド日和",
+          "ファミリーカフェ",
+          "カフェ アンド ギフト",
+          "国道カフェ",
+          "自家焙煎カフェ",
+          "ベッドタウン珈琲",
+          "カフェ ひと息",
+          "ランチカフェ ブルー",
+          "テラスカフェ",
+          "カフェ ポルテ",
+          "スイーツカフェ",
+          "駅南カフェ",
+          "ブックカフェ",
+          "週末カフェ",
+          "カフェ グリーン",
+        ], "半径5km内のカフェ"),
+      },
+    ],
+    note: "デモ固定データです。Google APIは使っていません。家族世帯が多いベッドタウン型で、車来店中心。通過交通は多いものの目的来店化が必要で、焼菓子ギフト・手土産・予約商品の訴求が効きやすい想定です。",
+  };
+}
+
+function createDemoManagementAiResult(): ManagementAiResult {
+  return {
+    summary: "売上は平日10万円、土日祝20万円前後で安定しています。焼菓子・進物ギフトが利益を支えており、生菓子は売上には貢献するものの、原価率と廃棄リスクが重くなりやすい状態です。",
+    store_type_insight: "パティスリー・パティスは、焼菓子・進物を強化しやすいベッドタウン型の洋菓子店です。日常の通りすがりより、家族の記念日、帰省手土産、会社関係の進物、予約利用を伸ばす方が店の構造に合っています。",
+    number_alerts: [
+      "苺ショート、モンブラン、シュークリーム、プリンは売上に出ていますが、原価率や包材・廃棄の影響を受けやすい商品です。",
+      "焼菓子10個入り、季節のギフトM、法人手土産セットは客単価と粗利への貢献が大きく、今の強みになっています。",
+      "平日の生菓子廃棄が出ているため、製造数を少し抑えるだけでも粗利を守りやすくなります。",
+    ],
+    owner_constraints: [
+      "週休2日で無理なく続ける前提なら、生菓子の品数追加よりも日持ちする焼菓子・予約ギフトを伸ばす方が負担が少ないです。",
+      "国道沿いでも通過客が多いため、店頭だけで偶然来店を増やすより、予約・取り置き・LINE導線を整える方が効果的です。",
+    ],
+    external_factor_possibilities: [
+      "雨の日や猛暑日は生菓子が弱くなり、当日販売に依存する商品ほど廃棄リスクが出やすいです。",
+      "帰省、内祝い、法人手土産、季節の進物需要は売上を支える外部要因として活用できます。",
+    ],
+    location_area_insights: [
+      "半径5km内に洋菓子店8件、パン屋11件、カフェ18件がある想定です。値下げ競争ではなく、用途・予約・ギフト・看板商品で選ばれる導線が大切です。",
+      "車来店中心なので、Googleマップの外観写真、駐車場写真、入口写真、LINE予約の案内を整えると目的来店につながりやすいです。",
+      "看板やトップ訴求は「ケーキ」だけでなく、「焼菓子ギフト」「手土産」「進物」「予約ホール」を前に出す方が商圏に合っています。",
+    ],
+    price_actions: [
+      "苺ショートは20〜40円の値上げシミュレーションを行い、原価率を35%前後に戻せるか確認してください。",
+      "モンブランは常時販売より季節限定・予約寄りにして、価格も手間に見合う設定に見直す候補です。",
+      "シュークリームとプリンは単価が低く、包材・卵の値上げ影響を受けやすいため、価格または販売曜日を見直す候補です。",
+    ],
+    growth_actions: [
+      "フィナンシェ、マドレーヌは日持ちして粗利が残りやすく、ギフトにも入れやすいので伸ばすべき商品です。",
+      "焼菓子10個入りと季節のギフトMは、レジ横・予約導線・LINE案内で一段目立たせる価値があります。",
+      "法人手土産セットは販売数が少なくても粗利貢献が大きいため、近隣企業や季節挨拶需要に向けて予約商品として育てる候補です。",
+    ],
+    reduce_or_reserve_candidates: [
+      "平日の生菓子品数は1種類減らして、廃棄と仕込み負担の変化を見る価値があります。",
+      "シュークリームは販売数が多くても利益が薄いので、数量限定・時間限定・曜日限定の候補です。",
+      "モンブランは季節限定化や予約優先にすると、手間と廃棄のバランスを取りやすくなります。",
+    ],
+    one_week_experiments: [
+      "平日の生菓子を1種類だけ減らし、廃棄金額と売上の変化を記録する。",
+      "焼菓子10個入りをレジ横とトップ画面で「手土産にちょうどいい」と訴求する。",
+      "法人手土産セットをLINEで1回だけ案内し、予約反応を見る。",
+      "苺ショートを20円、40円値上げした場合の原価率を原価計算画面で確認する。",
+      "雨の日は生菓子製造数を10%抑え、焼菓子ギフトの訴求を強める。",
+    ],
+    no_need_actions: [
+      "生菓子の品数を無理に増やす必要はありません。",
+      "値下げ競争に入る必要はありません。",
+      "毎日新商品を出してSNS投稿を増やすより、予約・手土産・進物の導線を整える方が優先です。",
+    ],
+    questions_to_confirm: [
+      "平日の生菓子廃棄は、曜日・天気・製造数のどれが一番影響していますか？",
+      "法人手土産セットを買うお客様は、どの用途で購入していますか？",
+      "焼菓子ギフトを買いやすくするために、店頭で一番見える場所はどこですか？",
+    ],
+    friendly_frameworks: {
+      strengths: ["焼菓子・進物ギフトの粗利貢献が大きい", "予約商品と法人手土産の伸びしろがある", "家族世帯のベッドタウン需要に合っている"],
+      weaknesses: ["生菓子は原価率と廃棄リスクが高い", "国道沿いでも通過客が多く目的来店化が必要", "低単価商品の作業負担が利益を圧迫しやすい"],
+      chances: ["帰省・内祝い・法人挨拶など進物需要", "LINE予約・取り置き導線", "Googleマップでの目的来店強化"],
+      risks: ["乳製品・卵・苺の値上げ", "雨や猛暑による生菓子廃棄", "周辺競合との価格競争"],
+      priority_targets: ["家族層の手土産需要", "法人ギフト需要", "予約ホール・進物利用"],
+      products_to_grow: ["フィナンシェ", "マドレーヌ", "焼菓子10個入り", "季節のギフトM", "法人手土産セット"],
+      products_to_review: ["苺ショート", "モンブラン", "シュークリーム", "プリン", "平日の生菓子品数"],
+      improvement_ideas: ["価格改定", "予約制・数量限定", "LINE導線", "Googleマップ整備", "ギフト訴求"],
+      monthly_top3_actions: ["焼菓子10個入りを店頭とLINEで訴求する", "平日の生菓子製造数を10%抑える", "苺ショートの値上げ候補を試算する"],
+    },
+    frameworks: {
+      SWOT: {
+        強み: ["焼菓子と進物の粗利", "予約・法人手土産の可能性"],
+        弱み: ["生菓子廃棄", "低単価商品の利益薄"],
+        機会: ["ベッドタウンの家族・進物需要", "LINE予約"],
+        脅威: ["競合多数", "原材料高騰"],
+      },
+      "3C": {
+        顧客: "家族層、帰省・手土産、法人進物",
+        自店: "焼菓子ギフト強化型",
+        競合: "洋菓子店・パン屋・カフェが周辺に複数",
+      },
+      "4P": {
+        商品: "焼菓子ギフトと予約商品を前面に出す",
+        価格: "生菓子は原価上昇に合わせて小幅値上げ",
+        販促: "LINEとGoogleマップで目的来店化",
+        売場: "レジ横・入口でギフト用途を見せる",
+      },
+      STP: {
+        ターゲット: "ベッドタウンの家族層、法人手土産需要",
+        ポジション: "日常ケーキ店より、進物・手土産に強い洋菓子店",
+      },
+      TOWS: {
+        攻め: "焼菓子ギフトを商圏需要に合わせて伸ばす",
+        守り: "生菓子廃棄と原価率を製造数・価格で調整する",
+      },
+    },
+  };
+}
 
 function yen(value: number) {
   return new Intl.NumberFormat("ja-JP", { style: "currency", currency: "JPY", maximumFractionDigits: 1 }).format(value || 0);
@@ -668,6 +853,10 @@ function normalizeData(parsed: AppData): AppData {
       ocrAddonHistory: parsed.billing?.ocrAddonHistory || [],
     },
   };
+}
+
+function createSalesDemoData(): AppData {
+  return normalizeData(createPatisseriePatisDemoData());
 }
 
 function loadData(storeId = defaultStoreId): AppData {
@@ -1310,6 +1499,14 @@ type OcrCrop = {
 
 type OcrCandidateStatus = "未処理" | "反映済み" | "保留" | "削除";
 
+type IngredientOcrFailure = {
+  id: string;
+  rowNumber: number;
+  imageName: string;
+  reason: string;
+  createdAt: string;
+};
+
 const defaultOcrCrop: OcrCrop = { x: 4, y: 5, width: 92, height: 88 };
 
 async function preprocessImageForOcr(dataUrl: string, crop: OcrCrop = defaultOcrCrop): Promise<string> {
@@ -1700,6 +1897,7 @@ export function CostNutritionApp() {
   const [ingredientOcrCandidates, setIngredientOcrCandidates] = useState<Ingredient[]>([]);
   const [ingredientOcrCandidateIndex, setIngredientOcrCandidateIndex] = useState(0);
   const [ingredientOcrCandidateStatuses, setIngredientOcrCandidateStatuses] = useState<Record<number, OcrCandidateStatus>>({});
+  const [ingredientOcrFailures, setIngredientOcrFailures] = useState<IngredientOcrFailure[]>([]);
   const [isIngredientOcrListOpen, setIsIngredientOcrListOpen] = useState(false);
   const [selectedOcrDuplicateIngredientId, setSelectedOcrDuplicateIngredientId] = useState("");
   const [nutritionSearchText, setNutritionSearchText] = useState("");
@@ -1891,7 +2089,9 @@ export function CostNutritionApp() {
     editedBeforeInitialCloudLoadRef.current = true;
     setData(nextData);
     window.localStorage.setItem(storeDataKey(currentStoreId), JSON.stringify(nextData));
-    if (saasSession && saasStore) {
+    if (currentStoreId === salesDemoStoreId) {
+      setCloudSyncStatus("営業デモ専用 / 本番保存なし");
+    } else if (saasSession && saasStore) {
       const saveSeq = saveRequestSeqRef.current + 1;
       saveRequestSeqRef.current = saveSeq;
       setCloudSyncStatus("Supabase保存中...");
@@ -2050,6 +2250,65 @@ export function CostNutritionApp() {
       setSaasAuthMessage("パスワード再設定メールを送信しました。");
     } catch (error) {
       setSaasAuthMessage(error instanceof Error ? error.message : "パスワード再設定に失敗しました。");
+    }
+  }
+
+  function applySalesDemoViewState() {
+    setSaasSession(null);
+    setSaasStore(null);
+    setSaasProfile(null);
+    setLastSyncedAt("");
+    setIsAdminSession(false);
+    clearSaaSAuthSession();
+    setMonthlyTargetMonth("2026-06");
+    setWasteSummaryMonth("2026-06");
+    setSalesAnalysisSort("grossProfit");
+    setCommercialAreaAddress("ベッドタウン国道沿いテナント（デモ）");
+    setCommercialAreaRadiusKm(5);
+    setCommercialAreaResult(createDemoCommercialAreaResult());
+    setCommercialAreaStatus("デモ固定商圏データを表示中。Google APIは使っていません。");
+    setManagementAiResult(createDemoManagementAiResult());
+    setManagementAiStatus("デモ用AI経営コメントを表示中。実店舗データには影響しません。");
+    setManagementDiagnosisAnswers((previous) => ({
+      ...previous,
+      storeTypes: ["夫婦・家族経営モード", "世間・天気・イベントに左右されやすい", "立地ハンデ店舗", "目的来店型にしたい", "地域密着型", "ギフト・焼き菓子中心", "予約・オーダー商品中心"],
+      locationType: "都会から少し離れたベッドタウンの国道沿いテナント。車来店中心で、通過交通は多いが目的来店化が必要。",
+      trainingBackground: "焼菓子・進物ギフトに力を入れており、手土産や予約商品の世界観を育てたい。",
+      externalFactors: "雨の日や猛暑日は生菓子が弱く、帰省・内祝い・法人手土産の時期にギフトが伸びる。",
+      teamStructure: "週休2日で、無理に生菓子を増やさず利益を残す運営を目指す。",
+      currentScale: "平日10万円前後、土日祝20万円前後の売上。",
+      futureScale: "焼菓子ギフト・法人手土産・予約商品を伸ばし、平日売上を安定させたい。",
+      mainGoal: "売上拡大だけでなく、粗利が残り、廃棄が少なく、疲弊しない商品構成にする。",
+      purpose: "地域の家族層や会社関係の手土産・記念日を支える洋菓子店。",
+      concern: "生菓子の廃棄と原材料値上げ、国道沿いでも通過客が多いこと。",
+      customerValue: "手土産の安心感、進物のきちんと感、予約できる便利さ。",
+      localSupporters: "家族世帯、帰省客、近隣企業、内祝い・お供え需要のお客様。",
+      noCompromise: "焼菓子の品質、ギフトの見栄え、地域の信頼感。",
+      smallExperiment: "平日の生菓子を1種類減らし、焼菓子10個入りと法人手土産セットを前に出す。",
+    }));
+  }
+
+  async function openSalesDemoStore() {
+    const fallbackData = createSalesDemoData();
+    applySalesDemoViewState();
+    setSaasAuthMessage("");
+    setCloudSyncStatus("営業デモを準備中...");
+    try {
+      const response = await fetch("/api/demo-login", { method: "POST" });
+      const payload = await response.json() as DemoLoginResponse;
+      if (!response.ok || !payload.ok || !payload.session || !payload.store || !payload.profile || !payload.data) {
+        throw new Error(payload.error || "Supabaseデモ店舗を準備できませんでした。");
+      }
+      setSaasSession(payload.session);
+      setSaasStore(payload.store);
+      setSaasProfile(payload.profile);
+      applyStoreSession(salesDemoStoreId, "", normalizeData(payload.data), "Supabaseデモ店舗 / 本番店舗には影響しません");
+      setLastSyncedAt(new Date().toLocaleString("ja-JP"));
+    } catch (error) {
+      console.warn("Supabase demo tenant unavailable. Falling back to local demo.", error);
+      applySalesDemoViewState();
+      applyStoreSession(salesDemoStoreId, "", fallbackData, "ローカル営業デモ / 本番保存なし");
+      setSaasAuthMessage(error instanceof Error ? error.message : "Supabaseデモ店舗を準備できませんでした。");
     }
   }
 
@@ -2383,6 +2642,7 @@ export function CostNutritionApp() {
     }
     setIngredientOcrImageName(imageName);
     setIsIngredientOcrReading(true);
+    setIngredientOcrFailures([]);
     setIngredientOcrStatus("画像を圧縮中...");
     try {
       const preprocessedImage = await preprocessImageForOcr(imageDataUrl, ingredientOcrCrop);
@@ -2406,6 +2666,18 @@ export function CostNutritionApp() {
         setIngredientOcrCandidates([]);
         setIngredientOcrCandidateIndex(0);
         setIngredientOcrCandidateStatuses({});
+        setIngredientOcrFailures((current) => [
+          ...current,
+          {
+            id: createId("ocrfail"),
+            rowNumber: 1,
+            imageName,
+            reason: rawText
+              ? "文字は一部読めましたが、原材料名・内容量・価格などの登録項目に分けられませんでした。"
+              : "登録に必要な文字を抽出できませんでした。",
+            createdAt: now(),
+          },
+        ]);
         setIngredientOcrStatus(rawText ? "文字は一部読めましたが、登録項目に分けられませんでした。読み取り結果を手直しして「読み込み確認」を押してください。" : "登録に必要な情報を抽出できませんでした。明るい場所で、紙を画面いっぱいに入れて撮り直してください。");
         return;
       }
@@ -2427,7 +2699,18 @@ export function CostNutritionApp() {
       setSelectedOcrDuplicateIngredientId("");
       setIngredientOcrStatus(`読み取り完了。${candidates.length}件の候補があります。確認画面で1件ずつ反映してください。`);
     } catch (error) {
-      setIngredientOcrStatus(error instanceof Error ? error.message : "OCR読み取りに失敗しました。");
+      const message = error instanceof Error ? error.message : "OCR読み取りに失敗しました。";
+      setIngredientOcrFailures((current) => [
+        ...current,
+        {
+          id: createId("ocrfail"),
+          rowNumber: 1,
+          imageName,
+          reason: message,
+          createdAt: now(),
+        },
+      ]);
+      setIngredientOcrStatus(message);
     } finally {
       setIsIngredientOcrReading(false);
     }
@@ -2438,9 +2721,22 @@ export function CostNutritionApp() {
     const successfulResults = settledResults
       .filter((result): result is PromiseFulfilledResult<IngredientVisionOcrResponse | IngredientVisionOcrResult> => result.status === "fulfilled")
       .map((result) => result.value);
-    const failedCount = settledResults.length - successfulResults.length;
+    const failedRows = settledResults
+      .map((result, index) => ({ result, index }))
+      .filter((row): row is { result: PromiseRejectedResult; index: number } => row.result.status === "rejected")
+      .map(({ result, index }) => ({
+        id: createId("ocrfail"),
+        rowNumber: index + 1,
+        imageName: ingredientOcrImageName || pendingIngredientOcrImageName || "撮影画像",
+        reason: result.reason instanceof Error ? result.reason.message : "OCR解析に失敗しました。",
+        createdAt: now(),
+      }));
+    const failedCount = failedRows.length;
+    if (failedRows.length > 0) {
+      setIngredientOcrFailures((current) => [...current, ...failedRows]);
+    }
     if (failedCount > 0 && successfulResults.length > 0) {
-      setIngredientOcrStatus(`${successfulResults.length}件を解析できました。${failedCount}件は文字が少ないためスキップしました。`);
+      setIngredientOcrStatus(`${successfulResults.length}件を解析できました。${failedCount}件は失敗一覧に入れました。`);
     }
     if (successfulResults.length === 0 && settledResults[0]?.status === "rejected") {
       throw settledResults[0].reason instanceof Error ? settledResults[0].reason : new Error("OCR解析に失敗しました。");
@@ -3150,6 +3446,23 @@ export function CostNutritionApp() {
     setProductForm(product);
     setSelectedProductId(product.id);
     setActivePage("product");
+  }
+
+  function loadRecipeRegisteredProductToProductForm(productId: string) {
+    if (!productId) return;
+    const product = data.products.find((item) => item.id === productId);
+    if (!product) return;
+    const summary = calculateProductCost(product, data.ingredients, data.recipeItems, data.products);
+    const roundedRecipeWeight = Math.round(summary.totalRecipeWeightGram * 10) / 10;
+    const yieldCount = product.yieldCount || 1;
+    const estimatedWeightPerPiece = roundedRecipeWeight > 0 ? Math.round((roundedRecipeWeight / yieldCount) * 10) / 10 : product.weightPerPieceGram;
+    setProductForm({
+      ...product,
+      category: product.category || (product.isIntermediateMaterial ? "仕込み材料" : productCategoryOptions[0] || "未分類"),
+      beforeBakeWeightGram: product.beforeBakeWeightGram || roundedRecipeWeight,
+      weightPerPieceGram: product.weightPerPieceGram || estimatedWeightPerPiece,
+    });
+    setSelectedProductId(product.id);
   }
 
   function selectRecipeProductForEditing(product: Product) {
@@ -4164,6 +4477,10 @@ export function CostNutritionApp() {
     !("storeTypes" in group) || group.storeTypes.some((storeType) => managementDiagnosisAnswers.storeTypes.includes(storeType))
   ));
   const canClearSampleData = hasSampleData(data);
+  const isSalesDemoStore = currentStoreId === salesDemoStoreId;
+  const currentStoreDisplayName = isSalesDemoStore ? salesDemoStoreName : currentStoreId;
+  const demoTodaySalesAmount = new Date().getDay() === 0 || new Date().getDay() === 6 ? 200000 : 100000;
+  const demoTheoryCostAmount = managementSummary.totalSalesAmount - managementSummary.totalGrossProfit;
 
   return (
     <main className="mx-auto flex w-full max-w-7xl flex-col gap-4 p-3 pb-28 text-sm text-neutral-900 md:p-5 md:pb-28">
@@ -4178,8 +4495,13 @@ export function CostNutritionApp() {
             原価・売上・粗利・商圏から、次の一手が見える。
           </p>
           <p className="mt-1 text-xs font-bold text-neutral-500">
-            現在の店舗: {currentStoreId} / {cloudSyncStatus}
+            現在の店舗: {currentStoreDisplayName} / {cloudSyncStatus}
           </p>
+          {isSalesDemoStore ? (
+            <p className="mt-2 rounded-md border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-black text-violet-900">
+              デモ店舗: パティスリー・パティス / {salesDemoStoreSlug}。これは営業デモ用データです。実店舗データには影響しません。
+            </p>
+          ) : null}
           {saasSession && saasStore ? (
             <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-black text-teal-800">
               <span className="rounded-full bg-teal-50 px-3 py-1">
@@ -4200,6 +4522,9 @@ export function CostNutritionApp() {
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
+          <button className="rounded-md border border-violet-300 bg-violet-600 px-4 py-2 font-bold text-white shadow-sm" onClick={openSalesDemoStore}>
+            {isSalesDemoStore ? "デモを初期状態に戻す" : "デモ店舗で試す"}
+          </button>
           <button className="rounded-md border border-teal-200 bg-teal-50 px-4 py-2 font-bold text-teal-800" onClick={openStoreModal}>
             店舗切替
           </button>
@@ -4279,6 +4604,61 @@ export function CostNutritionApp() {
 
       {activePage === "top" && (
         <Panel title="ダッシュボード">
+          {isSalesDemoStore ? (
+            <section className="mb-4 rounded-md border-2 border-violet-300 bg-violet-50 p-4 shadow-sm">
+              <div className="grid gap-4 lg:grid-cols-[1fr_280px] lg:items-center">
+                <div>
+                  <p className="text-xs font-black text-violet-700">営業デモ店舗</p>
+                  <h3 className="mt-1 text-2xl font-black text-violet-950">パティスリー・パティス</h3>
+                  <p className="mt-2 text-sm font-bold text-neutral-700">
+                    このデモ店舗は、焼菓子・進物に力を入れるベッドタウン型の洋菓子店を想定しています。
+                    原材料、レシピ、売上、廃棄、商圏データを入れることで、値上げ候補や伸ばすべき商品、AI経営コメントを体験できます。
+                  </p>
+                  <p className="mt-2 rounded-md border border-violet-200 bg-white px-3 py-2 text-xs font-black text-violet-900">
+                    これはデモ用データです。実店舗データには影響しません。
+                  </p>
+                </div>
+                <div className="grid gap-2">
+                  <button className="rounded-md bg-violet-700 px-4 py-3 text-sm font-black text-white shadow-sm" onClick={() => setActivePage("management")}>
+                    AI経営コメントを見る
+                  </button>
+                  <button className="rounded-md border border-violet-300 bg-white px-4 py-3 text-sm font-black text-violet-800" onClick={() => setActivePage("salesAnalysis")}>
+                    売上・粗利分析を見る
+                  </button>
+                  <button className="rounded-md border border-violet-300 bg-white px-4 py-3 text-sm font-black text-violet-800" onClick={() => setActivePage("commercialArea")}>
+                    商圏分析を見る
+                  </button>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-2 md:grid-cols-3 lg:grid-cols-5">
+                <StatCard label="今日の売上" value={yen(demoTodaySalesAmount)} tone="blue" />
+                <StatCard label="今月の売上" value={yen(managementSummary.totalSalesAmount)} tone="blue" />
+                <StatCard label="理論原価" value={yen(demoTheoryCostAmount)} tone="amber" />
+                <StatCard label="理論粗利" value={yen(managementSummary.totalGrossProfit)} tone="green" />
+                <StatCard label="原価率" value={percent(managementSummary.averageCostRate)} tone={managementSummary.averageCostRate >= 40 ? "red" : managementSummary.averageCostRate >= 35 ? "amber" : "green"} />
+              </div>
+              <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                <section className="rounded-md border border-red-200 bg-white p-3">
+                  <h4 className="font-black text-red-900">値上げ候補</h4>
+                  <div className="mt-2 grid gap-1 text-xs font-bold text-neutral-700">
+                    {["苺ショート", "モンブラン", "シュークリーム", "プリン"].map((name) => <span key={name}>・{name}</span>)}
+                  </div>
+                </section>
+                <section className="rounded-md border border-green-200 bg-white p-3">
+                  <h4 className="font-black text-green-900">伸ばすべき商品</h4>
+                  <div className="mt-2 grid gap-1 text-xs font-bold text-neutral-700">
+                    {["フィナンシェ", "マドレーヌ", "焼菓子10個入り", "季節のギフトM", "法人手土産セット"].map((name) => <span key={name}>・{name}</span>)}
+                  </div>
+                </section>
+                <section className="rounded-md border border-amber-200 bg-white p-3">
+                  <h4 className="font-black text-amber-900">作りすぎ注意</h4>
+                  <div className="mt-2 grid gap-1 text-xs font-bold text-neutral-700">
+                    {["平日の生菓子", "シュークリーム", "モンブラン", "雨の日の苺ショート"].map((name) => <span key={name}>・{name}</span>)}
+                  </div>
+                </section>
+              </div>
+            </section>
+          ) : null}
           {(isOnboardingSupportActive || isOnboardingSupportExpired) && (
             <section className={`mb-4 rounded-md border p-4 shadow-sm ${
               isOnboardingSupportActive
@@ -4583,6 +4963,16 @@ export function CostNutritionApp() {
                   </button>
                 </div>
               </div>
+            </div>
+            <div className="mt-4 rounded-md border-2 border-violet-200 bg-violet-50 p-3">
+              <p className="text-xs font-black text-violet-700">パスワードなしで体験</p>
+              <h3 className="mt-1 text-lg font-black text-violet-950">デモ店舗: パティスリー・パティス</h3>
+              <p className="mt-2 text-xs font-bold text-neutral-600">
+                焼菓子・進物ギフトを強化するベッドタウン型の洋菓子店デモです。実店舗データには影響しません。
+              </p>
+              <button className="mt-3 w-full rounded-md bg-violet-700 px-4 py-3 text-sm font-black text-white shadow-sm" onClick={openSalesDemoStore}>
+                デモ店舗で試す
+              </button>
             </div>
             <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-900">
               ログイン後の店舗データはSupabaseに保存され、別端末でも同じメールログインで共有できます。
@@ -4953,13 +5343,16 @@ export function CostNutritionApp() {
 
       {ingredientOcrCandidate && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-3">
-          <section className="w-full max-w-xl rounded-md border border-neutral-200 bg-white p-4 shadow-xl">
-            <h2 className="text-lg font-black">OCR読み込み確認</h2>
-            <p className="mt-1 text-xs font-bold text-neutral-500">
-              内容が合っているか確認してから原材料登録フォームへ反映します。
-              {ingredientOcrCandidates.length > 1 ? ` ${ingredientOcrCandidateIndex + 1}/${ingredientOcrCandidates.length}件目` : ""}
-            </p>
-            <dl className="mt-4 grid grid-cols-[120px_1fr] gap-2 text-sm">
+          <section className="flex max-h-[92vh] w-full max-w-xl flex-col overflow-hidden rounded-md border border-neutral-200 bg-white shadow-xl">
+            <div className="border-b border-neutral-200 p-4">
+              <h2 className="text-lg font-black">OCR読み込み確認</h2>
+              <p className="mt-1 text-xs font-bold text-neutral-500">
+                内容が合っているか確認してから原材料登録フォームへ反映します。
+                {ingredientOcrCandidates.length > 1 ? ` ${ingredientOcrCandidateIndex + 1}/${ingredientOcrCandidates.length}件目` : ""}
+              </p>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            <dl className="grid grid-cols-[120px_1fr] gap-2 text-sm">
               <dt className="font-bold text-neutral-500">原材料名</dt><dd>{ingredientOcrCandidate.name || "-"}</dd>
               <dt className="font-bold text-neutral-500">製品名</dt><dd>{ingredientOcrCandidate.packageName || "-"}</dd>
               <dt className="font-bold text-neutral-500">仕入先</dt><dd>{ingredientOcrCandidate.supplier || "-"}</dd>
@@ -5001,7 +5394,8 @@ export function CostNutritionApp() {
                 )}
               </div>
             )}
-            <div className="mt-4 flex flex-wrap justify-end gap-2">
+            </div>
+            <div className="flex flex-wrap justify-end gap-2 border-t border-neutral-200 bg-white p-3 shadow-[0_-8px_18px_rgba(0,0,0,0.06)]">
               {ingredientOcrCandidates.length > 1 && (
                 <button className="rounded-md border border-neutral-300 bg-white px-4 py-2 font-bold text-neutral-700" onClick={() => setIsIngredientOcrListOpen(true)}>
                   候補一覧
@@ -5083,24 +5477,27 @@ export function CostNutritionApp() {
             <p className="mt-2 text-xs font-bold text-teal-900">
               {ingredientOcrStatus || "文字範囲を確認し、必要に応じて行ごと・商品ごとに分けてAI読み取りします。"}
             </p>
-            {ingredientOcrCandidates.length > 0 && (
+            {(ingredientOcrCandidates.length > 0 || ingredientOcrFailures.length > 0) && (
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <button
-                  className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-black text-white"
-                  onClick={() => setIsIngredientOcrListOpen(true)}
-                >
-                  OCR候補一覧を開く
-                </button>
+                {ingredientOcrCandidates.length > 0 && (
+                  <button
+                    className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-black text-white"
+                    onClick={() => setIsIngredientOcrListOpen(true)}
+                  >
+                    OCR候補一覧を開く
+                  </button>
+                )}
                 <button
                   className="rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-black text-amber-900"
                   onClick={() => setActivePage("ocrQueue")}
                 >
-                  保留・削除一覧
+                  保留・削除・失敗一覧
                 </button>
                 <span className="text-xs font-bold text-neutral-600">
                   未処理 {ingredientOcrCandidates.filter((_, index) => (ingredientOcrCandidateStatuses[index] || "未処理") === "未処理").length}件 /
                   保留 {ingredientOcrCandidates.filter((_, index) => ingredientOcrCandidateStatuses[index] === "保留").length}件 /
                   削除 {ingredientOcrCandidates.filter((_, index) => ingredientOcrCandidateStatuses[index] === "削除").length}件 /
+                  失敗 {ingredientOcrFailures.length}件 /
                   全{ingredientOcrCandidates.length}件
                 </span>
               </div>
@@ -5338,6 +5735,33 @@ export function CostNutritionApp() {
 
       {activePage === "product" && (
         <Panel title="商品登録">
+          <section className="mb-4 rounded-md border border-teal-200 bg-teal-50 p-4">
+            <h3 className="font-black text-teal-950">レシピ登録済みの商品から読み込む</h3>
+            <p className="mt-1 text-xs font-bold text-teal-900">
+              レシピ登録で先に作った商品名を選ぶと、商品登録フォームに読み込みます。レシピの合計重量は、空欄の重量項目へ参考値として反映します。
+            </p>
+            <div className="mt-3 grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
+              <SelectInput
+                label="レシピ登録済み商品"
+                value={productForm.id && recipeRegisteredProducts.some(({ product }) => product.id === productForm.id) ? productForm.id : ""}
+                options={["", ...recipeRegisteredProducts.map(({ product }) => product.id)]}
+                optionLabels={{
+                  "": "レシピ登録済み一覧から選べます",
+                  ...Object.fromEntries(recipeRegisteredProducts.map(({ product, rows }) => [
+                    product.id,
+                    `${product.name}${product.isIntermediateMaterial ? "（中間材料）" : ""} / レシピ${rows.length}行`,
+                  ])),
+                }}
+                onChange={loadRecipeRegisteredProductToProductForm}
+              />
+              <button
+                className="rounded-md border border-teal-300 bg-white px-4 py-2 text-sm font-black text-teal-800"
+                onClick={() => setActivePage("recipe")}
+              >
+                レシピ登録へ
+              </button>
+            </div>
+          </section>
           <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
             <section className="rounded-md border border-amber-200 bg-amber-50 p-4">
               <h3 className="font-black text-amber-950">1. 商品の基本情報</h3>
@@ -7198,11 +7622,11 @@ export function CostNutritionApp() {
       )}
 
       {activePage === "ocrQueue" && (
-        <Panel title="OCR保留・削除">
+        <Panel title="OCR保留・削除・失敗">
           <section className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900">
-            OCRで読み取った候補のうち、保留にしたものと削除にしたものを確認できます。保留は編集から確認POPUPに戻せます。
+            OCRで読み取った候補のうち、保留・削除・解析失敗になったものを確認できます。保留は編集から確認POPUPに戻せます。
           </section>
-          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <div className="mt-4 grid gap-4 xl:grid-cols-3">
             <section className="rounded-md border border-blue-200 bg-blue-50 p-3">
               <div className="flex items-center justify-between gap-2">
                 <h3 className="text-lg font-black text-blue-950">保留一覧</h3>
@@ -7248,6 +7672,29 @@ export function CostNutritionApp() {
                   </div>
                 ))}
                 {ingredientOcrCandidates.every((_, index) => ingredientOcrCandidateStatuses[index] !== "削除") && <EmptyState text="削除一覧は空です。" />}
+              </div>
+            </section>
+
+            <section className="rounded-md border border-neutral-300 bg-neutral-50 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-lg font-black text-neutral-950">失敗一覧</h3>
+                <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-neutral-800">
+                  {ingredientOcrFailures.length}件
+                </span>
+              </div>
+              <div className="mt-3 grid max-h-[58vh] gap-2 overflow-auto pr-1">
+                {ingredientOcrFailures.map((failure) => (
+                  <div key={failure.id} className="rounded-md border border-neutral-200 bg-white p-3">
+                    <p className="font-black text-neutral-900">
+                      {failure.rowNumber}行目: {failure.imageName || "撮影画像"}
+                    </p>
+                    <p className="mt-1 text-xs font-bold text-neutral-500">
+                      {failure.reason}
+                    </p>
+                    <p className="mt-2 text-[11px] font-bold text-neutral-400">{failure.createdAt}</p>
+                  </div>
+                ))}
+                {ingredientOcrFailures.length === 0 && <EmptyState text="解析失敗の履歴はありません。" />}
               </div>
             </section>
           </div>
