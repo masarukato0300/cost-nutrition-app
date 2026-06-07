@@ -6199,7 +6199,8 @@ export function CostNutritionApp() {
               <div className="mt-3 grid grid-cols-2 gap-2">
                 {visibleIntermediateProducts.map((product) => {
                   const summary = calculateProductCost(product, data.ingredients, data.recipeItems, data.products);
-                  const unitCost = summary.totalRecipeWeightGram ? summary.totalCost / summary.totalRecipeWeightGram : 0;
+                  const basisWeightGram = product.afterBakeWeightGram || summary.totalRecipeWeightGram;
+                  const unitCost = basisWeightGram ? summary.totalCost / basisWeightGram : 0;
                   return (
                     <button
                       key={product.id}
@@ -8685,7 +8686,10 @@ function RecipeTable({
             const amount = recipeItemAmountGram(normalizedItem);
             const unit = ingredient ? ingredientUnitLabel(ingredient) : "";
             const intermediateSummary = intermediate ? calculateProductCost(intermediate, ingredients, recipeItems, products) : null;
-            const intermediateUnitCost = intermediateSummary?.totalRecipeWeightGram ? intermediateSummary.totalCost / intermediateSummary.totalRecipeWeightGram : 0;
+            const intermediateBasisWeightGram = intermediate && intermediateSummary
+              ? intermediate.afterBakeWeightGram || intermediateSummary.totalRecipeWeightGram
+              : 0;
+            const intermediateUnitCost = intermediateBasisWeightGram && intermediateSummary ? intermediateSummary.totalCost / intermediateBasisWeightGram : 0;
             const nutritionGram = ingredient ? amountToGram(ingredient, amount) : amount;
             return (
               <tr key={item.id} className="border-t border-neutral-200">
