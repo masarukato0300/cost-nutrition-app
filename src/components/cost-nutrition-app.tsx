@@ -173,7 +173,7 @@ const managementQuestionGroups = [
       { key: "locationShopTypeVisible", label: "外から何のお店かわかりますか？" },
       { key: "locationSignReadable", label: "看板は一瞬で読めますか？" },
       { key: "locationOfferClear", label: "店名よりも「何が買えるか」が伝わっていますか？" },
-      { key: "locationGooglePhotos", label: "Googleマップに外観・駐車場・入口写真がありますか？" },
+      { key: "locationMapPhotos", label: "地図サービスやSNSに外観・駐車場・入口写真がありますか？" },
       { key: "locationReservationFlow", label: "予約や取り置き導線はありますか？" },
       { key: "locationVisitorType", label: "通りすがり客と目的来店客、どちらが多いですか？" },
     ],
@@ -520,6 +520,10 @@ type CommercialAreaResult = {
   latitude: number;
   longitude: number;
   radiusKm: number;
+  sourceType?: "manual" | "demo";
+  locationType?: string;
+  memo?: string;
+  regionalFeatures?: string;
   groups: Array<{
     key: string;
     label: string;
@@ -555,12 +559,26 @@ function demoPlaces(prefix: string, names: string[], addressPrefix: string): Com
   }));
 }
 
+function manualCommercialAreaPlaces(prefix: string, label: string, count: number): CommercialAreaPlace[] {
+  return Array.from({ length: Math.max(0, Math.floor(count)) }, (_, index) => ({
+    id: `manual-${prefix}-${index + 1}`,
+    name: `${label} ${index + 1}`,
+    address: "手入力の競合数",
+    rating: null,
+    reviewCount: 0,
+  }));
+}
+
 function createDemoCommercialAreaResult(): CommercialAreaResult {
   return {
     formattedAddress: "ベッドタウン国道沿いテナント（デモ固定データ）",
     latitude: 35.71025,
     longitude: 139.5438,
     radiusKm: 5,
+    sourceType: "demo",
+    locationType: "ベッドタウン国道沿いテナント",
+    memo: "都会から少し離れたベッドタウンの国道沿い。通過交通はあるが、目的来店化が必要。",
+    regionalFeatures: "家族世帯が多く、車利用中心。帰省・手土産・会社関係の進物需要がある。",
     groups: [
       {
         key: "sweets",
@@ -618,7 +636,7 @@ function createDemoCommercialAreaResult(): CommercialAreaResult {
         ], "半径5km内のカフェ"),
       },
     ],
-    note: "デモ固定データです。Google APIは使っていません。家族世帯が多いベッドタウン型で、車来店中心。通過交通は多いものの目的来店化が必要で、焼菓子ギフト・手土産・予約商品の訴求が効きやすい想定です。",
+    note: "デモ固定データです。外部地図APIは使っていません。家族世帯が多いベッドタウン型で、車来店中心。通過交通は多いものの目的来店化が必要で、焼菓子ギフト・手土産・予約商品の訴求が効きやすい想定です。",
   };
 }
 
@@ -641,7 +659,7 @@ function createDemoManagementAiResult(): ManagementAiResult {
     ],
     location_area_insights: [
       "半径5km内に洋菓子店8件、パン屋11件、カフェ18件がある想定です。値下げ競争ではなく、用途・予約・ギフト・看板商品で選ばれる導線が大切です。",
-      "車来店中心なので、Googleマップの外観写真、駐車場写真、入口写真、LINE予約の案内を整えると目的来店につながりやすいです。",
+      "車来店中心なので、地図サービスやSNSの外観写真、駐車場写真、入口写真、LINE予約の案内を整えると目的来店につながりやすいです。",
       "看板やトップ訴求は「ケーキ」だけでなく、「焼菓子ギフト」「手土産」「進物」「予約ホール」を前に出す方が商圏に合っています。",
     ],
     price_actions: [
@@ -679,12 +697,12 @@ function createDemoManagementAiResult(): ManagementAiResult {
     friendly_frameworks: {
       strengths: ["焼菓子・進物ギフトの粗利貢献が大きい", "予約商品と法人手土産の伸びしろがある", "家族世帯のベッドタウン需要に合っている"],
       weaknesses: ["生菓子は原価率と廃棄リスクが高い", "国道沿いでも通過客が多く目的来店化が必要", "低単価商品の作業負担が利益を圧迫しやすい"],
-      chances: ["帰省・内祝い・法人挨拶など進物需要", "LINE予約・取り置き導線", "Googleマップでの目的来店強化"],
+      chances: ["帰省・内祝い・法人挨拶など進物需要", "LINE予約・取り置き導線", "地図サービスでの目的来店強化"],
       risks: ["乳製品・卵・苺の値上げ", "雨や猛暑による生菓子廃棄", "周辺競合との価格競争"],
       priority_targets: ["家族層の手土産需要", "法人ギフト需要", "予約ホール・進物利用"],
       products_to_grow: ["フィナンシェ", "マドレーヌ", "焼菓子10個入り", "季節のギフトM", "法人手土産セット"],
       products_to_review: ["苺ショート", "モンブラン", "シュークリーム", "プリン", "平日の生菓子品数"],
-      improvement_ideas: ["価格改定", "予約制・数量限定", "LINE導線", "Googleマップ整備", "ギフト訴求"],
+      improvement_ideas: ["価格改定", "予約制・数量限定", "LINE導線", "地図サービス整備", "ギフト訴求"],
       monthly_top3_actions: ["焼菓子10個入りを店頭とLINEで訴求する", "平日の生菓子製造数を10%抑える", "苺ショートの値上げ候補を試算する"],
     },
     frameworks: {
@@ -702,7 +720,7 @@ function createDemoManagementAiResult(): ManagementAiResult {
       "4P": {
         商品: "焼菓子ギフトと予約商品を前面に出す",
         価格: "生菓子は原価上昇に合わせて小幅値上げ",
-        販促: "LINEとGoogleマップで目的来店化",
+        販促: "LINEと地図サービスで目的来店化",
         売場: "レジ横・入口でギフト用途を見せる",
       },
       STP: {
@@ -1214,7 +1232,7 @@ function topPageDescription(pageKey: PageKey) {
     cost: "材料原価と包材込み原価を確認",
     management: "売上、粗利、廃棄から経営判断を確認",
     salesAnalysis: "商品別の売上・粗利ランキングを確認",
-    commercialArea: "住所から周辺競合店を確認",
+    commercialArea: "競合数・立地タイプをAI判断に反映",
     nutrition: "レシピから栄養成分表示を計算",
     allergen: "商品ごとのアレルゲンを一覧確認",
     production: "予定数から必要材料を逆算",
@@ -1914,11 +1932,14 @@ export function CostNutritionApp() {
   const [salesCsvPreviewRows, setSalesCsvPreviewRows] = useState<SalesCsvPreviewRow[]>([]);
   const [salesCsvFileName, setSalesCsvFileName] = useState("");
   const [salesAnalysisSort, setSalesAnalysisSort] = useState<SalesAnalysisSortKey>("grossProfit");
-  const [commercialAreaAddress, setCommercialAreaAddress] = useState("");
-  const [commercialAreaRadiusKm, setCommercialAreaRadiusKm] = useState(5);
+  const [commercialAreaCakeShopCount, setCommercialAreaCakeShopCount] = useState(0);
+  const [commercialAreaBakeryCount, setCommercialAreaBakeryCount] = useState(0);
+  const [commercialAreaCafeCount, setCommercialAreaCafeCount] = useState(0);
+  const [commercialAreaLocationType, setCommercialAreaLocationType] = useState("ベッドタウン");
+  const [commercialAreaMemo, setCommercialAreaMemo] = useState("");
+  const [commercialAreaRegionalFeatures, setCommercialAreaRegionalFeatures] = useState("");
   const [commercialAreaStatus, setCommercialAreaStatus] = useState("");
   const [commercialAreaResult, setCommercialAreaResult] = useState<CommercialAreaResult | null>(null);
-  const [isCommercialAreaLoading, setIsCommercialAreaLoading] = useState(false);
   const [managementDiagnosisAnswers, setManagementDiagnosisAnswers] = useState({
     storeTypes: [] as string[],
     locationType: "",
@@ -1986,7 +2007,7 @@ export function CostNutritionApp() {
     locationShopTypeVisible: "",
     locationSignReadable: "",
     locationOfferClear: "",
-    locationGooglePhotos: "",
+    locationMapPhotos: "",
     locationReservationFlow: "",
     locationVisitorType: "",
   });
@@ -2263,10 +2284,14 @@ export function CostNutritionApp() {
     setMonthlyTargetMonth("2026-06");
     setWasteSummaryMonth("2026-06");
     setSalesAnalysisSort("grossProfit");
-    setCommercialAreaAddress("ベッドタウン国道沿いテナント（デモ）");
-    setCommercialAreaRadiusKm(5);
+    setCommercialAreaCakeShopCount(8);
+    setCommercialAreaBakeryCount(11);
+    setCommercialAreaCafeCount(18);
+    setCommercialAreaLocationType("ベッドタウン");
+    setCommercialAreaMemo("国道沿いテナントで車は多いが通過客が中心。予約・手土産・進物目的の来店を増やしたい。");
+    setCommercialAreaRegionalFeatures("家族世帯が多く、帰省・内祝い・法人手土産需要がある。車来店中心で、周辺にパン屋・カフェも多い。");
     setCommercialAreaResult(createDemoCommercialAreaResult());
-    setCommercialAreaStatus("デモ固定商圏データを表示中。Google APIは使っていません。");
+    setCommercialAreaStatus("デモ固定商圏データを表示中。外部地図APIは使っていません。");
     setManagementAiResult(createDemoManagementAiResult());
     setManagementAiStatus("デモ用AI経営コメントを表示中。実店舗データには影響しません。");
     setManagementDiagnosisAnswers((previous) => ({
@@ -2375,7 +2400,11 @@ export function CostNutritionApp() {
             })),
             commercialArea: commercialAreaResult
               ? {
-                  address: commercialAreaResult.formattedAddress,
+                  sourceType: commercialAreaResult.sourceType || "manual",
+                  locationType: commercialAreaResult.locationType || commercialAreaResult.formattedAddress,
+                  memo: commercialAreaResult.memo || commercialAreaResult.note || "",
+                  regionalFeatures: commercialAreaResult.regionalFeatures || "",
+                  addressSummary: commercialAreaResult.formattedAddress,
                   radiusKm: commercialAreaResult.radiusKm,
                   radiusLabel: `半径${commercialAreaResult.radiusKm}km`,
                   competitorCounts: commercialAreaResult.groups.map((group) => ({
@@ -2404,39 +2433,37 @@ export function CostNutritionApp() {
   }
 
   async function runCommercialAreaAnalysis() {
-    const address = commercialAreaAddress.trim();
-    if (!address) {
-      setCommercialAreaStatus("住所を入力してください。");
-      return;
-    }
-    if (isSaaSSupabaseConfigured() && !saasSession) {
-      setCommercialAreaStatus("商圏分析は販売版ログイン後に使えます。先にメールログインしてください。");
-      return;
-    }
-    try {
-      setIsCommercialAreaLoading(true);
-      setCommercialAreaStatus("住所と周辺店舗を調べています...");
-      setCommercialAreaResult(null);
-      const response = await fetch("/api/commercial-area-analysis", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(saasSession ? { Authorization: `Bearer ${saasSession.accessToken}` } : {}),
+    const locationType = commercialAreaLocationType.trim() || "未設定";
+    const result: CommercialAreaResult = {
+      formattedAddress: locationType,
+      latitude: 0,
+      longitude: 0,
+      radiusKm: 0,
+      sourceType: "manual",
+      locationType,
+      memo: commercialAreaMemo.trim(),
+      regionalFeatures: commercialAreaRegionalFeatures.trim(),
+      groups: [
+        {
+          key: "cakeShops",
+          label: "洋菓子店・ケーキ屋",
+          places: manualCommercialAreaPlaces("cake-shops", "洋菓子店・ケーキ屋", commercialAreaCakeShopCount),
         },
-        body: JSON.stringify({
-          address,
-          radiusKm: commercialAreaRadiusKm,
-        }),
-      });
-      const payload = await response.json() as { ok?: boolean; error?: string } & CommercialAreaResult;
-      if (!response.ok || !payload.ok) throw new Error(payload.error || "商圏分析に失敗しました。");
-      setCommercialAreaResult(payload);
-      setCommercialAreaStatus("周辺競合を取得しました。");
-    } catch (error) {
-      setCommercialAreaStatus(error instanceof Error ? error.message : "商圏分析に失敗しました。");
-    } finally {
-      setIsCommercialAreaLoading(false);
-    }
+        {
+          key: "bakeries",
+          label: "パン屋",
+          places: manualCommercialAreaPlaces("bakeries", "パン屋", commercialAreaBakeryCount),
+        },
+        {
+          key: "cafes",
+          label: "カフェ",
+          places: manualCommercialAreaPlaces("cafes", "カフェ", commercialAreaCafeCount),
+        },
+      ],
+      note: "外部地図検索は使わず、入力した競合数・立地タイプ・商圏メモ・地域特徴をAI判断に反映します。",
+    };
+    setCommercialAreaResult(result);
+    setCommercialAreaStatus("手入力の商圏情報をAI経営コメントに反映できる状態にしました。");
   }
 
   function matchSalesProduct(rawProductName: string) {
@@ -6388,26 +6415,26 @@ export function CostNutritionApp() {
                 </button>
               </div>
               <div className="mt-4 rounded-md border border-violet-200 bg-white p-3 text-sm font-bold text-violet-900">
-                AIにはレシピ全文やCSV全文ではなく、集計済みの数字・商圏の件数要約・下の回答だけを送ります。売上拡大だけでなく、疲弊せず利益を残す方向で提案します。
+                AIにはレシピ全文やCSV全文ではなく、集計済みの数字・手入力の商圏メモ・下の回答だけを送ります。売上拡大だけでなく、疲弊せず利益を残す方向で提案します。
               </div>
               <div className="mt-3 rounded-md border border-cyan-200 bg-cyan-50 p-3 text-sm font-bold text-cyan-950">
                 {commercialAreaResult ? (
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <p className="font-black">商圏分析結果をAIコメントに反映します</p>
+                      <p className="font-black">商圏メモをAIコメントに反映します</p>
                       <p className="mt-1 text-xs">
-                        半径{commercialAreaResult.radiusKm}km / {commercialAreaResult.groups.map((group) => `${group.label}${group.places.length}件`).join("・")}
+                        {commercialAreaResult.locationType || commercialAreaResult.formattedAddress} / {commercialAreaResult.groups.map((group) => `${group.label}${group.places.length}件`).join("・")}
                       </p>
                     </div>
                     <button className="rounded-md border border-cyan-300 bg-white px-3 py-2 text-xs font-black text-cyan-800" onClick={() => setActivePage("commercialArea")}>
-                      商圏分析を見る
+                      商圏メモを見る
                     </button>
                   </div>
                 ) : (
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    <p>商圏分析を実行すると、周辺競合・カフェ・パン屋の状況もAIコメントに反映できます。</p>
+                    <p>競合数・立地タイプ・商圏メモ・地域特徴を入力すると、AIコメントに反映できます。</p>
                     <button className="rounded-md bg-cyan-700 px-3 py-2 text-xs font-black text-white" onClick={() => setActivePage("commercialArea")}>
-                      商圏分析へ
+                      商圏メモへ
                     </button>
                   </div>
                 )}
@@ -6684,40 +6711,57 @@ export function CostNutritionApp() {
             <section className="rounded-md border border-slate-100 bg-slate-50 p-4">
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>
-                  <p className="text-xs font-black text-slate-700">住所から周辺競合を確認</p>
-                  <h2 className="mt-1 text-xl font-black text-neutral-950">周辺のケーキ屋・パン屋・カフェを調べる</h2>
+                  <p className="text-xs font-black text-slate-700">手入力の商圏メモ</p>
+                  <h2 className="mt-1 text-xl font-black text-neutral-950">競合数・立地タイプ・地域特徴を入力する</h2>
                   <p className="mt-1 text-sm font-bold text-neutral-600">
-                    まずは競合店数のMVPです。人口・所得・年齢層は次の段階で追加できます。
+                    外部地図検索は使わず、現場で分かる情報をAI経営判断に反映します。
                   </p>
                 </div>
                 <button
                   className="rounded-md bg-slate-800 px-5 py-3 font-black text-white disabled:cursor-not-allowed disabled:bg-slate-400"
                   onClick={runCommercialAreaAnalysis}
-                  disabled={isCommercialAreaLoading}
                 >
-                  {isCommercialAreaLoading ? "調査中..." : "周辺競合を調べる"}
+                  AI判断に反映する
                 </button>
               </div>
-              <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_220px]">
-                <TextInput
-                  label="店舗住所"
-                  value={commercialAreaAddress}
-                  onChange={setCommercialAreaAddress}
-                  placeholder="例：奈良県奈良市〇〇町1-2-3"
-                />
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                <NumberInput label="競合数：洋菓子店・ケーキ屋" value={commercialAreaCakeShopCount} onChange={setCommercialAreaCakeShopCount} />
+                <NumberInput label="競合数：パン屋" value={commercialAreaBakeryCount} onChange={setCommercialAreaBakeryCount} />
+                <NumberInput label="競合数：カフェ" value={commercialAreaCafeCount} onChange={setCommercialAreaCafeCount} />
+              </div>
+              <div className="mt-4 grid gap-3 lg:grid-cols-[260px_1fr_1fr]">
                 <label className="grid gap-1 font-bold text-neutral-600">
-                  <span>半径</span>
+                  <span>立地タイプ</span>
                   <select
-                    value={commercialAreaRadiusKm}
-                    onChange={(event) => setCommercialAreaRadiusKm(Number(event.target.value))}
+                    value={commercialAreaLocationType}
+                    onChange={(event) => setCommercialAreaLocationType(event.target.value)}
                     className="min-h-11 rounded-md border border-neutral-200 bg-white px-3 py-2 text-neutral-900 shadow-sm outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
                   >
-                    <option value={1}>1km</option>
-                    <option value={3}>3km</option>
-                    <option value={5}>5km</option>
-                    <option value={10}>10km</option>
+                    <option value="ベッドタウン">ベッドタウン</option>
+                    <option value="駅前">駅前</option>
+                    <option value="住宅街">住宅街</option>
+                    <option value="郊外ロードサイド">郊外ロードサイド</option>
+                    <option value="商店街">商店街</option>
+                    <option value="観光地">観光地</option>
+                    <option value="ビル上階">ビル上階</option>
+                    <option value="路地裏・奥まった立地">路地裏・奥まった立地</option>
+                    <option value="その他">その他</option>
                   </select>
                 </label>
+                <TextAreaInput
+                  label="商圏メモ"
+                  value={commercialAreaMemo}
+                  onChange={setCommercialAreaMemo}
+                  rows={3}
+                  placeholder="例：国道沿いで車は多いが通過客が中心。予約・手土産目的の来店を増やしたい。"
+                />
+                <TextAreaInput
+                  label="地域の特徴"
+                  value={commercialAreaRegionalFeatures}
+                  onChange={setCommercialAreaRegionalFeatures}
+                  rows={3}
+                  placeholder="例：家族世帯が多い。帰省・内祝い・法人手土産の需要がある。"
+                />
               </div>
               {commercialAreaStatus ? (
                 <p className="mt-3 rounded-md border border-slate-200 bg-white p-3 text-sm font-black text-slate-900">{commercialAreaStatus}</p>
@@ -6729,16 +6773,24 @@ export function CostNutritionApp() {
                 <section className="rounded-md border border-neutral-200 bg-white p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <h3 className="font-black text-neutral-950">分析地点</h3>
-                      <p className="mt-1 text-sm font-bold text-neutral-600">{commercialAreaResult.formattedAddress}</p>
-                      <p className="mt-1 text-xs font-bold text-neutral-500">
-                        緯度 {number(commercialAreaResult.latitude, 5)} / 経度 {number(commercialAreaResult.longitude, 5)} / 半径 {commercialAreaResult.radiusKm}km
-                      </p>
+                      <h3 className="font-black text-neutral-950">AI判断に使う商圏情報</h3>
+                      <p className="mt-1 text-sm font-bold text-neutral-600">立地タイプ：{commercialAreaResult.locationType || commercialAreaResult.formattedAddress}</p>
+                      <p className="mt-1 text-xs font-bold text-neutral-500">競合数・立地タイプ・商圏メモ・地域特徴をAIコメントへ渡します。</p>
                     </div>
                     <div className="grid grid-cols-3 gap-2">
                       {commercialAreaResult.groups.map((group) => (
                         <StatCard key={group.key} label={group.label} value={`${group.places.length}件`} tone={group.places.length >= 15 ? "red" : group.places.length >= 8 ? "amber" : "green"} />
                       ))}
+                    </div>
+                  </div>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <div className="rounded-md border border-neutral-100 bg-neutral-50 p-3">
+                      <p className="text-xs font-black text-neutral-500">商圏メモ</p>
+                      <p className="mt-1 text-sm font-bold text-neutral-800">{commercialAreaResult.memo || "未入力"}</p>
+                    </div>
+                    <div className="rounded-md border border-neutral-100 bg-neutral-50 p-3">
+                      <p className="text-xs font-black text-neutral-500">地域の特徴</p>
+                      <p className="mt-1 text-sm font-bold text-neutral-800">{commercialAreaResult.regionalFeatures || "未入力"}</p>
                     </div>
                   </div>
                   {commercialAreaResult.note ? (
@@ -6753,7 +6805,7 @@ export function CostNutritionApp() {
                 </section>
               </>
             ) : (
-              <EmptyState text="住所を入力して「周辺競合を調べる」を押すと、競合候補が表示されます。" />
+              <EmptyState text="競合数・立地タイプ・商圏メモ・地域特徴を入力して「AI判断に反映する」を押すと、AI経営コメントの判断材料になります。" />
             )}
           </div>
         </Panel>
@@ -8122,25 +8174,15 @@ function CommercialAreaGroupCard({ group }: { group: CommercialAreaResult["group
       <div className="flex items-start justify-between gap-2">
         <div>
           <h3 className="font-black text-neutral-950">{group.label}</h3>
-          <p className="mt-1 text-xs font-bold text-neutral-500">近い競合候補</p>
+          <p className="mt-1 text-xs font-bold text-neutral-500">入力した競合数</p>
         </div>
         <span className="rounded-md bg-slate-100 px-3 py-2 text-sm font-black text-slate-800">{group.places.length}件</span>
       </div>
-      <div className="mt-3 grid gap-2">
-        {group.places.slice(0, 10).map((place) => (
-          <div key={place.id} className="rounded-md border border-neutral-100 bg-neutral-50 p-3 text-sm">
-            <strong className="block text-neutral-950">{place.name}</strong>
-            <p className="mt-1 text-xs font-bold text-neutral-500">{place.address || "住所情報なし"}</p>
-            <p className="mt-2 text-xs font-black text-slate-700">
-              評価 {place.rating ? number(place.rating, 1) : "-"} / 口コミ {number(place.reviewCount, 0)}件
-            </p>
-          </div>
-        ))}
-        {group.places.length === 0 && <EmptyState text="この条件では候補が見つかりませんでした。" />}
-        {group.places.length > 10 ? (
-          <p className="text-xs font-bold text-neutral-500">表示は上位10件です。</p>
-        ) : null}
-      </div>
+      <p className="mt-3 rounded-md border border-neutral-100 bg-neutral-50 p-3 text-sm font-bold text-neutral-700">
+        {group.places.length > 0
+          ? `${group.label}が${group.places.length}件ある前提でAIが商圏判断します。`
+          : `${group.label}は少ない、または未入力として扱います。`}
+      </p>
     </section>
   );
 }
