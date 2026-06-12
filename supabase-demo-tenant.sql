@@ -25,6 +25,7 @@ where table_schema = 'public'
     'price_histories',
     'ingredient_aliases',
     'waste_records',
+    'inventory_records',
     'sales_records',
     'actual_cost_records',
     'event_plans',
@@ -50,6 +51,7 @@ where schemaname = 'public'
     'price_histories',
     'ingredient_aliases',
     'waste_records',
+    'inventory_records',
     'sales_records',
     'actual_cost_records',
     'event_plans',
@@ -66,6 +68,7 @@ select 'ingredients' as table_name, count(*) from public.ingredients where store
 union all select 'products', count(*) from public.products where store_id = '00000000-0000-4000-8000-000000000001'
 union all select 'recipe_items', count(*) from public.recipe_items where store_id = '00000000-0000-4000-8000-000000000001'
 union all select 'sales_records', count(*) from public.sales_records where store_id = '00000000-0000-4000-8000-000000000001'
+union all select 'inventory_records', count(*) from public.inventory_records where store_id = '00000000-0000-4000-8000-000000000001'
 union all select 'waste_records', count(*) from public.waste_records where store_id = '00000000-0000-4000-8000-000000000001';
 
 -- 4. デモ以外の店舗にデモIDが混ざっていないか確認

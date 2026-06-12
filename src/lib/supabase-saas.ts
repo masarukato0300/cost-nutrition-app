@@ -6,6 +6,7 @@ import type {
   EventPlanItem,
   Ingredient,
   IngredientAlias,
+  InventoryRecord,
   LaborCost,
   PriceHistory,
   Product,
@@ -343,6 +344,24 @@ async function fetchTable<T>(session: SaaSAuthSession, table: string, storeId: s
   return rows.map(mapper);
 }
 
+async function fetchOptionalTable<T>(session: SaaSAuthSession, table: string, storeId: string, mapper: (row: Record<string, unknown>) => T) {
+  try {
+    return await fetchTable(session, table, storeId, mapper);
+  } catch (error) {
+    if (!isMissingOptionalTableError(error)) throw error;
+    console.warn(`Optional Supabase table ${table} could not be loaded.`, error);
+    return [];
+  }
+}
+
+function isMissingOptionalTableError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("Could not find the table")
+    || message.includes("schema cache")
+    || message.includes("relation")
+    || message.includes("does not exist");
+}
+
 function rowString(row: Record<string, unknown>, key: string) {
   return String(row[key] || "");
 }
@@ -434,6 +453,7 @@ export async function loadAppDataFromSupabase(session: SaaSAuthSession, storeId:
     wasteRecords,
     salesRecords,
     actualCostRecords,
+    inventoryRecords,
     eventPlans,
     eventPlanItems,
     laborCosts,
@@ -506,6 +526,22 @@ export async function loadAppDataFromSupabase(session: SaaSAuthSession, storeId:
       createdAt: rowString(row, "created_at"),
       updatedAt: rowString(row, "updated_at"),
     })),
+    fetchOptionalTable(session, "inventory_records", storeId, (row): InventoryRecord => ({
+      id: rowString(row, "id"),
+      date: rowString(row, "date"),
+      month: rowString(row, "month"),
+      itemType: row.item_type as InventoryRecord["itemType"],
+      itemId: rowString(row, "item_id"),
+      categoryName: rowString(row, "category_name"),
+      itemName: rowString(row, "item_name"),
+      quantity: rowNumber(row, "quantity"),
+      unitLabel: rowString(row, "unit_label"),
+      unitCost: rowNumber(row, "unit_cost"),
+      amount: rowNumber(row, "amount"),
+      memo: rowString(row, "memo"),
+      createdAt: rowString(row, "created_at"),
+      updatedAt: rowString(row, "updated_at"),
+    })),
     fetchTable(session, "event_plans", storeId, (row): EventPlan => ({
       id: rowString(row, "id"),
       name: rowString(row, "name"),
@@ -562,11 +598,11 @@ export async function loadAppDataFromSupabase(session: SaaSAuthSession, storeId:
     wasteRecords,
     salesRecords,
     actualCostRecords,
+    inventoryRecords,
     eventPlans,
     eventPlanItems,
     laborCosts,
     setProductItems,
-    inventoryRecords: [],
     onboardingSupport: {
       onboardingSupportEnabled: Boolean(support.enabled),
       onboardingSupportStartDate: rowString(support, "support_start_date"),
@@ -584,6 +620,15 @@ export async function loadAppDataFromSupabase(session: SaaSAuthSession, storeId:
       ocrAddonHistory: Array.isArray(billing.ocr_addon_history) ? billing.ocr_addon_history as AppData["billing"]["ocrAddonHistory"] : [],
     },
   };
+}
+
+async function replaceOptionalTableRows(session: SaaSAuthSession, table: string, storeId: string, rows: Record<string, unknown>[]) {
+  try {
+    await replaceTableRows(session, table, storeId, rows);
+  } catch (error) {
+    if (!isMissingOptionalTableError(error)) throw error;
+    console.warn(`Optional Supabase table ${table} could not be saved.`, error);
+  }
 }
 
 async function replaceTableRows(session: SaaSAuthSession, table: string, storeId: string, rows: Record<string, unknown>[]) {
@@ -752,6 +797,22 @@ export async function saveAppDataToSupabase(session: SaaSAuthSession, storeId: s
       id: item.id,
       month: item.month,
       supplier: item.supplier,
+      amount: item.amount,
+      memo: item.memo,
+      created_at: item.createdAt,
+      updated_at: item.updatedAt,
+    }))),
+    replaceOptionalTableRows(session, "inventory_records", storeId, data.inventoryRecords.map((item) => withStore({
+      id: item.id,
+      date: item.date,
+      month: item.month,
+      item_type: item.itemType,
+      item_id: item.itemId,
+      category_name: item.categoryName,
+      item_name: item.itemName,
+      quantity: item.quantity,
+      unit_label: item.unitLabel,
+      unit_cost: item.unitCost,
       amount: item.amount,
       memo: item.memo,
       created_at: item.createdAt,

@@ -168,6 +168,7 @@ async function seedDemoData(url: string, serviceKey: string, userId: string, dat
     "event_plans",
     "actual_cost_records",
     "sales_records",
+    "inventory_records",
     "waste_records",
     "ingredient_aliases",
     "billing_settings",
@@ -179,7 +180,12 @@ async function seedDemoData(url: string, serviceKey: string, userId: string, dat
     "ingredients",
   ];
   for (const table of tablesToReset) {
-    await clearDemoRows(url, serviceKey, table);
+    try {
+      await clearDemoRows(url, serviceKey, table);
+    } catch (error) {
+      if (table !== "inventory_records") throw error;
+      console.warn("Demo inventory_records table is not ready yet.", error);
+    }
   }
 
   await upsertRows(url, serviceKey, "ingredients", data.ingredients.map((item) => withStore({

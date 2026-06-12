@@ -104,6 +104,7 @@ begin
     'waste_records',
     'sales_records',
     'actual_cost_records',
+    'inventory_records',
     'event_plans',
     'event_plan_items',
     'labor_costs',

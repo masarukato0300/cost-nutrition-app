@@ -2955,6 +2955,13 @@ export function CostNutritionApp() {
     next?.select();
   }
 
+  function selectInventoryCategory(category: string) {
+    setInventoryActiveCategory(category);
+    window.requestAnimationFrame(() => {
+      document.getElementById("inventory-input-table")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
   function saveInventorySnapshot() {
     const timestamp = now();
     const month = inventoryDate.slice(0, 7);
@@ -7147,7 +7154,7 @@ export function CostNutritionApp() {
                     <button
                       key={category}
                       className={`rounded-md border px-3 py-2 text-sm font-black ${inventoryActiveCategory === category ? "border-emerald-700 bg-emerald-700 text-white" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}
-                      onClick={() => setInventoryActiveCategory(category)}
+                      onClick={() => selectInventoryCategory(category)}
                     >
                       {category}
                       <span className="ml-2 text-xs opacity-80">{yen(amount)}</span>
@@ -7166,7 +7173,7 @@ export function CostNutritionApp() {
               </div>
             </section>
 
-            <section className="overflow-hidden rounded-md border border-neutral-200 bg-white">
+            <section id="inventory-input-table" className="scroll-mt-24 overflow-hidden rounded-md border border-neutral-200 bg-white">
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[900px] text-sm">
                   <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
@@ -7240,6 +7247,19 @@ export function CostNutritionApp() {
                     {inventoryYearlySummary.categoryRows.length === 0 ? <EmptyState text="この年の棚卸し保存はまだありません。" /> : null}
                   </div>
                 </div>
+              </div>
+            </section>
+
+            <section className="rounded-md border border-emerald-200 bg-white p-4 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black text-emerald-700">入力が終わったらここから保存できます</p>
+                  <p className="mt-1 text-lg font-black text-neutral-950">棚卸し合計 {yen(inventoryTotalAmount)}</p>
+                  <p className="text-sm font-bold text-neutral-500">保存日: {inventoryDate}</p>
+                </div>
+                <button className="w-full rounded-md bg-emerald-700 px-5 py-4 text-base font-black text-white md:w-auto" onClick={saveInventorySnapshot}>
+                  この棚卸しを保存
+                </button>
               </div>
             </section>
           </div>

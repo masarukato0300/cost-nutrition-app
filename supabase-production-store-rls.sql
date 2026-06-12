@@ -151,6 +151,7 @@ declare
     'waste_records',
     'sales_records',
     'actual_cost_records',
+    'inventory_records',
     'event_plans',
     'event_plan_items',
     'labor_costs',
@@ -229,4 +230,3 @@ end $$;
 
 -- Legacy PIN-login table is server-only through service_role. Keep RLS on and no client policy.
 alter table if exists public.app_stores enable row level security;
-

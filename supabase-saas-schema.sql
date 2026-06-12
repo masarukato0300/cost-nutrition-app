@@ -194,6 +194,27 @@ create table if not exists public.actual_cost_records (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.inventory_records (
+  id text primary key,
+  store_id uuid not null references public.stores(id) on delete cascade,
+  date date not null,
+  month text not null,
+  item_type text not null check (item_type in ('INGREDIENT', 'PRODUCT')),
+  item_id text not null,
+  category_name text not null default '',
+  item_name text not null default '',
+  quantity numeric not null default 0,
+  unit_label text not null default '',
+  unit_cost numeric not null default 0,
+  amount numeric not null default 0,
+  memo text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists inventory_records_store_month_idx on public.inventory_records(store_id, month);
+create index if not exists inventory_records_store_date_idx on public.inventory_records(store_id, date);
+
 create table if not exists public.event_plans (
   id text primary key,
   store_id uuid not null references public.stores(id) on delete cascade,
@@ -294,6 +315,7 @@ alter table public.billing_settings enable row level security;
 alter table public.waste_records enable row level security;
 alter table public.sales_records enable row level security;
 alter table public.actual_cost_records enable row level security;
+alter table public.inventory_records enable row level security;
 alter table public.event_plans enable row level security;
 alter table public.event_plan_items enable row level security;
 alter table public.labor_costs enable row level security;
@@ -389,6 +411,7 @@ begin
     'waste_records',
     'sales_records',
     'actual_cost_records',
+    'inventory_records',
     'event_plans',
     'event_plan_items',
     'labor_costs',
