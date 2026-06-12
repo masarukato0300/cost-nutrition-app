@@ -2,6 +2,8 @@ import type {
   AppData,
   EventSimulationSummary,
   Ingredient,
+  InventoryRecord,
+  InventorySummary,
   MonthlyTheorySummary,
   Nutrition,
   PriceImpactRow,
@@ -371,6 +373,32 @@ export function calculateWasteMonthlySummary(data: AppData, month: string): Wast
     reasonRows: [...reasonMap.values()].sort((a, b) => b.costAmount - a.costAmount),
     itemRows: [...itemMap.values()].sort((a, b) => b.costAmount - a.costAmount).slice(0, 20),
   };
+}
+
+export function calculateInventorySummary(data: AppData, period: string): InventorySummary {
+  const records = data.inventoryRecords.filter((record) => record.month === period || record.month.startsWith(`${period}-`));
+  const categoryMap = new Map<string, InventorySummary["categoryRows"][number]>();
+
+  records.forEach((record) => {
+    const current = categoryMap.get(record.categoryName);
+    categoryMap.set(record.categoryName, {
+      categoryName: record.categoryName,
+      quantity: (current?.quantity ?? 0) + record.quantity,
+      amount: (current?.amount ?? 0) + record.amount,
+    });
+  });
+
+  return {
+    periodLabel: period,
+    totalAmount: records.reduce((sum, record) => sum + record.amount, 0),
+    recordCount: records.length,
+    categoryRows: [...categoryMap.values()].sort((a, b) => b.amount - a.amount),
+    itemRows: [...records].sort((a, b) => b.amount - a.amount),
+  };
+}
+
+export function latestInventoryRecordsForDate(records: InventoryRecord[], date: string): InventoryRecord[] {
+  return records.filter((record) => record.date === date);
 }
 
 export function calculateMonthlyTheoryCost(data: AppData, month: string): MonthlyTheorySummary {

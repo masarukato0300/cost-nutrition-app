@@ -566,6 +566,7 @@ export async function loadAppDataFromSupabase(session: SaaSAuthSession, storeId:
     eventPlanItems,
     laborCosts,
     setProductItems,
+    inventoryRecords: [],
     onboardingSupport: {
       onboardingSupportEnabled: Boolean(support.enabled),
       onboardingSupportStartDate: rowString(support, "support_start_date"),

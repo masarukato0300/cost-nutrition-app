@@ -412,6 +412,7 @@ export function createPatisseriePatisDemoData(): AppData {
       { id: "demo-labor-corporate", productId: "demo-prd-corporate", processName: "法人ギフト包装・熨斗確認", minutes: 18, workers: 1, hourlyWage: 1200, memo: "1箱", createdAt: now, updatedAt: now },
     ],
     setProductItems: [],
+    inventoryRecords: [],
     onboardingSupport: {
       onboardingSupportEnabled: false,
       onboardingSupportStartDate: "2026-06-01",

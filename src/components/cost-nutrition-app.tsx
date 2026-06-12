@@ -10,6 +10,7 @@ import {
   calculateWasteRecordAmounts,
   calculateWasteMonthlySummary,
   calculateWasteSummary,
+  calculateInventorySummary,
   calculateMonthlyTheoryCost,
   collectAllergens,
   collectLabelNames,
@@ -45,7 +46,7 @@ import {
 } from "@/lib/supabase-saas";
 import { buildManagementDecisionSummary, type ProductManagementMetric } from "@/lib/management-analysis";
 import type { StandardNutritionFood } from "@/lib/standard-nutrition";
-import type { ActualCostRecord, AppData, BillingSettings, EventPlan, EventSimulationRow, Ingredient, IngredientAlias, LaborCost, MaterialType, MonthlyTheoryRow, OnboardingSupportSettings, PriceImpactRow, Product, ProductLaborCostSummary, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow, SalesRecord, SetProductCostSummary, SetProductItem, WasteItemType, WasteMonthlySummary, WasteReason, WasteRecord } from "@/lib/types";
+import type { ActualCostRecord, AppData, BillingSettings, EventPlan, EventSimulationRow, Ingredient, IngredientAlias, InventoryItemType, InventoryRecord, LaborCost, MaterialType, MonthlyTheoryRow, OnboardingSupportSettings, PriceImpactRow, Product, ProductLaborCostSummary, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow, SalesRecord, SetProductCostSummary, SetProductItem, WasteItemType, WasteMonthlySummary, WasteReason, WasteRecord } from "@/lib/types";
 
 const defaultStoreId = "デモ店舗";
 const salesDemoStoreId = "00000000-0000-4000-8000-000000000001";
@@ -228,6 +229,7 @@ const pages = [
   { key: "allergen", label: "アレルゲン一覧" },
   { key: "production", label: "仕込み量逆算" },
   { key: "order", label: "発注リスト" },
+  { key: "inventory", label: "棚卸し" },
   { key: "waste", label: "廃棄ロス" },
   { key: "salesImport", label: "売上CSV取込" },
   { key: "monthly", label: "月間理論原価" },
@@ -250,7 +252,7 @@ const bottomNavPageKeys: PageNavKey[] = ["ingredient", "product", "recipe"];
 const navGroups = [
   { key: "costs", label: "原価・値上げ", description: "経営判断、売上粗利、商圏、原価計算", pages: ["management", "salesAnalysis", "commercialArea", "cost", "impact", "event", "labor", "set"] },
   { key: "display", label: "表示・ラベル", description: "栄養成分、アレルゲン、ラベル", pages: ["nutrition", "allergen", "label"] },
-  { key: "operation", label: "現場管理", description: "仕込み、発注、廃棄、売上CSV、月間原価", pages: ["production", "order", "waste", "salesImport", "monthly"] },
+  { key: "operation", label: "現場管理", description: "仕込み、発注、棚卸し、廃棄、売上CSV、月間原価", pages: ["production", "order", "inventory", "waste", "salesImport", "monthly"] },
   { key: "data", label: "データ管理", description: "商品一覧、カテゴリ、原材料一覧、OCR候補、CSV出力、設定", pages: ["productList", "productCategory", "master", "ocrQueue", "csv", "settings"] },
 ] as const satisfies Array<{ key: string; label: string; description: string; pages: PageNavKey[] }>;
 const pageTones: Record<PageNavKey, { navActive: string; navIdle: string; topCard: string; mark: string }> = {
@@ -349,6 +351,12 @@ const pageTones: Record<PageNavKey, { navActive: string; navIdle: string; topCar
     navIdle: "border-yellow-500 bg-yellow-50 text-yellow-900 hover:bg-yellow-100",
     topCard: "border-yellow-100 bg-yellow-50/70 hover:border-yellow-400",
     mark: "bg-yellow-500",
+  },
+  inventory: {
+    navActive: "border-emerald-800 bg-emerald-700 text-white shadow-sm",
+    navIdle: "border-emerald-500 bg-emerald-50 text-emerald-900 hover:bg-emerald-100",
+    topCard: "border-emerald-100 bg-emerald-50/70 hover:border-emerald-400",
+    mark: "bg-emerald-600",
   },
   waste: {
     navActive: "border-pink-700 bg-pink-600 text-white shadow-sm",
@@ -508,6 +516,17 @@ type SalesCsvPreviewRow = {
   matched: boolean;
 };
 type SalesAnalysisSortKey = "salesAmount" | "grossProfit" | "costRate" | "salesQuantity" | "wasteQuantity";
+type InventoryDraftRow = {
+  key: string;
+  itemType: InventoryItemType;
+  itemId: string;
+  itemName: string;
+  categoryName: string;
+  unitLabel: string;
+  unitCost: number;
+  quantity: number;
+  amount: number;
+};
 type CommercialAreaPlace = {
   id: string;
   name: string;
@@ -853,6 +872,7 @@ function normalizeData(parsed: AppData): AppData {
     eventPlanItems: parsed.eventPlanItems || [],
     laborCosts: parsed.laborCosts || [],
     setProductItems: parsed.setProductItems || [],
+    inventoryRecords: parsed.inventoryRecords || [],
     onboardingSupport: {
       ...defaultOnboardingSupport,
       ...(parsed.onboardingSupport || {}),
@@ -995,6 +1015,7 @@ function NavPictogram({ pageKey }: { pageKey: PageNavKey }) {
     allergen: <><path className={common} d="M12 3 22 20H2L12 3Z" /><path className={common} d="M12 9v5" /><path className={common} d="M12 18h.01" /></>,
     production: <><path className={common} d="M4 18h16" /><path className={common} d="M7 18V9l5-4 5 4v9" /><path className={common} d="M9 13h6" /></>,
     order: <><path className={common} d="M4 5h2l2 10h9l2-7H7" /><circle className={common} cx="10" cy="20" r="1" /><circle className={common} cx="17" cy="20" r="1" /></>,
+    inventory: <><path className={common} d="M5 4h14v16H5z" /><path className={common} d="M8 8h8M8 12h8M8 16h4" /><path className={common} d="m16 15 2 2 3-5" /></>,
     waste: <><path className={common} d="M5 7h14" /><path className={common} d="M9 7V4h6v3" /><path className={common} d="M8 10v10h8V10" /><path className={common} d="M11 11v7M14 11v7" /></>,
     salesImport: <><path className={common} d="M6 3h9l3 3v15H6z" /><path className={common} d="M15 3v4h4" /><path className={common} d="M8 12h8M8 16h5" /><path className={common} d="m16 15 2 2 3-4" /></>,
     monthly: <><path className={common} d="M4 20h16" /><path className={common} d="M6 16v-4M12 16V7M18 16v-8" /></>,
@@ -1237,6 +1258,7 @@ function topPageDescription(pageKey: PageKey) {
     allergen: "商品ごとのアレルゲンを一覧確認",
     production: "予定数から必要材料を逆算",
     order: "必要材料を仕入先別に確認",
+    inventory: "残数入力で棚卸金額を確認",
     waste: "廃棄や試作ロスを記録",
     salesImport: "レジCSVを取り込み売上分析に反映",
     monthly: "販売数から理論原価を確認",
@@ -1925,6 +1947,11 @@ export function CostNutritionApp() {
   const [wasteDate, setWasteDate] = useState(todayDate());
   const [wasteReason, setWasteReason] = useState<WasteReason>("売れ残り");
   const [wasteSummaryMonth, setWasteSummaryMonth] = useState(currentMonth());
+  const [inventoryDate, setInventoryDate] = useState(todayDate());
+  const [inventoryActiveCategory, setInventoryActiveCategory] = useState("すべて");
+  const [inventoryQuantities, setInventoryQuantities] = useState<Record<string, string>>({});
+  const [inventorySummaryMonth, setInventorySummaryMonth] = useState(currentMonth());
+  const [inventorySummaryYear, setInventorySummaryYear] = useState(String(new Date().getFullYear()));
   const [monthlyTargetMonth, setMonthlyTargetMonth] = useState("2026-05");
   const [managementAiResult, setManagementAiResult] = useState<ManagementAiResult | null>(null);
   const [managementAiStatus, setManagementAiStatus] = useState("");
@@ -2915,6 +2942,52 @@ export function CostNutritionApp() {
     setIngredientOcrStatus("削除一覧を空にしました。");
   }
 
+  function updateInventoryQuantity(key: string, value: string) {
+    const normalized = value.replace(/[^\d.]/g, "");
+    const [integerPart, ...decimalParts] = normalized.split(".");
+    const nextValue = decimalParts.length > 0 ? `${integerPart}.${decimalParts.join("")}` : integerPart;
+    setInventoryQuantities((current) => ({ ...current, [key]: nextValue }));
+  }
+
+  function focusNextInventoryInput(index: number) {
+    const next = document.querySelector<HTMLInputElement>(`[data-inventory-index="${index + 1}"]`);
+    next?.focus();
+    next?.select();
+  }
+
+  function saveInventorySnapshot() {
+    const timestamp = now();
+    const month = inventoryDate.slice(0, 7);
+    const records: InventoryRecord[] = inventoryRows
+      .filter((row) => row.quantity > 0)
+      .map((row) => ({
+        id: `inv-${inventoryDate}-${row.itemType.toLowerCase()}-${row.itemId}`,
+        date: inventoryDate,
+        month,
+        itemType: row.itemType,
+        itemId: row.itemId,
+        categoryName: row.categoryName,
+        itemName: row.itemName,
+        quantity: row.quantity,
+        unitLabel: row.unitLabel,
+        unitCost: row.unitCost,
+        amount: row.amount,
+        memo: "",
+        createdAt: savedInventoryByKey[row.key]?.createdAt || timestamp,
+        updatedAt: timestamp,
+      }));
+
+    commit({
+      ...data,
+      inventoryRecords: [
+        ...data.inventoryRecords.filter((record) => record.date !== inventoryDate),
+        ...records,
+      ],
+    });
+    setInventorySummaryMonth(month);
+    setInventorySummaryYear(inventoryDate.slice(0, 4));
+  }
+
   const selectedProduct = data.products.find((product) => product.id === selectedProductId) ?? data.products[0];
   const recipeEditingProduct = data.products.find((product) => product.id === recipeProductSelectId) ?? null;
   const costSummary = selectedProduct
@@ -3028,6 +3101,77 @@ export function CostNutritionApp() {
   const wasteMonthlySummary = useMemo(
     () => calculateWasteMonthlySummary(data, wasteSummaryMonth),
     [data, wasteSummaryMonth],
+  );
+  const savedInventoryByKey = useMemo(() => {
+    const rows = data.inventoryRecords.filter((record) => record.date === inventoryDate);
+    return Object.fromEntries(rows.map((record) => [`${record.itemType}:${record.itemId}`, record]));
+  }, [data.inventoryRecords, inventoryDate]);
+  const inventoryRows = useMemo<InventoryDraftRow[]>(() => {
+    const ingredientRows = data.ingredients.map((ingredient) => {
+      const key = `INGREDIENT:${ingredient.id}`;
+      const quantity = Number(inventoryQuantities[key] ?? savedInventoryByKey[key]?.quantity ?? 0) || 0;
+      const categoryName = isPackagingIngredient(ingredient) ? "包材" : ingredient.category || "原材料";
+      const unitCost = pricePerGram(ingredient);
+      return {
+        key,
+        itemType: "INGREDIENT" as const,
+        itemId: ingredient.id,
+        itemName: ingredientOptionLabel(ingredient),
+        categoryName,
+        unitLabel: ingredientUnitLabel(ingredient),
+        unitCost,
+        quantity,
+        amount: quantity * unitCost,
+      };
+    });
+    const productRows = data.products.map((product) => {
+      const key = `PRODUCT:${product.id}`;
+      const quantity = Number(inventoryQuantities[key] ?? savedInventoryByKey[key]?.quantity ?? 0) || 0;
+      const summary = calculateProductCost(product, data.ingredients, data.recipeItems, data.products);
+      const basisWeight = product.afterBakeWeightGram || summary.totalRecipeWeightGram || product.weightPerPieceGram || 0;
+      const isIntermediate = product.isIntermediateMaterial;
+      const unitCost = isIntermediate ? (basisWeight ? summary.totalCost / basisWeight : 0) : summary.costForDisplayUnit;
+      return {
+        key,
+        itemType: "PRODUCT" as const,
+        itemId: product.id,
+        itemName: product.name,
+        categoryName: isIntermediate ? "中間材料" : product.category || "販売商品",
+        unitLabel: isIntermediate ? "g" : product.displayUnit.replace("あたり", ""),
+        unitCost,
+        quantity,
+        amount: quantity * unitCost,
+      };
+    });
+    return [...ingredientRows, ...productRows].sort((a, b) => a.categoryName.localeCompare(b.categoryName, "ja") || a.itemName.localeCompare(b.itemName, "ja"));
+  }, [data.ingredients, data.products, data.recipeItems, inventoryQuantities, savedInventoryByKey]);
+  const inventoryCategories = useMemo(
+    () => ["すべて", ...Array.from(new Set(inventoryRows.map((row) => row.categoryName))).sort((a, b) => a.localeCompare(b, "ja"))],
+    [inventoryRows],
+  );
+  const visibleInventoryRows = inventoryActiveCategory === "すべて"
+    ? inventoryRows
+    : inventoryRows.filter((row) => row.categoryName === inventoryActiveCategory);
+  const inventoryCategoryTotals = useMemo(() => {
+    const map = new Map<string, { categoryName: string; amount: number; count: number }>();
+    inventoryRows.forEach((row) => {
+      const current = map.get(row.categoryName);
+      map.set(row.categoryName, {
+        categoryName: row.categoryName,
+        amount: (current?.amount ?? 0) + row.amount,
+        count: (current?.count ?? 0) + (row.quantity > 0 ? 1 : 0),
+      });
+    });
+    return [...map.values()].sort((a, b) => b.amount - a.amount);
+  }, [inventoryRows]);
+  const inventoryTotalAmount = inventoryRows.reduce((sum, row) => sum + row.amount, 0);
+  const inventoryMonthlySummary = useMemo(
+    () => calculateInventorySummary(data, inventorySummaryMonth),
+    [data, inventorySummaryMonth],
+  );
+  const inventoryYearlySummary = useMemo(
+    () => calculateInventorySummary(data, inventorySummaryYear),
+    [data, inventorySummaryYear],
   );
   const activeWasteRows = useMemo(
     () => wasteCategoryRows(data, activeWasteCategory),
@@ -6963,6 +7107,141 @@ export function CostNutritionApp() {
                 </section>
               );
             })}
+          </div>
+        </Panel>
+      )}
+
+      {activePage === "inventory" && (
+        <Panel title="棚卸し">
+          <div className="grid gap-4">
+            <section className="rounded-md border border-emerald-100 bg-emerald-50 p-4">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black text-emerald-700">原材料・包材・商品原価から自動計算</p>
+                  <h2 className="mt-1 text-xl font-black text-neutral-950">残っている数量を入れるだけで棚卸し金額を集計</h2>
+                  <p className="mt-1 text-sm font-bold text-neutral-600">
+                    数量欄はテンキー、小数点、Enterで入力しやすいようにしています。Enterで次の行へ進みます。
+                  </p>
+                </div>
+                <button className="rounded-md bg-emerald-700 px-5 py-3 font-black text-white" onClick={saveInventorySnapshot}>
+                  この棚卸しを保存
+                </button>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-4">
+                <TextInput label="棚卸し日" value={inventoryDate} onChange={(value) => {
+                  setInventoryDate(value);
+                  setInventoryQuantities({});
+                }} />
+                <Metric label="棚卸し合計" value={yen(inventoryTotalAmount)} tone="normal" />
+                <Metric label="入力済み品目" value={`${inventoryRows.filter((row) => row.quantity > 0).length}件`} compact />
+                <Metric label="表示品目" value={`${visibleInventoryRows.length}件`} compact />
+              </div>
+            </section>
+
+            <section className="rounded-md border border-neutral-200 bg-white p-4">
+              <div className="flex flex-wrap gap-2">
+                {inventoryCategories.map((category) => {
+                  const total = inventoryCategoryTotals.find((row) => row.categoryName === category);
+                  const amount = category === "すべて" ? inventoryTotalAmount : total?.amount ?? 0;
+                  return (
+                    <button
+                      key={category}
+                      className={`rounded-md border px-3 py-2 text-sm font-black ${inventoryActiveCategory === category ? "border-emerald-700 bg-emerald-700 text-white" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}
+                      onClick={() => setInventoryActiveCategory(category)}
+                    >
+                      {category}
+                      <span className="ml-2 text-xs opacity-80">{yen(amount)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="mt-4 grid gap-2 md:grid-cols-3">
+                {inventoryCategoryTotals.map((row) => (
+                  <div key={row.categoryName} className="rounded-md border border-neutral-100 bg-neutral-50 p-3">
+                    <p className="text-xs font-black text-neutral-500">{row.categoryName}</p>
+                    <p className="mt-1 text-lg font-black text-neutral-950">{yen(row.amount)}</p>
+                    <p className="text-xs font-bold text-neutral-500">入力済み {row.count}件</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="overflow-hidden rounded-md border border-neutral-200 bg-white">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[900px] text-sm">
+                  <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
+                    <tr>
+                      <th className="p-3">カテゴリ</th>
+                      <th className="p-3">品目</th>
+                      <th className="p-3 text-right">原価単価</th>
+                      <th className="p-3 text-center">単位</th>
+                      <th className="p-3 text-right">残数量</th>
+                      <th className="p-3 text-right">棚卸し金額</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleInventoryRows.map((row, index) => (
+                      <tr key={row.key} className="border-t border-neutral-100">
+                        <td className="p-3 font-bold text-neutral-600">{row.categoryName}</td>
+                        <td className="p-3 font-black text-neutral-950">{row.itemName}</td>
+                        <td className="p-3 text-right font-bold">{yenForSmallCost(row.unitCost)}</td>
+                        <td className="p-3 text-center font-bold text-neutral-600">{row.unitLabel}</td>
+                        <td className="p-3 text-right">
+                          <input
+                            data-inventory-index={index}
+                            inputMode="decimal"
+                            className="h-12 w-32 rounded-md border border-emerald-200 bg-emerald-50 px-3 text-right text-lg font-black text-neutral-950 outline-none focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-100"
+                            value={inventoryQuantities[row.key] ?? (savedInventoryByKey[row.key]?.quantity ? String(savedInventoryByKey[row.key].quantity) : "")}
+                            placeholder="0"
+                            onChange={(event) => updateInventoryQuantity(row.key, event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") focusNextInventoryInput(index);
+                            }}
+                          />
+                        </td>
+                        <td className="p-3 text-right text-base font-black text-emerald-800">{yen(row.amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {visibleInventoryRows.length === 0 ? <EmptyState text="このカテゴリの棚卸し対象はありません。" /> : null}
+            </section>
+
+            <section className="rounded-md border border-blue-100 bg-blue-50 p-4">
+              <div className="grid gap-3 md:grid-cols-4">
+                <TextInput label="月別表示" value={inventorySummaryMonth} onChange={setInventorySummaryMonth} placeholder="2026-06" />
+                <Metric label="月別棚卸し合計" value={yen(inventoryMonthlySummary.totalAmount)} tone="normal" />
+                <TextInput label="年別表示" value={inventorySummaryYear} onChange={setInventorySummaryYear} placeholder="2026" />
+                <Metric label="年別棚卸し合計" value={yen(inventoryYearlySummary.totalAmount)} tone="normal" />
+              </div>
+              <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                <div className="rounded-md border border-white bg-white p-3">
+                  <h3 className="font-black text-neutral-950">月別カテゴリ集計</h3>
+                  <div className="mt-2 grid gap-2">
+                    {inventoryMonthlySummary.categoryRows.map((row) => (
+                      <div key={row.categoryName} className="flex items-center justify-between rounded-md bg-neutral-50 px-3 py-2 font-bold">
+                        <span>{row.categoryName}</span>
+                        <span>{yen(row.amount)}</span>
+                      </div>
+                    ))}
+                    {inventoryMonthlySummary.categoryRows.length === 0 ? <EmptyState text="この月の棚卸し保存はまだありません。" /> : null}
+                  </div>
+                </div>
+                <div className="rounded-md border border-white bg-white p-3">
+                  <h3 className="font-black text-neutral-950">年別カテゴリ集計</h3>
+                  <div className="mt-2 grid gap-2">
+                    {inventoryYearlySummary.categoryRows.map((row) => (
+                      <div key={row.categoryName} className="flex items-center justify-between rounded-md bg-neutral-50 px-3 py-2 font-bold">
+                        <span>{row.categoryName}</span>
+                        <span>{yen(row.amount)}</span>
+                      </div>
+                    ))}
+                    {inventoryYearlySummary.categoryRows.length === 0 ? <EmptyState text="この年の棚卸し保存はまだありません。" /> : null}
+                  </div>
+                </div>
+              </div>
+            </section>
           </div>
         </Panel>
       )}

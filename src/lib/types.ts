@@ -7,6 +7,7 @@ export type ProductStatus = "販売中" | "休止中";
 export type PriceHistorySourceType = "manual" | "ocr" | "csv";
 export type WasteItemType = "PRODUCT" | "INGREDIENT" | "INTERMEDIATE";
 export type WasteReason = "売れ残り" | "破損" | "作りすぎ" | "試作" | "品質不良" | "その他";
+export type InventoryItemType = "INGREDIENT" | "PRODUCT";
 
 export type Nutrition = {
   calories: number;
@@ -148,6 +149,7 @@ export type AppData = {
   eventPlanItems: EventPlanItem[];
   laborCosts: LaborCost[];
   setProductItems: SetProductItem[];
+  inventoryRecords: InventoryRecord[];
   onboardingSupport: OnboardingSupportSettings;
   billing: BillingSettings;
 };
@@ -256,6 +258,35 @@ export type WasteMonthlySummary = {
     costAmount: number;
     salesEquivalentAmount: number;
   }>;
+};
+
+export type InventoryRecord = {
+  id: string;
+  date: string;
+  month: string;
+  itemType: InventoryItemType;
+  itemId: string;
+  categoryName: string;
+  itemName: string;
+  quantity: number;
+  unitLabel: string;
+  unitCost: number;
+  amount: number;
+  memo: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type InventorySummary = {
+  periodLabel: string;
+  totalAmount: number;
+  recordCount: number;
+  categoryRows: Array<{
+    categoryName: string;
+    quantity: number;
+    amount: number;
+  }>;
+  itemRows: Array<InventoryRecord>;
 };
 
 export type SalesRecord = {

@@ -164,6 +164,7 @@ export const sampleData: AppData = {
     { id: "set-gift-madeleine", setProductId: "prd-gift", childProductId: "prd-madeleine", quantity: 4, memo: "マドレーヌ4個", createdAt: now, updatedAt: now },
     { id: "set-gift-castella", setProductId: "prd-gift", childProductId: "prd-castella", quantity: 1, memo: "奈良カステラ1本", createdAt: now, updatedAt: now },
   ],
+  inventoryRecords: [],
   onboardingSupport: {
     onboardingSupportEnabled: true,
     onboardingSupportStartDate: "2026-05-26",
