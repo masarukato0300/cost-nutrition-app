@@ -215,6 +215,23 @@ create table if not exists public.inventory_records (
 create index if not exists inventory_records_store_month_idx on public.inventory_records(store_id, month);
 create index if not exists inventory_records_store_date_idx on public.inventory_records(store_id, date);
 
+create table if not exists public.packaging_classifications (
+  id text primary key,
+  store_id uuid not null references public.stores(id) on delete cascade,
+  ingredient_id text not null,
+  packaging_role text not null default '通常包材',
+  brand_importance text not null default '低',
+  year_round_usage text not null default '不明',
+  usage_category text not null default 'その他',
+  confidence numeric not null default 0,
+  reason text not null default '',
+  source text not null default 'auto',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists packaging_classifications_store_ingredient_idx on public.packaging_classifications(store_id, ingredient_id);
+
 create table if not exists public.event_plans (
   id text primary key,
   store_id uuid not null references public.stores(id) on delete cascade,
@@ -316,6 +333,7 @@ alter table public.waste_records enable row level security;
 alter table public.sales_records enable row level security;
 alter table public.actual_cost_records enable row level security;
 alter table public.inventory_records enable row level security;
+alter table public.packaging_classifications enable row level security;
 alter table public.event_plans enable row level security;
 alter table public.event_plan_items enable row level security;
 alter table public.labor_costs enable row level security;
@@ -412,6 +430,7 @@ begin
     'sales_records',
     'actual_cost_records',
     'inventory_records',
+    'packaging_classifications',
     'event_plans',
     'event_plan_items',
     'labor_costs',

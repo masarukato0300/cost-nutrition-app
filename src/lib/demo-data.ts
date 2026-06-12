@@ -413,6 +413,7 @@ export function createPatisseriePatisDemoData(): AppData {
     ],
     setProductItems: [],
     inventoryRecords: [],
+    packagingClassifications: [],
     onboardingSupport: {
       onboardingSupportEnabled: false,
       onboardingSupportStartDate: "2026-06-01",

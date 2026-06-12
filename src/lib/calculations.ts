@@ -6,6 +6,10 @@ import type {
   InventorySummary,
   MonthlyTheorySummary,
   Nutrition,
+  PackagingClassification,
+  PackagingRole,
+  PackagingUsageCategory,
+  YearRoundUsage,
   PriceImpactRow,
   Product,
   ProductCostSummary,
@@ -399,6 +403,100 @@ export function calculateInventorySummary(data: AppData, period: string): Invent
 
 export function latestInventoryRecordsForDate(records: InventoryRecord[], date: string): InventoryRecord[] {
   return records.filter((record) => record.date === date);
+}
+
+function includesAny(text: string, words: string[]) {
+  return words.some((word) => text.includes(word));
+}
+
+function packagingUsageCategories(data: AppData, ingredientId: string): PackagingUsageCategory[] {
+  const categories = new Set<PackagingUsageCategory>();
+  data.recipeItems
+    .filter((item) => item.ingredientId === ingredientId)
+    .forEach((item) => {
+      const product = data.products.find((candidate) => candidate.id === item.productId);
+      const text = `${product?.category || ""} ${product?.name || ""}`;
+      if (/ギフト|進物|内祝い|お供え|詰め合わせ|詰合せ|手土産|法人/.test(text)) categories.add("ギフト");
+      else if (/ホール|予約|デコレーション|4号|5号|6号/.test(text)) categories.add("予約商品");
+      else if (/生菓子|ケーキ|ショート|モンブラン|プリン|シュー|タルト/.test(text)) categories.add("生菓子");
+      else if (/焼菓子|クッキー|マドレーヌ|フィナンシェ|ギフト/.test(text)) categories.add("焼菓子");
+    });
+  return [...categories];
+}
+
+export function classifyPackagingIngredient(data: AppData, ingredient: Ingredient): PackagingClassification {
+  const manual = data.packagingClassifications.find((item) => item.ingredientId === ingredient.id && item.source === "user");
+  if (manual) return manual;
+
+  const originalText = `${ingredient.name} ${ingredient.packageName} ${ingredient.category} ${ingredient.memo}`;
+  const usageCategories = packagingUsageCategories(data, ingredient.id);
+  const reasons: string[] = [];
+  let packagingRole: PackagingRole = "通常包材";
+  let usageCategory: PackagingUsageCategory = usageCategories[0] || "その他";
+  let yearRoundUsage: YearRoundUsage = "はい";
+  let confidence = 45;
+
+  if (includesAny(originalText, ["クリスマス", "バレンタイン", "母の日", "父の日", "ハロウィン", "季節", "正月", "夏", "冬"])) {
+    packagingRole = "季節包材";
+    yearRoundUsage = "いいえ";
+    confidence += 30;
+    reasons.push("季節イベント名を含むため季節包材と判断");
+  }
+  if (includesAny(originalText, ["ロゴ", "店名", "オリジナル", "ブランド"])) {
+    packagingRole = "ブランド包材";
+    confidence += 30;
+    reasons.push("ロゴ・店名・ブランド表記を含むためブランド包材と判断");
+  }
+  if (includesAny(originalText, ["専用", "4号", "5号", "6号", "ホール", "デコレーション", "ピック"])) {
+    if (packagingRole === "通常包材") packagingRole = "専用包材";
+    if (yearRoundUsage === "はい") yearRoundUsage = "不明";
+    confidence += 18;
+    reasons.push("サイズ・専用品・ピック表記があるため専用性あり");
+  }
+  if (includesAny(originalText, ["ギフト", "進物", "内祝い", "お供え", "詰め合わせ", "詰合せ"])) {
+    usageCategory = "ギフト";
+    confidence += 20;
+    reasons.push("ギフト・進物系キーワードを含む");
+  } else if (includesAny(originalText, ["4号", "5号", "6号", "ホール", "デコレーション", "保冷剤"])) {
+    usageCategory = "生菓子";
+    confidence += 14;
+    reasons.push("ホール・生菓子系キーワードを含む");
+  } else if (includesAny(originalText, ["個包装", "脱酸素剤", "乾燥剤", "焼菓子"])) {
+    usageCategory = "焼菓子";
+    confidence += 14;
+    reasons.push("焼菓子・日持ち商品向けキーワードを含む");
+  }
+  if (usageCategories.length > 0) {
+    usageCategory = usageCategories.includes("ギフト") ? "ギフト" : usageCategories[0];
+    confidence += 12;
+    reasons.push(`レシピ上の使用商品カテゴリ: ${usageCategories.join("・")}`);
+  }
+
+  const brandImportance = packagingRole === "ブランド包材"
+    ? "高"
+    : usageCategory === "ギフト" || includesAny(originalText, ["箱", "手提げ", "リボン", "シール"])
+      ? "中"
+      : "低";
+
+  if (includesAny(originalText, ["旧ロゴ", "旧デザイン", "旧価格"])) {
+    confidence += 8;
+    reasons.push("旧ロゴ・旧デザイン・旧価格の可能性があり注意在庫");
+  }
+  if (reasons.length === 0) reasons.push("包材名と使用商品から通常包材として仮判定");
+
+  return {
+    id: `pkg-class-${ingredient.id}`,
+    ingredientId: ingredient.id,
+    packagingRole,
+    brandImportance,
+    yearRoundUsage,
+    usageCategory,
+    confidence: Math.max(0, Math.min(100, confidence)),
+    reason: reasons.join("。"),
+    source: "auto",
+    createdAt: ingredient.createdAt,
+    updatedAt: ingredient.updatedAt,
+  };
 }
 
 export function calculateMonthlyTheoryCost(data: AppData, month: string): MonthlyTheorySummary {

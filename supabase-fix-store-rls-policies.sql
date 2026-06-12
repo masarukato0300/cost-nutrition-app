@@ -105,6 +105,7 @@ begin
     'sales_records',
     'actual_cost_records',
     'inventory_records',
+    'packaging_classifications',
     'event_plans',
     'event_plan_items',
     'labor_costs',

@@ -12,6 +12,7 @@ import {
   calculateWasteSummary,
   calculateInventorySummary,
   calculateMonthlyTheoryCost,
+  classifyPackagingIngredient,
   collectAllergens,
   collectLabelNames,
   calculateProductLaborCost,
@@ -46,7 +47,7 @@ import {
 } from "@/lib/supabase-saas";
 import { buildManagementDecisionSummary, type ProductManagementMetric } from "@/lib/management-analysis";
 import type { StandardNutritionFood } from "@/lib/standard-nutrition";
-import type { ActualCostRecord, AppData, BillingSettings, EventPlan, EventSimulationRow, Ingredient, IngredientAlias, InventoryItemType, InventoryRecord, LaborCost, MaterialType, MonthlyTheoryRow, OnboardingSupportSettings, PriceImpactRow, Product, ProductLaborCostSummary, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow, SalesRecord, SetProductCostSummary, SetProductItem, WasteItemType, WasteMonthlySummary, WasteReason, WasteRecord } from "@/lib/types";
+import type { ActualCostRecord, AppData, BillingSettings, BrandImportance, EventPlan, EventSimulationRow, Ingredient, IngredientAlias, InventoryItemType, InventoryRecord, LaborCost, MaterialType, MonthlyTheoryRow, OnboardingSupportSettings, PackagingClassification, PackagingRole, PackagingUsageCategory, PriceImpactRow, Product, ProductLaborCostSummary, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow, SalesRecord, SetProductCostSummary, SetProductItem, WasteItemType, WasteMonthlySummary, WasteReason, WasteRecord, YearRoundUsage } from "@/lib/types";
 
 const defaultStoreId = "デモ店舗";
 const salesDemoStoreId = "00000000-0000-4000-8000-000000000001";
@@ -204,6 +205,10 @@ const materialTypeLabels: Record<MaterialType, string> = {
   PACKAGING: "包材",
 };
 const materialTypeOptions: MaterialType[] = ["PURCHASED_INGREDIENT", "PACKAGING"];
+const packagingRoleOptions: PackagingRole[] = ["通常包材", "ブランド包材", "季節包材", "専用包材"];
+const brandImportanceOptions: BrandImportance[] = ["高", "中", "低"];
+const yearRoundUsageOptions: YearRoundUsage[] = ["はい", "いいえ", "不明"];
+const packagingUsageCategoryOptions: PackagingUsageCategory[] = ["生菓子", "焼菓子", "ギフト", "予約商品", "その他"];
 const wasteReasons: WasteReason[] = ["売れ残り", "破損", "作りすぎ", "試作", "品質不良", "その他"];
 const wasteCategories = [
   { key: "baked", label: "焼菓子" },
@@ -873,6 +878,7 @@ function normalizeData(parsed: AppData): AppData {
     laborCosts: parsed.laborCosts || [],
     setProductItems: parsed.setProductItems || [],
     inventoryRecords: parsed.inventoryRecords || [],
+    packagingClassifications: parsed.packagingClassifications || [],
     onboardingSupport: {
       ...defaultOnboardingSupport,
       ...(parsed.onboardingSupport || {}),
@@ -2962,6 +2968,47 @@ export function CostNutritionApp() {
     });
   }
 
+  function updatePackagingClassification(ingredient: Ingredient, patch: Partial<PackagingClassification>) {
+    const timestamp = now();
+    const current = classifyPackagingIngredient(data, ingredient);
+    const nextClassification: PackagingClassification = {
+      ...current,
+      ...patch,
+      id: current.id || `pkg-class-${ingredient.id}`,
+      ingredientId: ingredient.id,
+      source: "user",
+      createdAt: data.packagingClassifications.find((item) => item.ingredientId === ingredient.id)?.createdAt || timestamp,
+      updatedAt: timestamp,
+    };
+    commit({
+      ...data,
+      packagingClassifications: [
+        ...data.packagingClassifications.filter((item) => item.ingredientId !== ingredient.id),
+        nextClassification,
+      ],
+    });
+  }
+
+  function saveAutoPackagingClassifications() {
+    const timestamp = now();
+    const manualIngredientIds = new Set(data.packagingClassifications.filter((item) => item.source === "user").map((item) => item.ingredientId));
+    const autoRows = packagingIngredients
+      .filter((ingredient) => !manualIngredientIds.has(ingredient.id))
+      .map((ingredient) => ({
+        ...classifyPackagingIngredient(data, ingredient),
+        source: "auto" as const,
+        createdAt: data.packagingClassifications.find((item) => item.ingredientId === ingredient.id)?.createdAt || timestamp,
+        updatedAt: timestamp,
+      }));
+    commit({
+      ...data,
+      packagingClassifications: [
+        ...data.packagingClassifications.filter((item) => item.source === "user" || !autoRows.some((row) => row.ingredientId === item.ingredientId)),
+        ...autoRows,
+      ],
+    });
+  }
+
   function saveInventorySnapshot() {
     const timestamp = now();
     const month = inventoryDate.slice(0, 7);
@@ -3180,6 +3227,42 @@ export function CostNutritionApp() {
     () => calculateInventorySummary(data, inventorySummaryYear),
     [data, inventorySummaryYear],
   );
+  const packagingInventoryInsights = useMemo(() => packagingIngredients.map((ingredient) => {
+    const classification = classifyPackagingIngredient(data, ingredient);
+    const inventoryRow = inventoryRows.find((row) => row.itemType === "INGREDIENT" && row.itemId === ingredient.id);
+    const monthlyUsage = data.recipeItems
+      .filter((item) => item.ingredientId === ingredient.id)
+      .reduce((sum, item) => {
+        const monthlyProductSales = data.salesRecords
+          .filter((record) => record.productId === item.productId && record.month === inventorySummaryMonth)
+          .reduce((salesSum, record) => salesSum + record.quantity, 0);
+        return sum + recipeItemAmountGram(item) * monthlyProductSales;
+      }, 0);
+    const stockMonths = monthlyUsage > 0 ? (inventoryRow?.quantity || 0) / monthlyUsage : null;
+    const isOldDesign = /旧ロゴ|旧デザイン|旧価格/.test(`${ingredient.name} ${ingredient.packageName} ${ingredient.memo}`);
+    const needsCheck = classification.confidence < 70 || isOldDesign || (stockMonths !== null && stockMonths >= 12 && classification.packagingRole !== "ブランド包材");
+    const comment = (() => {
+      if (classification.packagingRole === "ブランド包材") {
+        return `${ingredient.name}はブランド包材と判定しました。ギフト・進物商品の印象を高めるため、単純な在庫過多ではなくブランド投資として扱います。${stockMonths !== null && stockMonths >= 12 ? `ただし現在約${number(stockMonths, 1)}か月分あるため、次回発注は控え、焼菓子ギフトで使用ペースを上げるのがおすすめです。` : ""}`;
+      }
+      if (classification.packagingRole === "季節包材") {
+        return `${ingredient.name}は季節包材と判定しました。通年で使いにくいため、残数が多い場合は対象商品の予約販売や季節フェアで早めに消化してください。`;
+      }
+      if (classification.packagingRole === "専用包材") {
+        return `${ingredient.name}は専用包材と判定しました。使用商品が限られるため、販売予定と在庫月数を見ながら発注量を抑えるのが安全です。`;
+      }
+      return `${ingredient.name}は通常包材と判定しました。欠品すると日々の販売に影響しやすいため、使用頻度に合わせて補充してください。`;
+    })();
+    return {
+      ingredient,
+      classification,
+      inventoryQuantity: inventoryRow?.quantity || 0,
+      monthlyUsage,
+      stockMonths,
+      needsCheck,
+      comment,
+    };
+  }).sort((a, b) => Number(b.needsCheck) - Number(a.needsCheck) || a.classification.confidence - b.classification.confidence), [data, inventoryRows, inventorySummaryMonth, packagingIngredients]);
   const activeWasteRows = useMemo(
     () => wasteCategoryRows(data, activeWasteCategory),
     [activeWasteCategory, data],
@@ -7170,6 +7253,72 @@ export function CostNutritionApp() {
                     <p className="text-xs font-bold text-neutral-500">入力済み {row.count}件</p>
                   </div>
                 ))}
+              </div>
+            </section>
+
+            <section className="rounded-md border border-fuchsia-200 bg-fuchsia-50 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black text-fuchsia-700">包材在庫の自動判断</p>
+                  <h3 className="mt-1 text-lg font-black text-neutral-950">包材名・使用商品・在庫月数から仮分類します</h3>
+                  <p className="mt-1 text-sm font-bold text-neutral-600">
+                    必須入力は増やさず、信頼度が低いものだけ確認してください。修正した判定は次回以降も優先されます。
+                  </p>
+                </div>
+                <button className="rounded-md bg-fuchsia-700 px-4 py-3 text-sm font-black text-white" onClick={saveAutoPackagingClassifications}>
+                  既存包材を一括で仮判定
+                </button>
+              </div>
+              <div className="mt-4 grid gap-3 xl:grid-cols-2">
+                {packagingInventoryInsights.map(({ ingredient, classification, inventoryQuantity, monthlyUsage, stockMonths, needsCheck, comment }) => (
+                  <article key={ingredient.id} className={`rounded-md border bg-white p-3 ${needsCheck ? "border-amber-300" : "border-fuchsia-100"}`}>
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <h4 className="font-black text-neutral-950">{ingredientOptionLabel(ingredient)}</h4>
+                        <p className="mt-1 text-xs font-bold text-neutral-500">{classification.reason}</p>
+                      </div>
+                      <span className={`rounded-full px-3 py-1 text-xs font-black ${needsCheck ? "bg-amber-200 text-amber-950" : "bg-emerald-100 text-emerald-900"}`}>
+                        {needsCheck ? "確認が必要" : "自動判定OK"} {classification.confidence}%
+                      </span>
+                    </div>
+                    <div className="mt-3 grid gap-2 md:grid-cols-4">
+                      <SelectInput
+                        label="包材区分"
+                        value={classification.packagingRole}
+                        options={packagingRoleOptions}
+                        onChange={(value) => updatePackagingClassification(ingredient, { packagingRole: value as PackagingRole })}
+                      />
+                      <SelectInput
+                        label="ブランド重要度"
+                        value={classification.brandImportance}
+                        options={brandImportanceOptions}
+                        onChange={(value) => updatePackagingClassification(ingredient, { brandImportance: value as BrandImportance })}
+                      />
+                      <SelectInput
+                        label="通年使用"
+                        value={classification.yearRoundUsage}
+                        options={yearRoundUsageOptions}
+                        onChange={(value) => updatePackagingClassification(ingredient, { yearRoundUsage: value as YearRoundUsage })}
+                      />
+                      <SelectInput
+                        label="使用カテゴリ"
+                        value={classification.usageCategory}
+                        options={packagingUsageCategoryOptions}
+                        onChange={(value) => updatePackagingClassification(ingredient, { usageCategory: value as PackagingUsageCategory })}
+                      />
+                    </div>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                      <MiniStatus label="棚卸し数量" value={`${number(inventoryQuantity, 1)} ${ingredientUnitLabel(ingredient)}`} />
+                      <MiniStatus label={`${inventorySummaryMonth} 使用目安`} value={monthlyUsage ? `${number(monthlyUsage, 1)} ${ingredientUnitLabel(ingredient)}` : "未算出"} />
+                      <MiniStatus label="在庫月数" value={stockMonths === null ? "未算出" : `約${number(stockMonths, 1)}か月`} tone={stockMonths !== null && stockMonths >= 12 ? "warn" : "normal"} />
+                    </div>
+                    <p className="mt-3 rounded-md bg-fuchsia-50 px-3 py-2 text-xs font-bold text-fuchsia-950">{comment}</p>
+                    {classification.source === "user" && (
+                      <p className="mt-2 text-xs font-black text-emerald-700">ユーザー修正済みの判定を使用中</p>
+                    )}
+                  </article>
+                ))}
+                {packagingInventoryInsights.length === 0 ? <EmptyState text="包材登録がまだありません。" /> : null}
               </div>
             </section>
 
