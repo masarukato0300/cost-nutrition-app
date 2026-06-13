@@ -236,6 +236,7 @@ const pages = [
   { key: "production", label: "仕込み量逆算" },
   { key: "order", label: "発注リスト" },
   { key: "inventory", label: "棚卸し" },
+  { key: "packagingInventory", label: "包材判断" },
   { key: "waste", label: "廃棄ロス" },
   { key: "salesImport", label: "売上CSV取込" },
   { key: "monthly", label: "月間理論原価" },
@@ -258,7 +259,7 @@ const bottomNavPageKeys: PageNavKey[] = ["ingredient", "product", "recipe"];
 const navGroups = [
   { key: "costs", label: "原価・値上げ", description: "経営判断、売上粗利、商圏、原価計算", pages: ["management", "salesAnalysis", "commercialArea", "cost", "impact", "event", "labor", "set"] },
   { key: "display", label: "表示・ラベル", description: "栄養成分、アレルゲン、ラベル", pages: ["nutrition", "allergen", "label"] },
-  { key: "operation", label: "現場管理", description: "仕込み、発注、棚卸し、廃棄、売上CSV、月間原価", pages: ["production", "order", "inventory", "waste", "salesImport", "monthly"] },
+  { key: "operation", label: "現場管理", description: "仕込み、発注、棚卸し、包材判断、廃棄、売上CSV、月間原価", pages: ["production", "order", "inventory", "packagingInventory", "waste", "salesImport", "monthly"] },
   { key: "data", label: "データ管理", description: "商品一覧、カテゴリ、原材料一覧、OCR候補、CSV出力、設定", pages: ["productList", "productCategory", "master", "ocrQueue", "csv", "settings"] },
 ] as const satisfies Array<{ key: string; label: string; description: string; pages: PageNavKey[] }>;
 const pageTones: Record<PageNavKey, { navActive: string; navIdle: string; topCard: string; mark: string }> = {
@@ -363,6 +364,12 @@ const pageTones: Record<PageNavKey, { navActive: string; navIdle: string; topCar
     navIdle: "border-emerald-500 bg-emerald-50 text-emerald-900 hover:bg-emerald-100",
     topCard: "border-emerald-100 bg-emerald-50/70 hover:border-emerald-400",
     mark: "bg-emerald-600",
+  },
+  packagingInventory: {
+    navActive: "border-fuchsia-800 bg-fuchsia-700 text-white shadow-sm",
+    navIdle: "border-fuchsia-500 bg-fuchsia-50 text-fuchsia-900 hover:bg-fuchsia-100",
+    topCard: "border-fuchsia-100 bg-fuchsia-50/70 hover:border-fuchsia-400",
+    mark: "bg-fuchsia-600",
   },
   waste: {
     navActive: "border-pink-700 bg-pink-600 text-white shadow-sm",
@@ -1027,6 +1034,7 @@ function NavPictogram({ pageKey }: { pageKey: PageNavKey }) {
     production: <><path className={common} d="M4 18h16" /><path className={common} d="M7 18V9l5-4 5 4v9" /><path className={common} d="M9 13h6" /></>,
     order: <><path className={common} d="M4 5h2l2 10h9l2-7H7" /><circle className={common} cx="10" cy="20" r="1" /><circle className={common} cx="17" cy="20" r="1" /></>,
     inventory: <><path className={common} d="M5 4h14v16H5z" /><path className={common} d="M8 8h8M8 12h8M8 16h4" /><path className={common} d="m16 15 2 2 3-5" /></>,
+    packagingInventory: <><path className={common} d="M4 7h16v12H4z" /><path className={common} d="M7 7V5h10v2" /><path className={common} d="M8 11h8M8 15h5" /><path className={common} d="m16 15 2 2 3-5" /></>,
     waste: <><path className={common} d="M5 7h14" /><path className={common} d="M9 7V4h6v3" /><path className={common} d="M8 10v10h8V10" /><path className={common} d="M11 11v7M14 11v7" /></>,
     salesImport: <><path className={common} d="M6 3h9l3 3v15H6z" /><path className={common} d="M15 3v4h4" /><path className={common} d="M8 12h8M8 16h5" /><path className={common} d="m16 15 2 2 3-4" /></>,
     monthly: <><path className={common} d="M4 20h16" /><path className={common} d="M6 16v-4M12 16V7M18 16v-8" /></>,
@@ -1270,6 +1278,7 @@ function topPageDescription(pageKey: PageKey) {
     production: "予定数から必要材料を逆算",
     order: "必要材料を仕入先別に確認",
     inventory: "残数入力で棚卸金額を確認",
+    packagingInventory: "包材の役割や在庫リスクを確認",
     waste: "廃棄や試作ロスを記録",
     salesImport: "レジCSVを取り込み売上分析に反映",
     monthly: "販売数から理論原価を確認",
@@ -7297,68 +7306,17 @@ export function CostNutritionApp() {
             </section>
 
             <section className="rounded-md border border-fuchsia-200 bg-fuchsia-50 p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="text-xs font-black text-fuchsia-700">包材在庫の自動判断</p>
-                  <h3 className="mt-1 text-lg font-black text-neutral-950">包材名・使用商品・在庫月数から仮分類します</h3>
+                  <p className="text-xs font-black text-fuchsia-700">包材の詳しい判断は別ページへ移動しました</p>
+                  <h3 className="mt-1 text-lg font-black text-neutral-950">棚卸しページは数量入力だけに集中できます</h3>
                   <p className="mt-1 text-sm font-bold text-neutral-600">
-                    必須入力は増やさず、信頼度が低いものだけ確認してください。修正した判定は次回以降も優先されます。
+                    包材区分、ブランド重要度、使用カテゴリ、在庫リスクの確認は「包材判断」ページで行えます。
                   </p>
                 </div>
-                <button className="rounded-md bg-fuchsia-700 px-4 py-3 text-sm font-black text-white" onClick={saveAutoPackagingClassifications}>
-                  既存包材を一括で仮判定
+                <button className="rounded-md bg-fuchsia-700 px-4 py-3 text-sm font-black text-white" onClick={() => setActivePage("packagingInventory")}>
+                  包材判断ページへ
                 </button>
-              </div>
-              <div className="mt-4 grid gap-3 xl:grid-cols-2">
-                {packagingInventoryInsights.map(({ ingredient, classification, inventoryQuantity, monthlyUsage, stockMonths, needsCheck, comment }) => (
-                  <article key={ingredient.id} className={`rounded-md border bg-white p-3 ${needsCheck ? "border-amber-300" : "border-fuchsia-100"}`}>
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div>
-                        <h4 className="font-black text-neutral-950">{ingredientOptionLabel(ingredient)}</h4>
-                        <p className="mt-1 text-xs font-bold text-neutral-500">{classification.reason}</p>
-                      </div>
-                      <span className={`rounded-full px-3 py-1 text-xs font-black ${needsCheck ? "bg-amber-200 text-amber-950" : "bg-emerald-100 text-emerald-900"}`}>
-                        {needsCheck ? "確認が必要" : "自動判定OK"} {classification.confidence}%
-                      </span>
-                    </div>
-                    <div className="mt-3 grid gap-2 md:grid-cols-4">
-                      <SelectInput
-                        label="包材区分"
-                        value={classification.packagingRole}
-                        options={packagingRoleOptions}
-                        onChange={(value) => updatePackagingClassification(ingredient, { packagingRole: value as PackagingRole })}
-                      />
-                      <SelectInput
-                        label="ブランド重要度"
-                        value={classification.brandImportance}
-                        options={brandImportanceOptions}
-                        onChange={(value) => updatePackagingClassification(ingredient, { brandImportance: value as BrandImportance })}
-                      />
-                      <SelectInput
-                        label="通年使用"
-                        value={classification.yearRoundUsage}
-                        options={yearRoundUsageOptions}
-                        onChange={(value) => updatePackagingClassification(ingredient, { yearRoundUsage: value as YearRoundUsage })}
-                      />
-                      <SelectInput
-                        label="使用カテゴリ"
-                        value={classification.usageCategory}
-                        options={packagingUsageCategoryOptions}
-                        onChange={(value) => updatePackagingClassification(ingredient, { usageCategory: value as PackagingUsageCategory })}
-                      />
-                    </div>
-                    <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                      <MiniStatus label="棚卸し数量" value={`${number(inventoryQuantity, 1)} ${ingredientUnitLabel(ingredient)}`} />
-                      <MiniStatus label={`${inventorySummaryMonth} 使用目安`} value={monthlyUsage ? `${number(monthlyUsage, 1)} ${ingredientUnitLabel(ingredient)}` : "未算出"} />
-                      <MiniStatus label="在庫月数" value={stockMonths === null ? "未算出" : `約${number(stockMonths, 1)}か月`} tone={stockMonths !== null && stockMonths >= 12 ? "warn" : "normal"} />
-                    </div>
-                    <p className="mt-3 rounded-md bg-fuchsia-50 px-3 py-2 text-xs font-bold text-fuchsia-950">{comment}</p>
-                    {classification.source === "user" && (
-                      <p className="mt-2 text-xs font-black text-emerald-700">ユーザー修正済みの判定を使用中</p>
-                    )}
-                  </article>
-                ))}
-                {packagingInventoryInsights.length === 0 ? <EmptyState text="包材登録がまだありません。" /> : null}
               </div>
             </section>
 
@@ -7472,6 +7430,90 @@ export function CostNutritionApp() {
                   この棚卸しを保存
                 </button>
               </div>
+            </section>
+          </div>
+        </Panel>
+      )}
+
+      {activePage === "packagingInventory" && (
+        <Panel title="包材判断">
+          <div className="grid gap-4">
+            <section className="rounded-md border border-fuchsia-200 bg-fuchsia-50 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black text-fuchsia-700">包材在庫の自動判断</p>
+                  <h2 className="mt-1 text-xl font-black text-neutral-950">包材区分・ブランド重要度・在庫リスクを確認</h2>
+                  <p className="mt-1 text-sm font-bold text-neutral-600">
+                    包材名、メモ、使用商品、棚卸し数量から仮分類します。低信頼度や季節包材だけ確認すればよい画面です。
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button className="rounded-md border border-fuchsia-300 bg-white px-4 py-3 text-sm font-black text-fuchsia-800" onClick={() => setActivePage("inventory")}>
+                    棚卸しへ戻る
+                  </button>
+                  <button className="rounded-md bg-fuchsia-700 px-4 py-3 text-sm font-black text-white" onClick={saveAutoPackagingClassifications}>
+                    既存包材を一括で仮判定
+                  </button>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-4">
+                <Metric label="包材数" value={`${packagingInventoryInsights.length}件`} compact />
+                <Metric label="確認が必要" value={`${packagingInventoryInsights.filter((row) => row.needsCheck).length}件`} tone={packagingInventoryInsights.some((row) => row.needsCheck) ? "warn" : "normal"} compact />
+                <Metric label="ブランド包材" value={`${packagingInventoryInsights.filter((row) => row.classification.packagingRole === "ブランド包材").length}件`} compact />
+                <Metric label="季節・専用包材" value={`${packagingInventoryInsights.filter((row) => row.classification.packagingRole === "季節包材" || row.classification.packagingRole === "専用包材").length}件`} compact />
+              </div>
+            </section>
+
+            <section className="grid gap-3 xl:grid-cols-2">
+              {packagingInventoryInsights.map(({ ingredient, classification, inventoryQuantity, monthlyUsage, stockMonths, needsCheck, comment }) => (
+                <article key={ingredient.id} className={`rounded-md border bg-white p-3 shadow-sm ${needsCheck ? "border-amber-300" : "border-fuchsia-100"}`}>
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <h4 className="font-black text-neutral-950">{ingredientOptionLabel(ingredient)}</h4>
+                      <p className="mt-1 text-xs font-bold text-neutral-500">{classification.reason}</p>
+                    </div>
+                    <span className={`rounded-full px-3 py-1 text-xs font-black ${needsCheck ? "bg-amber-200 text-amber-950" : "bg-emerald-100 text-emerald-900"}`}>
+                      {needsCheck ? "確認が必要" : "自動判定OK"} {classification.confidence}%
+                    </span>
+                  </div>
+                  <div className="mt-3 grid gap-2 md:grid-cols-4">
+                    <SelectInput
+                      label="包材区分"
+                      value={classification.packagingRole}
+                      options={packagingRoleOptions}
+                      onChange={(value) => updatePackagingClassification(ingredient, { packagingRole: value as PackagingRole })}
+                    />
+                    <SelectInput
+                      label="ブランド重要度"
+                      value={classification.brandImportance}
+                      options={brandImportanceOptions}
+                      onChange={(value) => updatePackagingClassification(ingredient, { brandImportance: value as BrandImportance })}
+                    />
+                    <SelectInput
+                      label="通年使用"
+                      value={classification.yearRoundUsage}
+                      options={yearRoundUsageOptions}
+                      onChange={(value) => updatePackagingClassification(ingredient, { yearRoundUsage: value as YearRoundUsage })}
+                    />
+                    <SelectInput
+                      label="使用カテゴリ"
+                      value={classification.usageCategory}
+                      options={packagingUsageCategoryOptions}
+                      onChange={(value) => updatePackagingClassification(ingredient, { usageCategory: value as PackagingUsageCategory })}
+                    />
+                  </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                    <MiniStatus label="棚卸し数量" value={`${number(inventoryQuantity, 1)} ${ingredientUnitLabel(ingredient)}`} />
+                    <MiniStatus label={`${inventorySummaryMonth} 使用目安`} value={monthlyUsage ? `${number(monthlyUsage, 1)} ${ingredientUnitLabel(ingredient)}` : "未算出"} />
+                    <MiniStatus label="在庫月数" value={stockMonths === null ? "未算出" : `約${number(stockMonths, 1)}か月`} tone={stockMonths !== null && stockMonths >= 12 ? "warn" : "normal"} />
+                  </div>
+                  <p className="mt-3 rounded-md bg-fuchsia-50 px-3 py-2 text-xs font-bold text-fuchsia-950">{comment}</p>
+                  {classification.source === "user" && (
+                    <p className="mt-2 text-xs font-black text-emerald-700">ユーザー修正済みの判定を使用中</p>
+                  )}
+                </article>
+              ))}
+              {packagingInventoryInsights.length === 0 ? <EmptyState text="包材登録がまだありません。" /> : null}
             </section>
           </div>
         </Panel>
