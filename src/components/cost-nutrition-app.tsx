@@ -21,6 +21,7 @@ import {
   isPackagingIngredient,
   ingredientUnitLabel,
   amountToGram,
+  priceWithTax,
   pricePerGram,
   recipeItemAmountGram,
   upsertSalesRecord,
@@ -47,7 +48,7 @@ import {
 } from "@/lib/supabase-saas";
 import { buildManagementDecisionSummary, type ProductManagementMetric } from "@/lib/management-analysis";
 import type { StandardNutritionFood } from "@/lib/standard-nutrition";
-import type { ActualCostRecord, AppData, BillingSettings, BrandImportance, EventPlan, EventSimulationRow, Ingredient, IngredientAlias, InventoryItemType, InventoryRecord, LaborCost, MaterialType, MonthlyTheoryRow, OnboardingSupportSettings, PackagingClassification, PackagingRole, PackagingUsageCategory, PriceImpactRow, Product, ProductLaborCostSummary, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow, SalesRecord, SetProductCostSummary, SetProductItem, WasteItemType, WasteMonthlySummary, WasteReason, WasteRecord, YearRoundUsage } from "@/lib/types";
+import type { ActualCostRecord, AppData, BillingSettings, BrandImportance, EventPlan, EventSimulationRow, Ingredient, IngredientAlias, InventoryInputMode, InventoryItemType, InventoryRecord, LaborCost, MaterialType, MonthlyTheoryRow, OnboardingSupportSettings, PackagingClassification, PackagingRole, PackagingUsageCategory, PriceImpactRow, Product, ProductLaborCostSummary, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow, SalesRecord, SetProductCostSummary, SetProductItem, WasteItemType, WasteMonthlySummary, WasteReason, WasteRecord, YearRoundUsage } from "@/lib/types";
 
 const defaultStoreId = "デモ店舗";
 const salesDemoStoreId = "00000000-0000-4000-8000-000000000001";
@@ -529,6 +530,9 @@ type InventoryDraftRow = {
   categoryName: string;
   unitLabel: string;
   unitCost: number;
+  inputMode: InventoryInputMode;
+  inputModeLabel: string;
+  unitHelp: string;
   quantity: number;
   amount: number;
 };
@@ -878,6 +882,7 @@ function normalizeData(parsed: AppData): AppData {
     laborCosts: parsed.laborCosts || [],
     setProductItems: parsed.setProductItems || [],
     inventoryRecords: parsed.inventoryRecords || [],
+    inventoryInputSettings: parsed.inventoryInputSettings || [],
     packagingClassifications: parsed.packagingClassifications || [],
     onboardingSupport: {
       ...defaultOnboardingSupport,
@@ -2968,6 +2973,26 @@ export function CostNutritionApp() {
     });
   }
 
+  function updateInventoryInputMode(itemType: InventoryItemType, itemId: string, inputMode: InventoryInputMode) {
+    const timestamp = now();
+    const id = `inv-setting-${itemType.toLowerCase()}-${itemId}`;
+    const existing = data.inventoryInputSettings.find((setting) => setting.itemType === itemType && setting.itemId === itemId);
+    commit({
+      ...data,
+      inventoryInputSettings: [
+        ...data.inventoryInputSettings.filter((setting) => !(setting.itemType === itemType && setting.itemId === itemId)),
+        {
+          id,
+          itemType,
+          itemId,
+          inputMode,
+          createdAt: existing?.createdAt || timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+    });
+  }
+
   function updatePackagingClassification(ingredient: Ingredient, patch: Partial<PackagingClassification>) {
     const timestamp = now();
     const current = classifyPackagingIngredient(data, ingredient);
@@ -3160,20 +3185,32 @@ export function CostNutritionApp() {
     const rows = data.inventoryRecords.filter((record) => record.date === inventoryDate);
     return Object.fromEntries(rows.map((record) => [`${record.itemType}:${record.itemId}`, record]));
   }, [data.inventoryRecords, inventoryDate]);
+  const inventoryInputModeByKey = useMemo(
+    () => Object.fromEntries(data.inventoryInputSettings.map((setting) => [`${setting.itemType}:${setting.itemId}`, setting.inputMode])),
+    [data.inventoryInputSettings],
+  );
   const inventoryRows = useMemo<InventoryDraftRow[]>(() => {
     const ingredientRows = data.ingredients.map((ingredient) => {
       const key = `INGREDIENT:${ingredient.id}`;
       const quantity = Number(inventoryQuantities[key] ?? savedInventoryByKey[key]?.quantity ?? 0) || 0;
       const categoryName = isPackagingIngredient(ingredient) ? "包材" : ingredient.category || "原材料";
-      const unitCost = pricePerGram(ingredient);
+      const inputMode = inventoryInputModeByKey[key] || "actual_quantity";
+      const isPackageFraction = inputMode === "package_fraction";
+      const unitCost = isPackageFraction ? priceWithTax(ingredient.price, ingredient.taxType) : pricePerGram(ingredient);
+      const packageUnitLabel = ingredient.packageUnit || "単位";
       return {
         key,
         itemType: "INGREDIENT" as const,
         itemId: ingredient.id,
         itemName: ingredientOptionLabel(ingredient),
         categoryName,
-        unitLabel: ingredientUnitLabel(ingredient),
+        unitLabel: isPackageFraction ? "納品単位" : ingredientUnitLabel(ingredient),
         unitCost,
+        inputMode,
+        inputModeLabel: isPackageFraction ? "納品単位" : "数える・量る",
+        unitHelp: isPackageFraction
+          ? `1納品単位 = ${ingredient.packageName || `${number(ingredient.packageAmountGram, 1)}${packageUnitLabel}`}。残り半分なら0.5`
+          : `${ingredientUnitLabel(ingredient)}で数える・量る`,
         quantity,
         amount: quantity * unitCost,
       };
@@ -3193,12 +3230,15 @@ export function CostNutritionApp() {
         categoryName: isIntermediate ? "中間材料" : product.category || "販売商品",
         unitLabel: isIntermediate ? "g" : product.displayUnit.replace("あたり", ""),
         unitCost,
+        inputMode: "actual_quantity" as const,
+        inputModeLabel: "数える・量る",
+        unitHelp: isIntermediate ? "gで量る" : "個数・販売単位で数える",
         quantity,
         amount: quantity * unitCost,
       };
     });
     return [...ingredientRows, ...productRows].sort((a, b) => a.categoryName.localeCompare(b.categoryName, "ja") || a.itemName.localeCompare(b.itemName, "ja"));
-  }, [data.ingredients, data.products, data.recipeItems, inventoryQuantities, savedInventoryByKey]);
+  }, [data, inventoryInputModeByKey, inventoryQuantities, savedInventoryByKey]);
   const inventoryCategories = useMemo(
     () => ["すべて", ...Array.from(new Set(inventoryRows.map((row) => row.categoryName))).sort((a, b) => a.localeCompare(b, "ja"))],
     [inventoryRows],
@@ -7210,7 +7250,7 @@ export function CostNutritionApp() {
                   <p className="text-xs font-black text-emerald-700">原材料・包材・商品原価から自動計算</p>
                   <h2 className="mt-1 text-xl font-black text-neutral-950">残っている数量を入れるだけで棚卸し金額を集計</h2>
                   <p className="mt-1 text-sm font-bold text-neutral-600">
-                    数量欄はテンキー、小数点、Enterで入力しやすいようにしています。Enterで次の行へ進みます。
+                    品目ごとに「数える・量る」と「納品単位の残り割合」を切り替えできます。残り半袋なら0.5、4割なら0.4のように入力できます。
                   </p>
                 </div>
                 <button className="rounded-md bg-emerald-700 px-5 py-3 font-black text-white" onClick={saveInventorySnapshot}>
@@ -7324,11 +7364,12 @@ export function CostNutritionApp() {
 
             <section id="inventory-input-table" className="scroll-mt-24 overflow-hidden rounded-md border border-neutral-200 bg-white">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[900px] text-sm">
+                <table className="w-full min-w-[1040px] text-sm">
                   <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
                     <tr>
                       <th className="p-3">カテゴリ</th>
                       <th className="p-3">品目</th>
+                      <th className="p-3 text-center">入力方法</th>
                       <th className="p-3 text-right">原価単価</th>
                       <th className="p-3 text-center">単位</th>
                       <th className="p-3 text-right">残数量</th>
@@ -7340,6 +7381,27 @@ export function CostNutritionApp() {
                       <tr key={row.key} className="border-t border-neutral-100">
                         <td className="p-3 font-bold text-neutral-600">{row.categoryName}</td>
                         <td className="p-3 font-black text-neutral-950">{row.itemName}</td>
+                        <td className="p-3 text-center">
+                          {row.itemType === "INGREDIENT" ? (
+                            <button
+                              className={`inline-flex min-w-32 items-center justify-between gap-2 rounded-full border px-2 py-1 text-[11px] font-black transition-colors ${
+                                row.inputMode === "package_fraction"
+                                  ? "border-amber-400 bg-amber-100 text-amber-950"
+                                  : "border-emerald-300 bg-emerald-50 text-emerald-900"
+                              }`}
+                              onClick={() => updateInventoryInputMode(row.itemType, row.itemId, row.inputMode === "package_fraction" ? "actual_quantity" : "package_fraction")}
+                              title={row.unitHelp}
+                            >
+                              <span>{row.inputModeLabel}</span>
+                              <span className={`h-5 w-9 rounded-full p-0.5 ${row.inputMode === "package_fraction" ? "bg-amber-500" : "bg-emerald-500"}`}>
+                                <span className={`block h-4 w-4 rounded-full bg-white transition-transform ${row.inputMode === "package_fraction" ? "translate-x-4" : ""}`} />
+                              </span>
+                            </button>
+                          ) : (
+                            <span className="rounded-full bg-neutral-100 px-3 py-1 text-[11px] font-black text-neutral-500">{row.inputModeLabel}</span>
+                          )}
+                          <p className="mt-1 text-[10px] font-bold text-neutral-400">{row.unitHelp}</p>
+                        </td>
                         <td className="p-3 text-right font-bold">{yenForSmallCost(row.unitCost)}</td>
                         <td className="p-3 text-center font-bold text-neutral-600">{row.unitLabel}</td>
                         <td className="p-3 text-right">

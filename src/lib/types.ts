@@ -8,6 +8,7 @@ export type PriceHistorySourceType = "manual" | "ocr" | "csv";
 export type WasteItemType = "PRODUCT" | "INGREDIENT" | "INTERMEDIATE";
 export type WasteReason = "売れ残り" | "破損" | "作りすぎ" | "試作" | "品質不良" | "その他";
 export type InventoryItemType = "INGREDIENT" | "PRODUCT";
+export type InventoryInputMode = "actual_quantity" | "package_fraction";
 export type PackagingRole = "通常包材" | "ブランド包材" | "季節包材" | "専用包材";
 export type BrandImportance = "高" | "中" | "低";
 export type YearRoundUsage = "はい" | "いいえ" | "不明";
@@ -154,6 +155,7 @@ export type AppData = {
   laborCosts: LaborCost[];
   setProductItems: SetProductItem[];
   inventoryRecords: InventoryRecord[];
+  inventoryInputSettings: InventoryInputSetting[];
   packagingClassifications: PackagingClassification[];
   onboardingSupport: OnboardingSupportSettings;
   billing: BillingSettings;
@@ -169,6 +171,15 @@ export type PackagingClassification = {
   confidence: number;
   reason: string;
   source: "auto" | "user";
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type InventoryInputSetting = {
+  id: string;
+  itemType: InventoryItemType;
+  itemId: string;
+  inputMode: InventoryInputMode;
   createdAt: string;
   updatedAt: string;
 };

@@ -169,6 +169,7 @@ async function seedDemoData(url: string, serviceKey: string, userId: string, dat
     "actual_cost_records",
     "sales_records",
     "inventory_records",
+    "inventory_input_settings",
     "packaging_classifications",
     "waste_records",
     "ingredient_aliases",
@@ -184,7 +185,7 @@ async function seedDemoData(url: string, serviceKey: string, userId: string, dat
     try {
       await clearDemoRows(url, serviceKey, table);
     } catch (error) {
-      if (table !== "inventory_records" && table !== "packaging_classifications") throw error;
+      if (table !== "inventory_records" && table !== "inventory_input_settings" && table !== "packaging_classifications") throw error;
       console.warn(`Demo optional table ${table} is not ready yet.`, error);
     }
   }

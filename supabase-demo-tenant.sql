@@ -26,6 +26,7 @@ where table_schema = 'public'
     'ingredient_aliases',
     'waste_records',
     'inventory_records',
+    'inventory_input_settings',
     'packaging_classifications',
     'sales_records',
     'actual_cost_records',
@@ -53,6 +54,7 @@ where schemaname = 'public'
     'ingredient_aliases',
     'waste_records',
     'inventory_records',
+    'inventory_input_settings',
     'packaging_classifications',
     'sales_records',
     'actual_cost_records',
@@ -71,6 +73,7 @@ union all select 'products', count(*) from public.products where store_id = '000
 union all select 'recipe_items', count(*) from public.recipe_items where store_id = '00000000-0000-4000-8000-000000000001'
 union all select 'sales_records', count(*) from public.sales_records where store_id = '00000000-0000-4000-8000-000000000001'
 union all select 'inventory_records', count(*) from public.inventory_records where store_id = '00000000-0000-4000-8000-000000000001'
+union all select 'inventory_input_settings', count(*) from public.inventory_input_settings where store_id = '00000000-0000-4000-8000-000000000001'
 union all select 'packaging_classifications', count(*) from public.packaging_classifications where store_id = '00000000-0000-4000-8000-000000000001'
 union all select 'waste_records', count(*) from public.waste_records where store_id = '00000000-0000-4000-8000-000000000001';
 

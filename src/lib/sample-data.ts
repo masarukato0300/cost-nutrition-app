@@ -165,6 +165,7 @@ export const sampleData: AppData = {
     { id: "set-gift-castella", setProductId: "prd-gift", childProductId: "prd-castella", quantity: 1, memo: "奈良カステラ1本", createdAt: now, updatedAt: now },
   ],
   inventoryRecords: [],
+  inventoryInputSettings: [],
   packagingClassifications: [],
   onboardingSupport: {
     onboardingSupportEnabled: true,
