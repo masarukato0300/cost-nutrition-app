@@ -10,6 +10,13 @@ export const metadata: Metadata = {
     capable: true,
     title: "パティスリー経営ナビ",
   },
+  icons: {
+    icon: [
+      { url: "/favicon.png", sizes: "32x32", type: "image/png" },
+      { url: "/icons/patisserie-keiei-navi-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
   openGraph: {
     title: "パティスリー経営ナビ",
     description:
