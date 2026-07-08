@@ -5,11 +5,6 @@ type SupabaseUser = {
   email?: string;
 };
 
-type ShopMember = {
-  shop_id: string;
-  role: string;
-};
-
 type UserProfile = {
   store_id: string;
   role: string;
@@ -66,38 +61,13 @@ async function getUserStore(supabaseUrl: string, serviceRoleKey: string, userId:
     },
     cache: "no-store",
   });
-  if (profileResponse.ok) {
-    const profiles = await readJson<UserProfile[]>(profileResponse, "店舗メンバー情報を確認できませんでした。");
-    const profile = profiles[0];
-    if (profile?.store_id) {
-      if (!["owner", "manager"].includes(profile.role)) throw new Error("AI経営判断を実行できる権限がありません。");
-      return { storeId: profile.store_id, role: profile.role };
-    }
-  } else {
-    const errorPayload = await profileResponse.json().catch(() => ({}));
-    console.warn("user_profiles lookup failed; falling back to shop_members", errorPayload);
-  }
-
-  const response = await fetch(`${supabaseUrl}/rest/v1/shop_members?user_id=eq.${encodeURIComponent(userId)}&select=shop_id,role&limit=1`, {
-    headers: {
-      apikey: serviceRoleKey,
-      Authorization: `Bearer ${serviceRoleKey}`,
-    },
-    cache: "no-store",
-  });
-  let member: ShopMember | undefined;
-  if (response.ok) {
-    const rows = await readJson<ShopMember[]>(response, "店舗メンバー情報を確認できませんでした。");
-    member = rows[0];
-  } else {
-    const errorPayload = await response.json().catch(() => ({}));
-    console.warn("shop_members lookup failed; falling back to user_profiles", errorPayload);
-  }
-  if (!member) {
+  const profiles = await readJson<UserProfile[]>(profileResponse, "店舗メンバー情報を確認できませんでした。");
+  const profile = profiles[0];
+  if (!profile?.store_id) {
     throw new Error("このユーザーに紐づく店舗がありません。");
   }
-  if (!["owner", "manager"].includes(member.role)) throw new Error("AI経営判断を実行できる権限がありません。");
-  return { storeId: member.shop_id, role: member.role };
+  if (!["owner", "manager"].includes(profile.role)) throw new Error("AI経営判断を実行できる権限がありません。");
+  return { storeId: profile.store_id, role: profile.role };
 }
 
 function compactPayload(body: ManagementAiRequest) {

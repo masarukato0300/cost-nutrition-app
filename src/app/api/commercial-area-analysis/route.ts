@@ -28,7 +28,43 @@ function manualPlaces(prefix: string, label: string, count: number) {
   }));
 }
 
+function supabaseServerConfig() {
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serviceKey) return null;
+  return { url: url.replace(/\/$/, ""), serviceKey };
+}
+
+function bearerToken(request: Request) {
+  const header = request.headers.get("authorization") || "";
+  return header.match(/^Bearer\s+(.+)$/i)?.[1] || "";
+}
+
+async function requireLoggedInUser(request: Request) {
+  const config = supabaseServerConfig();
+  if (!config) throw new Error("Supabaseサーバー環境変数が未設定です。商圏分析は販売版ログイン確認ができる環境でのみ使えます。");
+  const token = bearerToken(request);
+  if (!token) throw new Error("商圏分析は販売版ログイン後に使えます。先にメールログインしてください。");
+  const response = await fetch(`${config.url}/auth/v1/user`, {
+    headers: {
+      apikey: config.serviceKey,
+      Authorization: `Bearer ${token}`,
+    },
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error("ログイン情報を確認できませんでした。もう一度ログインしてください。");
+}
+
 export async function POST(request: Request) {
+  try {
+    await requireLoggedInUser(request);
+  } catch (error) {
+    return NextResponse.json(
+      { ok: false, error: error instanceof Error ? error.message : "ログイン情報を確認できませんでした。" },
+      { status: 401 },
+    );
+  }
+
   const body = await request.json().catch(() => ({})) as Record<string, unknown>;
   const locationType = String(body.locationType || "未設定").trim() || "未設定";
   const memo = String(body.memo || "").trim();
