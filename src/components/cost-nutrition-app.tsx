@@ -6222,6 +6222,7 @@ export function CostNutritionApp() {
                         ingredients={data.ingredients}
                         products={data.products}
                         recipeItems={data.recipeItems}
+                        compact
                         onDelete={deleteRecipeItem}
                         onAmountChange={updateRecipeItemAmount}
                         onItemChange={updateRecipeItem}
@@ -9238,6 +9239,7 @@ function RecipeTable({
   ingredients,
   products,
   recipeItems,
+  compact = false,
   onDelete,
   onAmountChange,
   onItemChange,
@@ -9246,19 +9248,20 @@ function RecipeTable({
   ingredients: Ingredient[];
   products: Product[];
   recipeItems: RecipeItem[];
+  compact?: boolean;
   onDelete: (recipeItemId: string) => void;
   onAmountChange?: (recipeItemId: string, amountGram: number) => void;
   onItemChange?: (recipeItemId: string, patch: Partial<RecipeItem>) => void;
 }) {
   return (
     <div className="mt-4 overflow-x-auto rounded-md border border-neutral-200">
-      <table className="w-full min-w-[980px] border-collapse bg-white text-left">
+      <table className={`${compact ? "min-w-[820px] text-sm" : "min-w-[980px]"} w-full border-collapse bg-white text-left`}>
         <thead className="bg-neutral-100">
           <tr>
             <th className="p-3">製品名 / 原材料名</th>
-            <th className="p-3">入力方法</th>
-            <th className="p-3 text-right">使用量</th>
-            <th className="p-3 text-right">ロス率</th>
+            <th className={`${compact ? "w-28" : ""} p-3`}>入力方法</th>
+            <th className={`${compact ? "w-36" : ""} p-3 text-right`}>使用量</th>
+            <th className={`${compact ? "w-20" : ""} p-3 text-right`}>ロス率</th>
             <th className="p-3 text-right">栄養換算g</th>
             <th className="p-3 text-right">単価</th>
             <th className="p-3 text-right">原価</th>
@@ -9292,7 +9295,7 @@ function RecipeTable({
                 <td className="p-3">
                   {onItemChange ? (
                     <select
-                      className="w-28 rounded-md border border-neutral-300 px-2 py-1 text-neutral-900"
+                      className="min-h-10 w-24 rounded-md border border-neutral-300 px-2 py-2 text-sm text-neutral-900"
                       value={normalizedItem.usageType}
                       onChange={(event) => onItemChange(item.id, { usageType: event.target.value as RecipeUsageType })}
                     >
@@ -9395,7 +9398,7 @@ function RecipeAmountEditor({
 
   return (
     <input
-      className="w-24 rounded-md border border-neutral-300 px-2 py-1 text-right"
+      className="min-h-10 w-20 rounded-md border border-neutral-300 px-2 py-2 text-right text-sm"
       type="number"
       value={item.amountGram}
       onChange={(event) => onAmountChange(item.id, Number(event.target.value))}
@@ -9405,10 +9408,10 @@ function RecipeAmountEditor({
 
 function SmallNumberInput({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
   return (
-    <label className="grid w-16 gap-1 text-[10px] font-bold text-neutral-500">
+    <label className="grid w-14 gap-1 text-[10px] font-bold text-neutral-500">
       <span>{label}</span>
       <input
-        className="rounded-md border border-neutral-300 px-1 py-1 text-right text-xs text-neutral-900"
+        className="min-h-10 rounded-md border border-neutral-300 px-1 py-2 text-right text-sm text-neutral-900"
         type="number"
         value={value}
         onChange={(event) => onChange(Number(event.target.value))}
