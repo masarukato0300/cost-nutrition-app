@@ -9260,8 +9260,8 @@ function RecipeTable({
           <tr>
             <th className="p-3">製品名 / 原材料名</th>
             <th className={`${compact ? "w-28" : ""} p-3`}>入力方法</th>
-            <th className={`${compact ? "w-36" : ""} p-3 text-right`}>使用量</th>
-            <th className={`${compact ? "w-20" : ""} p-3 text-right`}>ロス率</th>
+            <th className={`${compact ? "w-24" : ""} p-3 text-right`}>使用量</th>
+            <th className={`${compact ? "w-16" : ""} p-3 text-right`}>ロス率</th>
             <th className="p-3 text-right">栄養換算g</th>
             <th className="p-3 text-right">単価</th>
             <th className="p-3 text-right">原価</th>
@@ -9310,14 +9310,14 @@ function RecipeTable({
                 </td>
                 <td className="p-3 text-right">
                   {onAmountChange ? (
-                    <RecipeAmountEditor item={normalizedItem} ingredient={ingredient} onAmountChange={onAmountChange} onItemChange={onItemChange} />
+                    <RecipeAmountEditor item={normalizedItem} ingredient={ingredient} compact={compact} onAmountChange={onAmountChange} onItemChange={onItemChange} />
                   ) : (
                     usageDescription(normalizedItem)
                   )}
                 </td>
                 <td className="p-3 text-right">
                   {onItemChange ? (
-                    <SmallNumberInput label="%" value={normalizedItem.lossRate} onChange={(value) => onItemChange(item.id, { lossRate: value })} />
+                    <SmallNumberInput label="%" value={normalizedItem.lossRate} compact={compact} onChange={(value) => onItemChange(item.id, { lossRate: value })} />
                   ) : (
                     `${number(normalizedItem.lossRate)}%`
                   )}
@@ -9346,11 +9346,13 @@ function RecipeTable({
 function RecipeAmountEditor({
   item,
   ingredient,
+  compact = false,
   onAmountChange,
   onItemChange,
 }: {
   item: RecipeItem;
   ingredient?: Ingredient;
+  compact?: boolean;
   onAmountChange: (recipeItemId: string, amountGram: number) => void;
   onItemChange?: (recipeItemId: string, patch: Partial<RecipeItem>) => void;
 }) {
@@ -9361,6 +9363,7 @@ function RecipeAmountEditor({
         <SmallNumberInput
           label="個"
           value={item.usedCount}
+          compact={compact}
           onChange={(value) => onItemChange?.(item.id, {
             usedCount: value,
             amountGram: value * unitGram,
@@ -9379,9 +9382,9 @@ function RecipeAmountEditor({
           <span className="text-[11px] font-bold text-amber-700">1個={number(unitGram)}g</span>
         )}
         <div className="flex justify-end gap-1">
-          <SmallNumberInput label="元量" value={item.baseAmountGram} onChange={(value) => onItemChange?.(item.id, { baseAmountGram: value })} />
-          <SmallNumberInput label="全" value={item.totalCount} onChange={(value) => onItemChange?.(item.id, { totalCount: value })} />
-          <SmallNumberInput label="使" value={item.usedCount} onChange={(value) => onItemChange?.(item.id, { usedCount: value })} />
+          <SmallNumberInput label="元量" value={item.baseAmountGram} compact={compact} onChange={(value) => onItemChange?.(item.id, { baseAmountGram: value })} />
+          <SmallNumberInput label="全" value={item.totalCount} compact={compact} onChange={(value) => onItemChange?.(item.id, { totalCount: value })} />
+          <SmallNumberInput label="使" value={item.usedCount} compact={compact} onChange={(value) => onItemChange?.(item.id, { usedCount: value })} />
         </div>
       </div>
     );
@@ -9390,15 +9393,15 @@ function RecipeAmountEditor({
   if (item.usageType === "fraction") {
     return (
       <div className="flex justify-end gap-1">
-        <SmallNumberInput label="元量" value={item.baseAmountGram} onChange={(value) => onItemChange?.(item.id, { baseAmountGram: value })} />
-        <SmallNumberInput label="1/" value={item.fractionDenominator} onChange={(value) => onItemChange?.(item.id, { fractionDenominator: value })} />
+        <SmallNumberInput label="元量" value={item.baseAmountGram} compact={compact} onChange={(value) => onItemChange?.(item.id, { baseAmountGram: value })} />
+        <SmallNumberInput label="1/" value={item.fractionDenominator} compact={compact} onChange={(value) => onItemChange?.(item.id, { fractionDenominator: value })} />
       </div>
     );
   }
 
   return (
     <input
-      className="min-h-10 w-20 rounded-md border border-neutral-300 px-2 py-2 text-right text-sm"
+      className={`${compact ? "w-10 px-1 text-xs" : "w-20 px-2 text-sm"} min-h-10 rounded-md border border-neutral-300 py-2 text-right`}
       type="number"
       value={item.amountGram}
       onChange={(event) => onAmountChange(item.id, Number(event.target.value))}
@@ -9406,12 +9409,12 @@ function RecipeAmountEditor({
   );
 }
 
-function SmallNumberInput({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
+function SmallNumberInput({ label, value, compact = false, onChange }: { label: string; value: number; compact?: boolean; onChange: (value: number) => void }) {
   return (
-    <label className="grid w-14 gap-1 text-[10px] font-bold text-neutral-500">
+    <label className={`${compact ? "w-10" : "w-14"} grid gap-1 text-[10px] font-bold text-neutral-500`}>
       <span>{label}</span>
       <input
-        className="min-h-10 rounded-md border border-neutral-300 px-1 py-2 text-right text-sm text-neutral-900"
+        className={`${compact ? "text-xs" : "text-sm"} min-h-10 rounded-md border border-neutral-300 px-1 py-2 text-right text-neutral-900`}
         type="number"
         value={value}
         onChange={(event) => onChange(Number(event.target.value))}
