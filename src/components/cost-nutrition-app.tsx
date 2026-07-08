@@ -9255,14 +9255,14 @@ function RecipeTable({
 }) {
   return (
     <div className="mt-4 overflow-x-auto rounded-md border border-neutral-200">
-      <table className={`${compact ? "min-w-[820px] text-sm" : "min-w-[980px]"} w-full border-collapse bg-white text-left`}>
+      <table className={`${compact ? "min-w-[620px] text-sm" : "min-w-[980px]"} w-full border-collapse bg-white text-left`}>
         <thead className="bg-neutral-100">
           <tr>
             <th className="p-3">製品名 / 原材料名</th>
-            <th className={`${compact ? "w-28" : ""} p-3`}>入力方法</th>
-            <th className={`${compact ? "w-24" : ""} p-3 text-right`}>使用量</th>
-            <th className={`${compact ? "w-16" : ""} p-3 text-right`}>ロス率</th>
-            <th className="p-3 text-right">栄養換算g</th>
+            <th className={`${compact ? "w-10 px-1" : "p-3"} py-3`}>入力方法</th>
+            <th className={`${compact ? "w-10 px-1" : "p-3"} py-3 text-right`}>使用量</th>
+            {!compact && <th className="p-3 text-right">ロス率</th>}
+            {!compact && <th className="p-3 text-right">栄養換算g</th>}
             <th className="p-3 text-right">単価</th>
             <th className="p-3 text-right">原価</th>
             <th className="p-3"></th>
@@ -9292,10 +9292,10 @@ function RecipeTable({
                     {item.itemType === "intermediate" ? "中間材料" : ingredient?.category || "未分類"}
                   </span>
                 </td>
-                <td className="p-3">
+                <td className={`${compact ? "px-1 py-3" : "p-3"}`}>
                   {onItemChange ? (
                     <select
-                      className="min-h-10 w-24 rounded-md border border-neutral-300 px-2 py-2 text-sm text-neutral-900"
+                      className={`${compact ? "w-8 px-0 text-xs" : "w-24 px-2 text-sm"} min-h-10 rounded-md border border-neutral-300 py-2 text-neutral-900`}
                       value={normalizedItem.usageType}
                       onChange={(event) => onItemChange(item.id, { usageType: event.target.value as RecipeUsageType })}
                     >
@@ -9308,21 +9308,23 @@ function RecipeTable({
                     usageTypeLabel(normalizedItem.usageType)
                   )}
                 </td>
-                <td className="p-3 text-right">
+                <td className={`${compact ? "px-1 py-3" : "p-3"} text-right`}>
                   {onAmountChange ? (
                     <RecipeAmountEditor item={normalizedItem} ingredient={ingredient} compact={compact} onAmountChange={onAmountChange} onItemChange={onItemChange} />
                   ) : (
                     usageDescription(normalizedItem)
                   )}
                 </td>
-                <td className="p-3 text-right">
-                  {onItemChange ? (
-                    <SmallNumberInput label="%" value={normalizedItem.lossRate} compact={compact} onChange={(value) => onItemChange(item.id, { lossRate: value })} />
-                  ) : (
-                    `${number(normalizedItem.lossRate)}%`
-                  )}
-                </td>
-                <td className="p-3 text-right">{number(nutritionGram)}g</td>
+                {!compact && (
+                  <td className="p-3 text-right">
+                    {onItemChange ? (
+                      <SmallNumberInput label="%" value={normalizedItem.lossRate} onChange={(value) => onItemChange(item.id, { lossRate: value })} />
+                    ) : (
+                      `${number(normalizedItem.lossRate)}%`
+                    )}
+                  </td>
+                )}
+                {!compact && <td className="p-3 text-right">{number(nutritionGram)}g</td>}
                 <td className="p-3 text-right">
                   {item.itemType === "intermediate" ? `${yen(intermediateUnitCost)} / g` : ingredient ? `${yen(pricePerGram(ingredient))} / ${unit}` : "-"}
                 </td>
@@ -9401,7 +9403,7 @@ function RecipeAmountEditor({
 
   return (
     <input
-      className={`${compact ? "w-10 px-1 text-xs" : "w-20 px-2 text-sm"} min-h-10 rounded-md border border-neutral-300 py-2 text-right`}
+      className={`${compact ? "w-8 px-0 text-xs" : "w-20 px-2 text-sm"} min-h-10 rounded-md border border-neutral-300 py-2 text-right`}
       type="number"
       value={item.amountGram}
       onChange={(event) => onAmountChange(item.id, Number(event.target.value))}
@@ -9411,7 +9413,7 @@ function RecipeAmountEditor({
 
 function SmallNumberInput({ label, value, compact = false, onChange }: { label: string; value: number; compact?: boolean; onChange: (value: number) => void }) {
   return (
-    <label className={`${compact ? "w-10" : "w-14"} grid gap-1 text-[10px] font-bold text-neutral-500`}>
+    <label className={`${compact ? "w-8" : "w-14"} grid gap-1 text-[10px] font-bold text-neutral-500`}>
       <span>{label}</span>
       <input
         className={`${compact ? "text-xs" : "text-sm"} min-h-10 rounded-md border border-neutral-300 px-1 py-2 text-right text-neutral-900`}
