@@ -9355,11 +9355,6 @@ function RecipeAmountEditor({
     const unitGram = ingredient?.gramPerUnit && ingredient.gramPerUnit > 1 ? ingredient.gramPerUnit : 1;
     return (
       <div className="grid justify-items-end gap-1">
-        {ingredient && (
-          <span className="text-[11px] font-bold text-teal-700">
-            1個={number(unitGram)}{unitGram > 1 ? "g" : ingredientUnitLabel(ingredient)}
-          </span>
-        )}
         <SmallNumberInput
           label="個"
           value={item.usedCount}
