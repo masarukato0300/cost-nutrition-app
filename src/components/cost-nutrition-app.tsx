@@ -5280,9 +5280,6 @@ export function CostNutritionApp() {
                 デモ店舗で試す
               </button>
             </div>
-            <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-900">
-              ログイン後の店舗データはSupabaseに保存され、別端末でも同じメールログインで共有できます。
-            </div>
           </section>
         </div>
       )}
