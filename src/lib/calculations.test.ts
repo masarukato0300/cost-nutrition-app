@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { calculateEventSimulation, calculateMonthlyTheoryCost, calculatePriceImpact, calculateProductCost, calculateProductLaborCost, calculateProductNutrition, calculateProductionRequirements, calculateSetProductCost, calculateWasteMonthlySummary, calculateWasteRecordAmounts, calculateWasteSummary, pricePerGram } from "./calculations";
+import { calculateEventSimulation, calculateMonthlyTheoryCost, calculatePriceImpact, calculateProductCost, calculateProductLaborCost, calculateProductNutrition, calculateProductionRequirements, calculateSetProductCost, calculateWasteMonthlySummary, calculateWasteRecordAmounts, calculateWasteSummary, collectLabelNames, pricePerGram } from "./calculations";
 import { sampleData } from "./sample-data";
 
 const shortcake = sampleData.products.find((product) => product.id === "prd-shortcake");
@@ -19,6 +19,11 @@ assert.equal(Math.round(cost.totalCost), 1408);
 assert.equal(Math.round(cost.costPerPiece), 176);
 assert.equal(Math.round(cost.costRate * 10) / 10, 33.8);
 assert(cost.packagingCostPerPiece > 0);
+
+const shortcakeLabelNames = collectLabelNames(shortcake.id, sampleData.ingredients, sampleData.recipeItems, sampleData.products);
+assert(shortcakeLabelNames.includes("苺"));
+assert(!shortcakeLabelNames.includes("ケーキトレー"));
+assert(!shortcakeLabelNames.includes("ケーキ箱"));
 
 const bakedIntermediateData = {
   ingredients: [{

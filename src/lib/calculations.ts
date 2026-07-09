@@ -789,6 +789,7 @@ export function collectAllergens(productId: string, ingredients: Ingredient[], r
       return intermediate ? collectAllergens(intermediate.id, ingredients, recipeItems, products) : [];
     }
     const ingredient = ingredients.find((candidate) => candidate.id === item.ingredientId);
+    if (!ingredient || isPackagingIngredient(ingredient)) return [];
     return ingredient ? [...ingredient.allergens, ingredient.otherAllergen].filter(Boolean) : [];
   });
   return [...new Set(allergens)].sort();
@@ -802,6 +803,7 @@ export function collectLabelNames(productId: string, ingredients: Ingredient[], 
         return intermediate ? collectLabelNames(intermediate.id, ingredients, recipeItems, products) : [];
       }
       const ingredient = ingredients.find((candidate) => candidate.id === item.ingredientId);
+      if (!ingredient || isPackagingIngredient(ingredient)) return [];
       return ingredient ? [ingredient.labelName || ingredient.name] : [];
     })
     .filter(Boolean);
