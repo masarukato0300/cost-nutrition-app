@@ -9403,7 +9403,7 @@ function RecipeAmountEditor({
 
   return (
     <input
-      className={`${compact ? "w-8 px-0 text-xs" : "w-20 px-2 text-sm"} min-h-10 rounded-md border border-neutral-300 py-2 text-right`}
+      className={`${compact ? "w-7 px-0 text-xs" : "w-20 px-2 text-sm"} min-h-10 rounded-md border border-neutral-300 py-2 text-right`}
       type="number"
       value={item.amountGram}
       onChange={(event) => onAmountChange(item.id, Number(event.target.value))}
@@ -9413,7 +9413,7 @@ function RecipeAmountEditor({
 
 function SmallNumberInput({ label, value, compact = false, onChange }: { label: string; value: number; compact?: boolean; onChange: (value: number) => void }) {
   return (
-    <label className={`${compact ? "w-8" : "w-14"} grid gap-1 text-[10px] font-bold text-neutral-500`}>
+    <label className={`${compact ? "w-7" : "w-14"} grid gap-1 text-[10px] font-bold text-neutral-500`}>
       <span>{label}</span>
       <input
         className={`${compact ? "text-xs" : "text-sm"} min-h-10 rounded-md border border-neutral-300 px-1 py-2 text-right text-neutral-900`}
