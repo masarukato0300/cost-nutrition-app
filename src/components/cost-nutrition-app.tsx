@@ -9255,16 +9255,16 @@ function RecipeTable({
 }) {
   return (
     <div className="mt-4 overflow-x-auto rounded-md border border-neutral-200">
-      <table className={`${compact ? "min-w-[620px] text-sm" : "min-w-[980px]"} w-full border-collapse bg-white text-left`}>
+      <table className={`${compact ? "min-w-[760px] text-sm" : "min-w-[980px]"} w-full border-collapse bg-white text-left`}>
         <thead className="bg-neutral-100">
           <tr>
-            <th className="p-3">製品名 / 原材料名</th>
-            <th className={`${compact ? "w-10 px-1" : "p-3"} py-3`}>入力方法</th>
-            <th className={`${compact ? "w-10 px-1" : "p-3"} py-3 text-right`}>使用量</th>
+            <th className={`${compact ? "w-48 px-2" : "p-3"} py-3`}>製品名 / 原材料名</th>
+            <th className={`${compact ? "w-24 px-2" : "p-3"} py-3`}>入力方法</th>
+            <th className={`${compact ? "w-20 px-2" : "p-3"} py-3 text-right`}>使用量</th>
             {!compact && <th className="p-3 text-right">ロス率</th>}
             {!compact && <th className="p-3 text-right">栄養換算g</th>}
-            <th className="p-3 text-right">単価</th>
-            <th className="p-3 text-right">原価</th>
+            <th className={`${compact ? "w-28 px-2" : "p-3"} py-3 text-right`}>単価</th>
+            <th className={`${compact ? "w-24 px-2" : "p-3"} py-3 text-right`}>原価</th>
             <th className="p-3"></th>
           </tr>
         </thead>
@@ -9283,19 +9283,21 @@ function RecipeTable({
             const nutritionGram = ingredient ? amountToGram(ingredient, amount) : amount;
             return (
               <tr key={item.id} className="border-t border-neutral-200">
-                <td className="p-3">
-                  <strong>{item.itemType === "intermediate" ? intermediate?.name : ingredient?.packageName || ingredient?.name}</strong>
+                <td className={`${compact ? "w-48 max-w-48 px-2 py-3 align-top" : "p-3"}`}>
+                  <strong className={`${compact ? "block max-w-44 whitespace-normal break-words leading-snug" : ""}`}>
+                    {item.itemType === "intermediate" ? intermediate?.name : ingredient?.packageName || ingredient?.name}
+                  </strong>
                   {ingredient?.packageName && ingredient.packageName !== ingredient.name && (
-                    <span className="ml-2 text-[11px] font-bold text-neutral-500">{ingredient.name}</span>
+                    <span className={`${compact ? "mt-1 block" : "ml-2"} text-[11px] font-bold text-neutral-500`}>{ingredient.name}</span>
                   )}
-                  <span className="ml-2 rounded bg-neutral-100 px-2 py-1 text-[11px] font-bold text-neutral-600">
+                  <span className={`${compact ? "mt-1 inline-block" : "ml-2"} rounded bg-neutral-100 px-2 py-1 text-[11px] font-bold text-neutral-600`}>
                     {item.itemType === "intermediate" ? "中間材料" : ingredient?.category || "未分類"}
                   </span>
                 </td>
-                <td className={`${compact ? "px-1 py-3" : "p-3"}`}>
+                <td className={`${compact ? "px-2 py-3 align-top" : "p-3"}`}>
                   {onItemChange ? (
                     <select
-                      className={`${compact ? "w-8 px-0 text-xs" : "w-24 px-2 text-sm"} min-h-10 rounded-md border border-neutral-300 py-2 text-neutral-900`}
+                      className={`${compact ? "w-20 px-2 text-sm" : "w-24 px-2 text-sm"} min-h-10 rounded-md border border-neutral-300 py-2 text-neutral-900`}
                       value={normalizedItem.usageType}
                       onChange={(event) => onItemChange(item.id, { usageType: event.target.value as RecipeUsageType })}
                     >
@@ -9308,7 +9310,7 @@ function RecipeTable({
                     usageTypeLabel(normalizedItem.usageType)
                   )}
                 </td>
-                <td className={`${compact ? "px-1 py-3" : "p-3"} text-right`}>
+                <td className={`${compact ? "px-2 py-3 align-top" : "p-3"} text-right`}>
                   {onAmountChange ? (
                     <RecipeAmountEditor item={normalizedItem} ingredient={ingredient} compact={compact} onAmountChange={onAmountChange} onItemChange={onItemChange} />
                   ) : (
@@ -9325,10 +9327,10 @@ function RecipeTable({
                   </td>
                 )}
                 {!compact && <td className="p-3 text-right">{number(nutritionGram)}g</td>}
-                <td className="p-3 text-right">
+                <td className={`${compact ? "px-2 py-3 align-top" : "p-3"} text-right`}>
                   {item.itemType === "intermediate" ? `${yen(intermediateUnitCost)} / g` : ingredient ? `${yen(pricePerGram(ingredient))} / ${unit}` : "-"}
                 </td>
-                <td className="p-3 text-right">
+                <td className={`${compact ? "px-2 py-3 align-top" : "p-3"} text-right`}>
                   {item.itemType === "intermediate" ? yen(intermediateUnitCost * amount) : ingredient ? yen(pricePerGram(ingredient) * amount) : "-"}
                 </td>
                 <td className="p-3 text-right">
@@ -9403,7 +9405,7 @@ function RecipeAmountEditor({
 
   return (
     <input
-      className={`${compact ? "w-7 px-0 text-xs" : "w-20 px-2 text-sm"} min-h-10 rounded-md border border-neutral-300 py-2 text-right`}
+      className={`${compact ? "w-16 px-2 text-sm" : "w-20 px-2 text-sm"} min-h-10 rounded-md border border-neutral-300 py-2 text-right`}
       type="number"
       value={item.amountGram}
       onChange={(event) => onAmountChange(item.id, Number(event.target.value))}
@@ -9413,7 +9415,7 @@ function RecipeAmountEditor({
 
 function SmallNumberInput({ label, value, compact = false, onChange }: { label: string; value: number; compact?: boolean; onChange: (value: number) => void }) {
   return (
-    <label className={`${compact ? "w-7" : "w-14"} grid gap-1 text-[10px] font-bold text-neutral-500`}>
+    <label className={`${compact ? "w-16" : "w-14"} grid gap-1 text-[10px] font-bold text-neutral-500`}>
       <span>{label}</span>
       <input
         className={`${compact ? "text-xs" : "text-sm"} min-h-10 rounded-md border border-neutral-300 px-1 py-2 text-right text-neutral-900`}
