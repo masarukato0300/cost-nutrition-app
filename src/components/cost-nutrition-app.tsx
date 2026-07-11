@@ -7192,6 +7192,8 @@ export function CostNutritionApp() {
                     <input
                       className="rounded-md border border-neutral-200 bg-white px-2 py-1 text-right"
                       type="number"
+                      inputMode="decimal"
+                      pattern="[0-9]*"
                       value={productionPlan[product.id] ?? 0}
                       onChange={(event) => updateProductionPlan(product.id, Number(event.target.value))}
                     />
@@ -7576,6 +7578,8 @@ export function CostNutritionApp() {
                               <input
                                 className="h-10 w-24 rounded-md border border-neutral-300 px-2 text-right font-black"
                                 type="number"
+                                inputMode="decimal"
+                                pattern="[0-9]*"
                                 value={quantity}
                                 onChange={(event) => upsertWasteQuantity(row.itemType, row.id, Number(event.target.value))}
                               />
@@ -7801,6 +7805,8 @@ export function CostNutritionApp() {
                       <input
                         className="rounded-md border border-neutral-200 bg-white px-2 py-1 text-right"
                         type="number"
+                        inputMode="decimal"
+                        pattern="[0-9]*"
                         value={record?.quantity ?? 0}
                         onChange={(event) => updateMonthlySales(product, Number(event.target.value))}
                       />
@@ -7928,12 +7934,16 @@ export function CostNutritionApp() {
                         <input
                           className="rounded-md border border-neutral-200 px-2 py-1 text-right"
                           type="number"
+                          inputMode="decimal"
+                          pattern="[0-9]*"
                           value={item?.plannedQuantity ?? 0}
                           onChange={(event) => updateEventPlanItem(product, { plannedQuantity: Number(event.target.value) })}
                         />
                         <input
                           className="rounded-md border border-neutral-200 px-2 py-1 text-right"
                           type="number"
+                          inputMode="decimal"
+                          pattern="[0-9]*"
                           value={item?.sellingPrice ?? product.sellingPrice}
                           onChange={(event) => updateEventPlanItem(product, { sellingPrice: Number(event.target.value) })}
                         />
@@ -9185,11 +9195,44 @@ function CategoryInput({
   );
 }
 
+function backspaceNumberValue(value: number) {
+  const text = String(Number.isFinite(value) ? value : 0);
+  const next = text.length > 1 ? text.slice(0, -1) : "0";
+  const parsed = Number(next);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function NumberInput({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
   return (
     <label className="grid gap-1 font-bold text-neutral-600">
       <span>{label}</span>
-      <input className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-right text-neutral-900 shadow-sm outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100" type="number" value={value} onChange={(event) => onChange(Number(event.target.value))} />
+      <div className="grid grid-cols-[1fr_auto_auto] gap-1">
+        <input
+          className="min-h-11 rounded-md border border-neutral-200 bg-white px-3 py-2 text-right text-neutral-900 shadow-sm outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+          type="number"
+          inputMode="decimal"
+          pattern="[0-9]*"
+          enterKeyHint="done"
+          value={value}
+          onChange={(event) => onChange(Number(event.target.value))}
+        />
+        <button
+          className="min-h-11 rounded-md border border-neutral-200 bg-neutral-50 px-2 text-sm font-black text-neutral-700"
+          type="button"
+          onClick={() => onChange(backspaceNumberValue(value))}
+          aria-label={`${label}を1文字戻す`}
+        >
+          ⌫
+        </button>
+        <button
+          className="min-h-11 rounded-md border border-red-200 bg-red-50 px-2 text-xs font-black text-red-700"
+          type="button"
+          onClick={() => onChange(0)}
+          aria-label={`${label}を消去`}
+        >
+          クリア
+        </button>
+      </div>
     </label>
   );
 }
@@ -9404,12 +9447,35 @@ function RecipeAmountEditor({
   }
 
   return (
-    <input
-      className={`${compact ? "w-16 px-2 text-sm" : "w-20 px-2 text-sm"} min-h-10 rounded-md border border-neutral-300 py-2 text-right`}
-      type="number"
-      value={item.amountGram}
-      onChange={(event) => onAmountChange(item.id, Number(event.target.value))}
-    />
+    <div className={`${compact ? "w-16" : "w-20"} grid gap-1 justify-self-end`}>
+      <input
+        inputMode="decimal"
+        pattern="[0-9]*"
+        enterKeyHint="done"
+        className="min-h-10 rounded-md border border-neutral-300 px-2 py-2 text-right text-sm"
+        type="number"
+        value={item.amountGram}
+        onChange={(event) => onAmountChange(item.id, Number(event.target.value))}
+      />
+      <div className="grid grid-cols-2 gap-1 text-[10px]">
+        <button
+          className="rounded border border-neutral-200 bg-neutral-50 py-1 font-black text-neutral-700"
+          type="button"
+          onClick={() => onAmountChange(item.id, backspaceNumberValue(item.amountGram))}
+          aria-label="使用量を1文字戻す"
+        >
+          ⌫
+        </button>
+        <button
+          className="rounded border border-red-200 bg-red-50 py-1 font-black text-red-700"
+          type="button"
+          onClick={() => onAmountChange(item.id, 0)}
+          aria-label="使用量を消去"
+        >
+          C
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -9420,9 +9486,30 @@ function SmallNumberInput({ label, value, compact = false, onChange }: { label: 
       <input
         className={`${compact ? "text-xs" : "text-sm"} min-h-10 rounded-md border border-neutral-300 px-1 py-2 text-right text-neutral-900`}
         type="number"
+        inputMode="decimal"
+        pattern="[0-9]*"
+        enterKeyHint="done"
         value={value}
         onChange={(event) => onChange(Number(event.target.value))}
       />
+      <div className={`grid grid-cols-2 gap-1 ${compact ? "text-[9px]" : "text-[10px]"}`}>
+        <button
+          className="rounded border border-neutral-200 bg-neutral-50 py-1 font-black text-neutral-700"
+          type="button"
+          onClick={() => onChange(backspaceNumberValue(value))}
+          aria-label={`${label}を1文字戻す`}
+        >
+          ⌫
+        </button>
+        <button
+          className="rounded border border-red-200 bg-red-50 py-1 font-black text-red-700"
+          type="button"
+          onClick={() => onChange(0)}
+          aria-label={`${label}を消去`}
+        >
+          C
+        </button>
+      </div>
     </label>
   );
 }
