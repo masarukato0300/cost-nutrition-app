@@ -7410,7 +7410,6 @@ export function CostNutritionApp() {
                             onChange={(value) => updateInventoryQuantity(row.key, String(value))}
                             ariaLabel={`${row.itemName}の棚卸し数量`}
                             dataInventoryIndex={index}
-                            doneLabel="次へ"
                             onDone={() => focusNextInventoryInput(index)}
                           />
                         </td>
@@ -9257,7 +9256,6 @@ function NumericKeypadInput({
   onChange,
   ariaLabel,
   className = "",
-  doneLabel = "閉じる",
   onDone,
   dataInventoryIndex,
 }: {
@@ -9265,7 +9263,6 @@ function NumericKeypadInput({
   onChange: (value: number) => void;
   ariaLabel: string;
   className?: string;
-  doneLabel?: string;
   onDone?: () => void;
   dataInventoryIndex?: number;
 }) {
@@ -9280,6 +9277,10 @@ function NumericKeypadInput({
   const closeKeypad = () => {
     setIsOpen(false);
     onDone?.();
+  };
+
+  const closeOnly = () => {
+    setIsOpen(false);
   };
 
   const keypadKeys = ["7", "8", "9", "4", "5", "6", "1", "2", "3", "0", ".", "⌫"];
@@ -9310,9 +9311,9 @@ function NumericKeypadInput({
             <button
               className="rounded-md bg-neutral-100 px-3 py-2 text-xs font-black text-neutral-700"
               type="button"
-              onClick={closeKeypad}
+              onClick={closeOnly}
             >
-              {doneLabel}
+              閉じる
             </button>
           </div>
           <div className="mb-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-right text-2xl font-black text-neutral-900">
@@ -9348,7 +9349,7 @@ function NumericKeypadInput({
               type="button"
               onClick={closeKeypad}
             >
-              エンター
+              Enter
             </button>
           </div>
         </div>
