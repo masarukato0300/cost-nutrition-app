@@ -3373,6 +3373,11 @@ export function CostNutritionApp() {
       missingNutritionCount: data.ingredients.filter((ingredient) => !hasNutrition(ingredient)).length,
       recentPriceHistories,
       highCostTop: sellableProductCosts.slice().sort((a, b) => b.costRate - a.costRate).slice(0, 5),
+      lowCostTop: sellableProductCosts
+        .filter((item) => item.product.sellingPrice > 0 && Number.isFinite(item.costRate))
+        .slice()
+        .sort((a, b) => a.costRate - b.costRate)
+        .slice(0, 10),
       priceReviewTop: sellableProductCosts.filter((item) => item.costRate >= item.product.targetCostRate || item.costRate >= 35).sort((a, b) => b.costRate - a.costRate).slice(0, 10),
     };
   }, [data, impactRows.length]);
@@ -7117,6 +7122,48 @@ export function CostNutritionApp() {
             </div>
           )}
           <RecipeTable rows={recipeRows} ingredients={data.ingredients} products={data.products} recipeItems={data.recipeItems} onDelete={deleteRecipeItem} />
+          <section className="mt-6 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+            <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+              <div>
+                <h3 className="text-lg font-black text-emerald-950">原価率の低い商品TOP10</h3>
+                <p className="text-xs font-bold text-emerald-800">包材込み原価率が低い順です。伸ばしやすい商品候補の確認に使えます。</p>
+              </div>
+            </div>
+            {dashboard.lowCostTop.length > 0 ? (
+              <div className="overflow-x-auto rounded-md border border-emerald-200 bg-white">
+                <table className="w-full min-w-[760px] border-collapse text-left text-sm">
+                  <thead className="bg-emerald-100 text-emerald-950">
+                    <tr>
+                      <th className="p-3">順位</th>
+                      <th className="p-3">商品名</th>
+                      <th className="p-3">カテゴリ</th>
+                      <th className="p-3 text-right">売価</th>
+                      <th className="p-3 text-right">包材込み原価/個</th>
+                      <th className="p-3 text-right">包材込み原価率</th>
+                      <th className="p-3 text-right">材料原価率</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dashboard.lowCostTop.map((summary, index) => (
+                      <tr key={summary.product.id} className="border-t border-emerald-100">
+                        <td className="p-3 font-black text-emerald-800">{index + 1}</td>
+                        <td className="p-3 font-black text-neutral-900">{summary.product.name}</td>
+                        <td className="p-3 text-neutral-600">{summary.product.category || "未分類"}</td>
+                        <td className="p-3 text-right font-bold">{yen(summary.product.sellingPrice)}</td>
+                        <td className="p-3 text-right font-bold">{yen(summary.costPerPiece)}</td>
+                        <td className="p-3 text-right">
+                          <CostRateBadge value={summary.costRate} />
+                        </td>
+                        <td className="p-3 text-right font-bold">{percent(summary.materialCostRate)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <EmptyState text="販売価格とレシピが入ると、原価率の低い商品TOP10を表示します。" />
+            )}
+          </section>
         </Panel>
       )}
 
@@ -7189,13 +7236,11 @@ export function CostNutritionApp() {
                 {data.products.filter((product) => !product.isIntermediateMaterial).map((product) => (
                   <label key={product.id} className="grid grid-cols-[1fr_110px] items-center gap-2 rounded-md border border-neutral-100 bg-neutral-50 p-2 font-bold">
                     <span>{product.name}</span>
-                    <input
+                    <NumericKeypadInput
                       className="rounded-md border border-neutral-200 bg-white px-2 py-1 text-right"
-                      type="number"
-                      inputMode="decimal"
-                      pattern="[0-9]*"
                       value={productionPlan[product.id] ?? 0}
-                      onChange={(event) => updateProductionPlan(product.id, Number(event.target.value))}
+                      onChange={(value) => updateProductionPlan(product.id, value)}
+                      ariaLabel={`${product.name}の製造予定数`}
                     />
                   </label>
                 ))}
@@ -7359,16 +7404,14 @@ export function CostNutritionApp() {
                         <td className="p-3 text-right font-bold">{yenForSmallCost(row.unitCost)}</td>
                         <td className="p-3 text-center font-bold text-neutral-600">{row.unitLabel}</td>
                         <td className="p-3 text-right">
-                          <input
-                            data-inventory-index={index}
-                            inputMode="decimal"
+                          <NumericKeypadInput
                             className="h-12 w-32 rounded-md border border-emerald-200 bg-emerald-50 px-3 text-right text-lg font-black text-neutral-950 outline-none focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-100"
-                            value={inventoryQuantities[row.key] ?? (savedInventoryByKey[row.key]?.quantity ? String(savedInventoryByKey[row.key].quantity) : "")}
-                            placeholder="0"
-                            onChange={(event) => updateInventoryQuantity(row.key, event.target.value)}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter") focusNextInventoryInput(index);
-                            }}
+                            value={Number(inventoryQuantities[row.key] ?? savedInventoryByKey[row.key]?.quantity ?? 0)}
+                            onChange={(value) => updateInventoryQuantity(row.key, String(value))}
+                            ariaLabel={`${row.itemName}の棚卸し数量`}
+                            dataInventoryIndex={index}
+                            doneLabel="次へ"
+                            onDone={() => focusNextInventoryInput(index)}
                           />
                         </td>
                         <td className="p-3 text-right text-base font-black text-emerald-800">{yen(row.amount)}</td>
@@ -7575,13 +7618,11 @@ export function CostNutritionApp() {
                               <button className="grid h-10 w-10 place-items-center rounded-md bg-pink-600 text-xl font-black text-white" onClick={() => incrementWasteQuantity(row.itemType, row.id, row.step)}>
                                 +
                               </button>
-                              <input
+                              <NumericKeypadInput
                                 className="h-10 w-24 rounded-md border border-neutral-300 px-2 text-right font-black"
-                                type="number"
-                                inputMode="decimal"
-                                pattern="[0-9]*"
                                 value={quantity}
-                                onChange={(event) => upsertWasteQuantity(row.itemType, row.id, Number(event.target.value))}
+                                onChange={(value) => upsertWasteQuantity(row.itemType, row.id, value)}
+                                ariaLabel={`${row.name}の廃棄数量`}
                               />
                             </div>
                           </td>
@@ -7802,13 +7843,11 @@ export function CostNutritionApp() {
                   return (
                     <label key={product.id} className="grid grid-cols-[1fr_110px] items-center gap-2 rounded-md border border-neutral-100 bg-neutral-50 p-2 font-bold">
                       <span>{product.name}</span>
-                      <input
+                      <NumericKeypadInput
                         className="rounded-md border border-neutral-200 bg-white px-2 py-1 text-right"
-                        type="number"
-                        inputMode="decimal"
-                        pattern="[0-9]*"
                         value={record?.quantity ?? 0}
-                        onChange={(event) => updateMonthlySales(product, Number(event.target.value))}
+                        onChange={(value) => updateMonthlySales(product, value)}
+                        ariaLabel={`${product.name}の販売数`}
                       />
                     </label>
                   );
@@ -7931,21 +7970,17 @@ export function CostNutritionApp() {
                     return (
                       <div key={product.id} className="grid gap-2 rounded-md bg-white p-2 font-bold md:grid-cols-[1fr_110px_130px] md:items-center">
                         <span>{product.name}</span>
-                        <input
+                        <NumericKeypadInput
                           className="rounded-md border border-neutral-200 px-2 py-1 text-right"
-                          type="number"
-                          inputMode="decimal"
-                          pattern="[0-9]*"
                           value={item?.plannedQuantity ?? 0}
-                          onChange={(event) => updateEventPlanItem(product, { plannedQuantity: Number(event.target.value) })}
+                          onChange={(value) => updateEventPlanItem(product, { plannedQuantity: value })}
+                          ariaLabel={`${product.name}の予定販売数`}
                         />
-                        <input
+                        <NumericKeypadInput
                           className="rounded-md border border-neutral-200 px-2 py-1 text-right"
-                          type="number"
-                          inputMode="decimal"
-                          pattern="[0-9]*"
                           value={item?.sellingPrice ?? product.sellingPrice}
-                          onChange={(event) => updateEventPlanItem(product, { sellingPrice: Number(event.target.value) })}
+                          onChange={(value) => updateEventPlanItem(product, { sellingPrice: value })}
+                          ariaLabel={`${product.name}のイベント販売価格`}
                         />
                       </div>
                     );
@@ -9202,19 +9237,127 @@ function backspaceNumberValue(value: number) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function parseNumericDraft(text: string) {
+  const parsed = Number(text);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function appendNumericKey(text: string, key: string) {
+  if (key === ".") {
+    if (text.includes(".")) return text;
+    return text ? `${text}.` : "0.";
+  }
+  if (!/^\d$/.test(key)) return text;
+  if (text === "0") return key;
+  return `${text}${key}`;
+}
+
+function NumericKeypadInput({
+  value,
+  onChange,
+  ariaLabel,
+  className = "",
+  doneLabel = "閉じる",
+  onDone,
+  dataInventoryIndex,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+  ariaLabel: string;
+  className?: string;
+  doneLabel?: string;
+  onDone?: () => void;
+  dataInventoryIndex?: number;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [draft, setDraft] = useState(String(Number.isFinite(value) ? value : 0));
+
+  const applyDraft = (nextDraft: string) => {
+    setDraft(nextDraft);
+    onChange(parseNumericDraft(nextDraft));
+  };
+
+  const keypadKeys = ["7", "8", "9", "4", "5", "6", "1", "2", "3", "0", ".", "⌫"];
+
+  return (
+    <>
+      <input
+        className={className}
+        type="text"
+        inputMode="none"
+        readOnly
+        value={isOpen ? draft : String(Number.isFinite(value) ? value : 0)}
+        onClick={() => {
+          setDraft(String(Number.isFinite(value) ? value : 0));
+          setIsOpen(true);
+        }}
+        onFocus={() => {
+          setDraft(String(Number.isFinite(value) ? value : 0));
+          setIsOpen(true);
+        }}
+        data-inventory-index={dataInventoryIndex}
+        aria-label={ariaLabel}
+      />
+      {isOpen && (
+        <div className="fixed inset-x-3 bottom-24 z-[90] mx-auto max-w-sm rounded-2xl border border-neutral-200 bg-white p-3 shadow-2xl">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="text-sm font-black text-neutral-700">{ariaLabel}</span>
+            <button
+              className="rounded-md bg-neutral-100 px-3 py-2 text-xs font-black text-neutral-700"
+              type="button"
+              onClick={() => {
+                setIsOpen(false);
+                onDone?.();
+              }}
+            >
+              {doneLabel}
+            </button>
+          </div>
+          <div className="mb-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-right text-2xl font-black text-neutral-900">
+            {draft || "0"}
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {keypadKeys.map((key) => (
+              <button
+                key={key}
+                className="min-h-12 rounded-lg border border-neutral-200 bg-white text-xl font-black text-neutral-900 shadow-sm active:bg-teal-50"
+                type="button"
+                onClick={() => {
+                  if (key === "⌫") {
+                    const nextDraft = draft.length > 1 ? draft.slice(0, -1) : "0";
+                    applyDraft(nextDraft);
+                    return;
+                  }
+                  applyDraft(appendNumericKey(draft, key));
+                }}
+              >
+                {key}
+              </button>
+            ))}
+            <button
+              className="col-span-3 min-h-11 rounded-lg border border-red-200 bg-red-50 text-sm font-black text-red-700 active:bg-red-100"
+              type="button"
+              onClick={() => applyDraft("0")}
+            >
+              クリア
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function NumberInput({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
   return (
     <label className="grid gap-1 font-bold text-neutral-600">
       <span>{label}</span>
       <div className="grid grid-cols-[1fr_auto_auto] gap-1">
-        <input
+        <NumericKeypadInput
           className="min-h-11 rounded-md border border-neutral-200 bg-white px-3 py-2 text-right text-neutral-900 shadow-sm outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
-          type="number"
-          inputMode="decimal"
-          pattern="[0-9]*"
-          enterKeyHint="done"
           value={value}
-          onChange={(event) => onChange(Number(event.target.value))}
+          onChange={onChange}
+          ariaLabel={label}
         />
         <button
           className="min-h-11 rounded-md border border-neutral-200 bg-neutral-50 px-2 text-sm font-black text-neutral-700"
@@ -9448,14 +9591,11 @@ function RecipeAmountEditor({
 
   return (
     <div className={`${compact ? "w-16" : "w-20"} grid gap-1 justify-self-end`}>
-      <input
-        inputMode="decimal"
-        pattern="[0-9]*"
-        enterKeyHint="done"
+      <NumericKeypadInput
         className="min-h-10 rounded-md border border-neutral-300 px-2 py-2 text-right text-sm"
-        type="number"
         value={item.amountGram}
-        onChange={(event) => onAmountChange(item.id, Number(event.target.value))}
+        onChange={(value) => onAmountChange(item.id, value)}
+        ariaLabel="使用量"
       />
       <div className="grid grid-cols-2 gap-1 text-[10px]">
         <button
@@ -9483,14 +9623,11 @@ function SmallNumberInput({ label, value, compact = false, onChange }: { label: 
   return (
     <label className={`${compact ? "w-16" : "w-14"} grid gap-1 text-[10px] font-bold text-neutral-500`}>
       <span>{label}</span>
-      <input
+      <NumericKeypadInput
         className={`${compact ? "text-xs" : "text-sm"} min-h-10 rounded-md border border-neutral-300 px-1 py-2 text-right text-neutral-900`}
-        type="number"
-        inputMode="decimal"
-        pattern="[0-9]*"
-        enterKeyHint="done"
         value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
+        onChange={onChange}
+        ariaLabel={label}
       />
       <div className={`grid grid-cols-2 gap-1 ${compact ? "text-[9px]" : "text-[10px]"}`}>
         <button
