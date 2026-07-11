@@ -9277,6 +9277,11 @@ function NumericKeypadInput({
     onChange(parseNumericDraft(nextDraft));
   };
 
+  const closeKeypad = () => {
+    setIsOpen(false);
+    onDone?.();
+  };
+
   const keypadKeys = ["7", "8", "9", "4", "5", "6", "1", "2", "3", "0", ".", "⌫"];
 
   return (
@@ -9305,10 +9310,7 @@ function NumericKeypadInput({
             <button
               className="rounded-md bg-neutral-100 px-3 py-2 text-xs font-black text-neutral-700"
               type="button"
-              onClick={() => {
-                setIsOpen(false);
-                onDone?.();
-              }}
+              onClick={closeKeypad}
             >
               {doneLabel}
             </button>
@@ -9335,11 +9337,18 @@ function NumericKeypadInput({
               </button>
             ))}
             <button
-              className="col-span-3 min-h-11 rounded-lg border border-red-200 bg-red-50 text-sm font-black text-red-700 active:bg-red-100"
+              className="min-h-11 rounded-lg border border-red-200 bg-red-50 text-sm font-black text-red-700 active:bg-red-100"
               type="button"
               onClick={() => applyDraft("0")}
             >
               クリア
+            </button>
+            <button
+              className="col-span-2 min-h-11 rounded-lg bg-teal-700 text-sm font-black text-white active:bg-teal-800"
+              type="button"
+              onClick={closeKeypad}
+            >
+              エンター
             </button>
           </div>
         </div>
