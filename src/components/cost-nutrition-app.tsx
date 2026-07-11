@@ -9268,6 +9268,7 @@ function NumericKeypadInput({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [draft, setDraft] = useState(String(Number.isFinite(value) ? value : 0));
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const applyDraft = (nextDraft: string) => {
     setDraft(nextDraft);
@@ -9276,11 +9277,13 @@ function NumericKeypadInput({
 
   const closeKeypad = () => {
     setIsOpen(false);
+    inputRef.current?.blur();
     onDone?.();
   };
 
   const closeOnly = () => {
     setIsOpen(false);
+    inputRef.current?.blur();
   };
 
   const keypadKeys = ["7", "8", "9", "4", "5", "6", "1", "2", "3", "0", ".", "⌫"];
@@ -9288,6 +9291,7 @@ function NumericKeypadInput({
   return (
     <>
       <input
+        ref={inputRef}
         className={className}
         type="text"
         inputMode="none"
@@ -9305,7 +9309,15 @@ function NumericKeypadInput({
         aria-label={ariaLabel}
       />
       {isOpen && (
-        <div className="fixed inset-x-3 bottom-24 z-[90] mx-auto max-w-sm rounded-2xl border border-neutral-200 bg-white p-3 shadow-2xl">
+        <div
+          className="fixed inset-x-3 bottom-24 z-[90] mx-auto max-w-sm rounded-2xl border border-neutral-200 bg-white p-3 shadow-2xl"
+          onClick={(event) => event.stopPropagation()}
+          onMouseDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onTouchStart={(event) => event.stopPropagation()}
+        >
           <div className="mb-2 flex items-center justify-between gap-2">
             <span className="text-sm font-black text-neutral-700">{ariaLabel}</span>
             <button
