@@ -484,6 +484,25 @@ type IngredientVisionOcrResponse = {
   memo: string;
   ingredients: IngredientVisionOcrResult[];
 };
+type EventExtraItem = {
+  id: string;
+  ingredientId: string;
+  amount: number;
+  memo: string;
+};
+type EventItemMemoData = {
+  text: string;
+  targetCostRate: number;
+  extraItems: EventExtraItem[];
+};
+type EventAdjustedRow = EventSimulationRow & {
+  extraUnitCost: number;
+  extraMaterialUnitCost: number;
+  extraPackagingUnitCost: number;
+  simulatedCostRate: number;
+  targetCostRate: number;
+  recommendedSellingPrice: number;
+};
 type RecentPriceImpact = {
   ingredientName: string;
   oldPrice: number;
@@ -847,6 +866,34 @@ function todayDate() {
 
 function createId(prefix: string) {
   return `${prefix}-${crypto.randomUUID()}`;
+}
+
+function parseEventItemMemo(memo: string): EventItemMemoData {
+  const fallback: EventItemMemoData = { text: memo || "", targetCostRate: 0, extraItems: [] };
+  if (!memo?.trim()) return fallback;
+  try {
+    const parsed = JSON.parse(memo) as Partial<EventItemMemoData> & { __eventSimulation?: boolean };
+    if (!parsed.__eventSimulation) return fallback;
+    return {
+      text: String(parsed.text || ""),
+      targetCostRate: Number(parsed.targetCostRate) || 0,
+      extraItems: Array.isArray(parsed.extraItems)
+        ? parsed.extraItems.map((item) => ({
+          id: String(item.id || createId("event-extra")),
+          ingredientId: String(item.ingredientId || ""),
+          amount: Number(item.amount) || 0,
+          memo: String(item.memo || ""),
+        })).filter((item) => item.ingredientId)
+        : [],
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function stringifyEventItemMemo(memoData: EventItemMemoData) {
+  if (!memoData.targetCostRate && memoData.extraItems.length === 0) return memoData.text || "";
+  return JSON.stringify({ __eventSimulation: true, ...memoData });
 }
 
 function storeDataKey(storeId: string) {
@@ -3485,14 +3532,59 @@ export function CostNutritionApp() {
   const salesAnalysisHighCostRows = managementSummary.allRows.filter((row) => row.costRate >= 35 && row.salesQuantity > 0);
   const salesAnalysisNoSalesRows = managementSummary.allRows.filter((row) => row.salesQuantity === 0);
   const selectedEventPlan = data.eventPlans.find((eventPlan) => eventPlan.id === selectedEventPlanId) ?? data.eventPlans[0] ?? null;
-  const eventSimulation = useMemo(
-    () => calculateEventSimulation(data, selectedEventPlan?.id ?? "", {}),
-    [data, selectedEventPlan?.id],
-  );
   const eventImpactSimulation = useMemo(
     () => calculateEventSimulation(data, selectedEventPlan?.id ?? "", eventImpactIngredientId ? { [eventImpactIngredientId]: eventImpactNewPrice } : {}),
     [data, eventImpactIngredientId, eventImpactNewPrice, selectedEventPlan?.id],
   );
+  const eventPriceOverrides = useMemo(
+    () => (eventImpactIngredientId ? { [eventImpactIngredientId]: eventImpactNewPrice } : {}),
+    [eventImpactIngredientId, eventImpactNewPrice],
+  );
+  const eventAdjustedRows = useMemo<EventAdjustedRow[]>(() => (
+    eventImpactSimulation.rows.map((row) => {
+      const item = data.eventPlanItems.find((candidate) => candidate.eventPlanId === selectedEventPlan?.id && candidate.productId === row.product.id);
+      const memoData = parseEventItemMemo(item?.memo || "");
+      const extraBreakdown = memoData.extraItems.reduce((sum, extra) => {
+        const ingredient = data.ingredients.find((candidate) => candidate.id === extra.ingredientId);
+        if (!ingredient) return sum;
+        const simulatedIngredient = eventPriceOverrides[ingredient.id] !== undefined ? { ...ingredient, price: eventPriceOverrides[ingredient.id] } : ingredient;
+        const cost = pricePerGram(simulatedIngredient) * (Number(extra.amount) || 0);
+        if (isPackagingIngredient(ingredient)) return { ...sum, packaging: sum.packaging + cost };
+        return { ...sum, material: sum.material + cost };
+      }, { material: 0, packaging: 0 });
+      const extraUnitCost = extraBreakdown.material + extraBreakdown.packaging;
+      const simulatedUnitCost = row.simulatedUnitCost + extraUnitCost;
+      const simulatedTotalCost = simulatedUnitCost * row.plannedQuantity;
+      const currentTotalCost = row.currentUnitCost * row.plannedQuantity;
+      const simulatedGrossProfit = row.salesAmount - simulatedTotalCost;
+      const targetCostRate = memoData.targetCostRate || row.product.targetCostRate || 35;
+      return {
+        ...row,
+        simulatedUnitCost,
+        extraUnitCost,
+        extraMaterialUnitCost: extraBreakdown.material,
+        extraPackagingUnitCost: extraBreakdown.packaging,
+        simulatedGrossProfit,
+        profitDecrease: simulatedTotalCost - currentTotalCost,
+        simulatedCostRate: row.sellingPrice ? (simulatedUnitCost / row.sellingPrice) * 100 : 0,
+        targetCostRate,
+        recommendedSellingPrice: targetCostRate ? simulatedUnitCost / (targetCostRate / 100) : 0,
+      };
+    })
+  ), [data.eventPlanItems, data.ingredients, eventImpactSimulation.rows, eventPriceOverrides, selectedEventPlan?.id]);
+  const eventAdjustedTotals = useMemo(() => {
+    const totalSalesAmount = eventAdjustedRows.reduce((sum, row) => sum + row.salesAmount, 0);
+    const totalCurrentCost = eventAdjustedRows.reduce((sum, row) => sum + row.currentUnitCost * row.plannedQuantity, 0);
+    const totalSimulatedCost = eventAdjustedRows.reduce((sum, row) => sum + row.simulatedUnitCost * row.plannedQuantity, 0);
+    return {
+      totalSalesAmount,
+      totalCurrentCost,
+      totalSimulatedCost,
+      totalCurrentGrossProfit: eventAdjustedRows.reduce((sum, row) => sum + row.currentGrossProfit, 0),
+      totalSimulatedGrossProfit: eventAdjustedRows.reduce((sum, row) => sum + row.simulatedGrossProfit, 0),
+      totalProfitDecrease: totalSimulatedCost - totalCurrentCost,
+    };
+  }, [eventAdjustedRows]);
   const selectedLaborProduct = data.products.find((product) => product.id === laborForm.productId) ?? data.products.find((product) => !product.isIntermediateMaterial) ?? data.products[0];
   const selectedLaborSummary = selectedLaborProduct ? calculateProductLaborCost(data, selectedLaborProduct) : null;
   const laborSummaries = useMemo(
@@ -4686,7 +4778,7 @@ export function CostNutritionApp() {
     setEventPlanForm(emptyEventPlan());
   }
 
-  function updateEventPlanItem(product: Product, patch: { plannedQuantity?: number; sellingPrice?: number }) {
+  function updateEventPlanItem(product: Product, patch: { plannedQuantity?: number; sellingPrice?: number; memoData?: EventItemMemoData }) {
     if (!selectedEventPlan) return;
     const existing = data.eventPlanItems.find((item) => item.eventPlanId === selectedEventPlan.id && item.productId === product.id);
     const nextItem = {
@@ -4695,7 +4787,7 @@ export function CostNutritionApp() {
       productId: product.id,
       plannedQuantity: patch.plannedQuantity ?? existing?.plannedQuantity ?? 0,
       sellingPrice: patch.sellingPrice ?? existing?.sellingPrice ?? product.sellingPrice,
-      memo: existing?.memo ?? "",
+      memo: patch.memoData ? stringifyEventItemMemo(patch.memoData) : existing?.memo ?? "",
       createdAt: existing?.createdAt || now(),
       updatedAt: now(),
     };
@@ -4707,22 +4799,78 @@ export function CostNutritionApp() {
     });
   }
 
+  function eventPlanItemForProduct(product: Product) {
+    return data.eventPlanItems.find((item) => item.eventPlanId === selectedEventPlan?.id && item.productId === product.id);
+  }
+
+  function eventMemoForProduct(product: Product) {
+    return parseEventItemMemo(eventPlanItemForProduct(product)?.memo || "");
+  }
+
+  function addEventExtraItem(product: Product) {
+    const firstIngredient = data.ingredients[0];
+    if (!firstIngredient) return;
+    const memoData = eventMemoForProduct(product);
+    updateEventPlanItem(product, {
+      memoData: {
+        ...memoData,
+        extraItems: [
+          ...memoData.extraItems,
+          { id: createId("event-extra"), ingredientId: firstIngredient.id, amount: 0, memo: "" },
+        ],
+      },
+    });
+  }
+
+  function updateEventExtraItem(product: Product, extraId: string, patch: Partial<EventExtraItem>) {
+    const memoData = eventMemoForProduct(product);
+    updateEventPlanItem(product, {
+      memoData: {
+        ...memoData,
+        extraItems: memoData.extraItems.map((item) => (item.id === extraId ? { ...item, ...patch } : item)),
+      },
+    });
+  }
+
+  function deleteEventExtraItem(product: Product, extraId: string) {
+    const memoData = eventMemoForProduct(product);
+    updateEventPlanItem(product, {
+      memoData: {
+        ...memoData,
+        extraItems: memoData.extraItems.filter((item) => item.id !== extraId),
+      },
+    });
+  }
+
+  function updateEventTargetCostRate(product: Product, targetCostRate: number, currentUnitCost: number) {
+    const memoData = eventMemoForProduct(product);
+    updateEventPlanItem(product, {
+      sellingPrice: targetCostRate ? Math.ceil((currentUnitCost / (targetCostRate / 100)) / 10) * 10 : eventPlanItemForProduct(product)?.sellingPrice ?? product.sellingPrice,
+      memoData: {
+        ...memoData,
+        targetCostRate,
+      },
+    });
+  }
+
   function exportEventCsv() {
     downloadCsv(`event-${selectedEventPlan?.name || "simulation"}.csv`, [
-      ["イベント", "商品名", "予定販売数", "販売価格", "売上", "現在原価/個", "粗利", "値上げ後原価/個", "値上げ後粗利", "利益減少"],
-      ...eventImpactSimulation.rows.map((row) => [
+      ["イベント", "商品名", "予定販売数", "販売価格", "売上", "現在原価/個", "Xmas原価/個", "Xmas原価率", "推奨売価", "粗利", "Xmas粗利", "利益減少"],
+      ...eventAdjustedRows.map((row) => [
         selectedEventPlan?.name ?? "",
         row.product.name,
         row.plannedQuantity,
         row.sellingPrice,
         row.salesAmount,
         row.currentUnitCost,
-        row.currentGrossProfit,
         row.simulatedUnitCost,
+        row.simulatedCostRate,
+        row.recommendedSellingPrice,
+        row.currentGrossProfit,
         row.simulatedGrossProfit,
         row.profitDecrease,
       ]),
-      ["合計", "", "", "", eventImpactSimulation.totalSalesAmount, eventImpactSimulation.totalCurrentCost, eventImpactSimulation.totalCurrentGrossProfit, eventImpactSimulation.totalSimulatedCost, eventImpactSimulation.totalSimulatedGrossProfit, eventImpactSimulation.totalProfitDecrease],
+      ["合計", "", "", "", eventAdjustedTotals.totalSalesAmount, eventAdjustedTotals.totalCurrentCost, eventAdjustedTotals.totalSimulatedCost, "", "", eventAdjustedTotals.totalCurrentGrossProfit, eventAdjustedTotals.totalSimulatedGrossProfit, eventAdjustedTotals.totalProfitDecrease],
     ]);
   }
 
@@ -8303,7 +8451,7 @@ export function CostNutritionApp() {
       {activePage === "event" && (
         <Panel title="イベント・クリスマス原価シミュレーション">
           <section className="mb-3 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm font-bold text-rose-900">
-            イベント名、予定販売数、イベント販売価格を入れると、売上・原価・粗利を計算します。原材料値上げ時の利益減少も確認できます。
+            Xmasなどで苺・生クリーム・飾り・箱が高くなる前に、商品ごとの原価率と売価を試算します。売価を変えると原価率が変わり、目標原価率を変えると推奨売価が出ます。
           </section>
           <div className="grid gap-3 lg:grid-cols-[360px_1fr]">
             <section className="rounded-md border border-neutral-200 bg-white p-3">
@@ -8324,7 +8472,7 @@ export function CostNutritionApp() {
                 </button>
               </div>
               <section className="mt-4 rounded-md border border-neutral-200 bg-neutral-50 p-3">
-                <h3 className="font-black">値上げ影響を見る</h3>
+                <h3 className="font-black">Xmas用の材料価格を仮変更</h3>
                 <div className="mt-3 grid gap-3">
                   <SelectInput
                     label="原材料"
@@ -8337,6 +8485,9 @@ export function CostNutritionApp() {
                     }}
                   />
                   <NumberInput label="新価格" value={eventImpactNewPrice} onChange={setEventImpactNewPrice} />
+                  <p className="rounded-md bg-white p-2 text-xs font-bold text-neutral-600">
+                    例: 苺がXmas期間だけ1パック1,200円になる場合、苺を選んで新価格を入力します。
+                  </p>
                 </div>
               </section>
             </section>
@@ -8348,39 +8499,114 @@ export function CostNutritionApp() {
                 </button>
               </div>
               <div className="mt-3 grid gap-3 md:grid-cols-3">
-                <Metric label="予定売上" value={yen(eventSimulation.totalSalesAmount)} />
-                <Metric label="現在粗利" value={yen(eventSimulation.totalCurrentGrossProfit)} />
-                <Metric label="値上げ後粗利" value={yen(eventImpactSimulation.totalSimulatedGrossProfit)} />
-                <Metric label="現在原価" value={yen(eventSimulation.totalCurrentCost)} />
-                <Metric label="値上げ後原価" value={yen(eventImpactSimulation.totalSimulatedCost)} />
-                <Metric label="利益減少" value={yen(eventImpactSimulation.totalProfitDecrease)} tone={eventImpactSimulation.totalProfitDecrease > 0 ? "warn" : "normal"} />
+                <Metric label="予定売上" value={yen(eventAdjustedTotals.totalSalesAmount)} />
+                <Metric label="通常粗利" value={yen(eventAdjustedTotals.totalCurrentGrossProfit)} />
+                <Metric label="Xmas粗利" value={yen(eventAdjustedTotals.totalSimulatedGrossProfit)} />
+                <Metric label="通常原価" value={yen(eventAdjustedTotals.totalCurrentCost)} />
+                <Metric label="Xmas原価" value={yen(eventAdjustedTotals.totalSimulatedCost)} />
+                <Metric label="利益減少" value={yen(eventAdjustedTotals.totalProfitDecrease)} tone={eventAdjustedTotals.totalProfitDecrease > 0 ? "warn" : "normal"} />
               </div>
               <div className="mt-4 rounded-md border border-neutral-200 bg-neutral-50 p-3">
-                <h4 className="font-black">予定販売数とイベント販売価格</h4>
+                <h4 className="font-black">商品別 Xmas原価・売価シミュレーション</h4>
                 <div className="mt-3 grid gap-2">
                   {data.products.filter((product) => !product.isIntermediateMaterial).map((product) => {
-                    const item = data.eventPlanItems.find((candidate) => candidate.eventPlanId === selectedEventPlan?.id && candidate.productId === product.id);
+                    const item = eventPlanItemForProduct(product);
+                    const adjustedRow = eventAdjustedRows.find((row) => row.product.id === product.id);
+                    const baseCost = calculateProductCost(product, data.ingredients, data.recipeItems, data.products).costPerPiece;
+                    const memoData = eventMemoForProduct(product);
+                    const simulatedUnitCost = adjustedRow?.simulatedUnitCost ?? baseCost;
+                    const sellingPrice = item?.sellingPrice ?? product.sellingPrice;
+                    const simulatedCostRate = sellingPrice ? (simulatedUnitCost / priceWithTax(sellingPrice, product.taxType)) * 100 : 0;
+                    const targetCostRate = memoData.targetCostRate || product.targetCostRate || 35;
+                    const recommendedSellingPrice = targetCostRate ? simulatedUnitCost / (targetCostRate / 100) : 0;
                     return (
-                      <div key={product.id} className="grid gap-2 rounded-md bg-white p-2 font-bold md:grid-cols-[1fr_110px_130px] md:items-center">
-                        <span>{product.name}</span>
-                        <NumericKeypadInput
-                          className="rounded-md border border-neutral-200 px-2 py-1 text-right"
-                          value={item?.plannedQuantity ?? 0}
-                          onChange={(value) => updateEventPlanItem(product, { plannedQuantity: value })}
-                          ariaLabel={`${product.name}の予定販売数`}
-                        />
-                        <NumericKeypadInput
-                          className="rounded-md border border-neutral-200 px-2 py-1 text-right"
-                          value={item?.sellingPrice ?? product.sellingPrice}
-                          onChange={(value) => updateEventPlanItem(product, { sellingPrice: value })}
-                          ariaLabel={`${product.name}のイベント販売価格`}
-                        />
+                      <div key={product.id} className="rounded-md border border-neutral-200 bg-white p-3 font-bold">
+                        <div className="grid gap-2 lg:grid-cols-[1.2fr_90px_110px_110px_110px_120px] lg:items-end">
+                          <div>
+                            <p className="text-base font-black text-neutral-950">{product.name}</p>
+                            <p className="text-xs text-neutral-500">{product.category} / 通常原価 {yen(baseCost)} / 通常売価 {yen(product.sellingPrice)}</p>
+                          </div>
+                          <NumericKeypadInput
+                            className="rounded-md border border-neutral-200 px-2 py-2 text-right"
+                            value={item?.plannedQuantity ?? 0}
+                            onChange={(value) => updateEventPlanItem(product, { plannedQuantity: value })}
+                            ariaLabel={`${product.name}の予定販売数`}
+                          />
+                          <NumericKeypadInput
+                            className="rounded-md border border-neutral-200 px-2 py-2 text-right"
+                            value={sellingPrice}
+                            onChange={(value) => updateEventPlanItem(product, { sellingPrice: value })}
+                            ariaLabel={`${product.name}のイベント販売価格`}
+                          />
+                          <NumericKeypadInput
+                            className="rounded-md border border-neutral-200 px-2 py-2 text-right"
+                            value={targetCostRate}
+                            onChange={(value) => updateEventTargetCostRate(product, value, simulatedUnitCost)}
+                            ariaLabel={`${product.name}の目標原価率`}
+                          />
+                          <div className={`rounded-md border px-2 py-2 text-right ${simulatedCostRate >= 40 ? "border-red-200 bg-red-50 text-red-800" : simulatedCostRate >= 35 ? "border-amber-200 bg-amber-50 text-amber-800" : "border-green-200 bg-green-50 text-green-800"}`}>
+                            <span className="block text-[11px]">Xmas原価率</span>
+                            <strong>{percent(simulatedCostRate)}</strong>
+                          </div>
+                          <div className="rounded-md border border-rose-100 bg-rose-50 px-2 py-2 text-right text-rose-900">
+                            <span className="block text-[11px]">推奨売価</span>
+                            <strong>{yen(recommendedSellingPrice)}</strong>
+                          </div>
+                        </div>
+                        <div className="mt-2 grid gap-2 md:grid-cols-4">
+                          <MiniStatus label="Xmas原価/個" value={yen(simulatedUnitCost)} />
+                          <MiniStatus label="追加材料/包材" value={yen(adjustedRow?.extraUnitCost ?? 0)} tone={(adjustedRow?.extraUnitCost ?? 0) > 0 ? "warn" : "normal"} />
+                          <MiniStatus label="売上" value={yen((item?.plannedQuantity ?? 0) * priceWithTax(sellingPrice, product.taxType))} />
+                          <MiniStatus label="Xmas粗利" value={yen(((item?.plannedQuantity ?? 0) * priceWithTax(sellingPrice, product.taxType)) - ((item?.plannedQuantity ?? 0) * simulatedUnitCost))} />
+                        </div>
+                        <div className="mt-3 rounded-md border border-rose-100 bg-rose-50 p-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <h5 className="text-sm font-black text-rose-950">Xmasだけ追加する原材料・包材</h5>
+                            <button className="rounded-md bg-rose-700 px-3 py-2 text-xs font-black text-white" onClick={() => addEventExtraItem(product)}>
+                              追加
+                            </button>
+                          </div>
+                          <div className="mt-2 grid gap-2">
+                            {memoData.extraItems.map((extra) => {
+                              const ingredient = data.ingredients.find((candidate) => candidate.id === extra.ingredientId);
+                              const simulatedIngredient = ingredient && eventPriceOverrides[ingredient.id] !== undefined ? { ...ingredient, price: eventPriceOverrides[ingredient.id] } : ingredient;
+                              const unitCost = simulatedIngredient ? pricePerGram(simulatedIngredient) * extra.amount : 0;
+                              return (
+                                <div key={extra.id} className="grid gap-2 rounded-md bg-white p-2 md:grid-cols-[1fr_90px_90px_90px] md:items-center">
+                                  <SelectInput
+                                    label="材料・包材"
+                                    value={extra.ingredientId}
+                                    options={data.ingredients.map((ingredientOption) => ingredientOption.id)}
+                                    optionLabels={Object.fromEntries(data.ingredients.map((ingredientOption) => [ingredientOption.id, ingredientOptionLabel(ingredientOption)]))}
+                                    onChange={(value) => updateEventExtraItem(product, extra.id, { ingredientId: value })}
+                                  />
+                                  <NumericKeypadInput
+                                    className="rounded-md border border-neutral-200 px-2 py-2 text-right"
+                                    value={extra.amount}
+                                    onChange={(value) => updateEventExtraItem(product, extra.id, { amount: value })}
+                                    ariaLabel={`${product.name}の追加使用量`}
+                                  />
+                                  <div className="rounded-md border border-neutral-200 bg-neutral-50 px-2 py-2 text-right">
+                                    <span className="block text-[11px] text-neutral-500">{ingredient?.packageUnit || "g"}</span>
+                                    <strong>{yen(unitCost)}</strong>
+                                  </div>
+                                  <button className="rounded-md border border-red-200 bg-white px-3 py-2 text-xs font-black text-red-700" onClick={() => deleteEventExtraItem(product, extra.id)}>
+                                    削除
+                                  </button>
+                                </div>
+                              );
+                            })}
+                            {memoData.extraItems.length === 0 && (
+                              <p className="rounded-md bg-white p-2 text-xs font-bold text-neutral-500">Xmasピック、苺増量、専用箱などを追加すると、原価率に反映されます。</p>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     );
                   })}
                 </div>
               </div>
-              <EventSimulationTable rows={eventImpactSimulation.rows} />
+              <EventSimulationTable rows={eventAdjustedRows} />
             </section>
           </div>
         </Panel>
@@ -10221,10 +10447,10 @@ function MonthlyTheoryTable({ rows }: { rows: MonthlyTheoryRow[] }) {
   );
 }
 
-function EventSimulationTable({ rows }: { rows: EventSimulationRow[] }) {
+function EventSimulationTable({ rows }: { rows: EventAdjustedRow[] }) {
   return (
     <div className="mt-4 overflow-x-auto rounded-md border border-neutral-200">
-      <table className="w-full min-w-[980px] border-collapse bg-white text-left">
+      <table className="w-full min-w-[1180px] border-collapse bg-white text-left">
         <thead className="bg-neutral-100">
           <tr>
             <th className="p-3">商品</th>
@@ -10232,8 +10458,11 @@ function EventSimulationTable({ rows }: { rows: EventSimulationRow[] }) {
             <th className="p-3 text-right">販売価格</th>
             <th className="p-3 text-right">売上</th>
             <th className="p-3 text-right">現在原価/個</th>
-            <th className="p-3 text-right">値上げ後原価/個</th>
-            <th className="p-3 text-right">現在粗利</th>
+            <th className="p-3 text-right">Xmas追加/個</th>
+            <th className="p-3 text-right">Xmas原価/個</th>
+            <th className="p-3 text-right">Xmas原価率</th>
+            <th className="p-3 text-right">推奨売価</th>
+            <th className="p-3 text-right">Xmas粗利</th>
             <th className="p-3 text-right">利益減少</th>
           </tr>
         </thead>
@@ -10245,14 +10474,17 @@ function EventSimulationTable({ rows }: { rows: EventSimulationRow[] }) {
               <td className="p-3 text-right">{yen(row.sellingPrice)}</td>
               <td className="p-3 text-right">{yen(row.salesAmount)}</td>
               <td className="p-3 text-right">{yen(row.currentUnitCost)}</td>
+              <td className="p-3 text-right">{yen(row.extraUnitCost)}</td>
               <td className="p-3 text-right">{yen(row.simulatedUnitCost)}</td>
-              <td className="p-3 text-right">{yen(row.currentGrossProfit)}</td>
+              <td className={`p-3 text-right font-black ${row.simulatedCostRate >= 40 ? "text-red-700" : row.simulatedCostRate >= 35 ? "text-amber-700" : "text-green-700"}`}>{percent(row.simulatedCostRate)}</td>
+              <td className="p-3 text-right">{yen(row.recommendedSellingPrice)}</td>
+              <td className="p-3 text-right">{yen(row.simulatedGrossProfit)}</td>
               <td className="p-3 text-right">{yen(row.profitDecrease)}</td>
             </tr>
           ))}
           {rows.length === 0 && (
             <tr>
-              <td className="p-3 text-neutral-500" colSpan={8}>予定販売数を入力すると表示されます。</td>
+              <td className="p-3 text-neutral-500" colSpan={11}>予定販売数を入力すると表示されます。</td>
             </tr>
           )}
         </tbody>
