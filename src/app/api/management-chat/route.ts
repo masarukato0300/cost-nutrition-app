@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isPermanentUnlockEmail } from "@/lib/permanent-unlock";
 
 type SupabaseUser = {
   id: string;
@@ -61,8 +62,8 @@ async function getSupabaseUser(supabaseUrl: string, serviceRoleKey: string, acce
   return readJson<SupabaseUser>(response, "ログインユーザーを確認できませんでした。");
 }
 
-async function getUserStore(supabaseUrl: string, serviceRoleKey: string, userId: string) {
-  const profileResponse = await fetch(`${supabaseUrl}/rest/v1/user_profiles?user_id=eq.${encodeURIComponent(userId)}&select=store_id,role&limit=1`, {
+async function getUserStore(supabaseUrl: string, serviceRoleKey: string, user: SupabaseUser) {
+  const profileResponse = await fetch(`${supabaseUrl}/rest/v1/user_profiles?user_id=eq.${encodeURIComponent(user.id)}&select=store_id,role&limit=1`, {
     headers: {
       apikey: serviceRoleKey,
       Authorization: `Bearer ${serviceRoleKey}`,
@@ -72,7 +73,9 @@ async function getUserStore(supabaseUrl: string, serviceRoleKey: string, userId:
   const profiles = await readJson<UserProfile[]>(profileResponse, "店舗メンバー情報を確認できませんでした。");
   const profile = profiles[0];
   if (!profile?.store_id) throw new Error("このユーザーに紐づく店舗がありません。");
-  if (!["owner", "manager", "staff"].includes(profile.role)) throw new Error("AI相談を実行できる権限がありません。");
+  if (!isPermanentUnlockEmail(user.email) && !["owner", "manager", "staff"].includes(profile.role)) {
+    throw new Error("AI相談を実行できる権限がありません。");
+  }
   return { storeId: profile.store_id, role: profile.role };
 }
 
@@ -124,7 +127,7 @@ export async function POST(request: Request) {
     const { supabaseUrl, serviceRoleKey, openaiApiKey } = envConfig();
     const accessToken = bearerToken(request);
     const user = await getSupabaseUser(supabaseUrl, serviceRoleKey, accessToken);
-    const store = await getUserStore(supabaseUrl, serviceRoleKey, user.id);
+    const store = await getUserStore(supabaseUrl, serviceRoleKey, user);
     const body = await request.json() as ManagementChatRequest;
     const messages = cleanMessages(body.messages || []);
     const lastUserMessage = [...messages].reverse().find((message) => message.role === "user");

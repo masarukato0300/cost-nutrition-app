@@ -47,6 +47,7 @@ import {
   type SaaSUserProfile,
 } from "@/lib/supabase-saas";
 import { buildManagementDecisionSummary, type ProductManagementMetric } from "@/lib/management-analysis";
+import { isPermanentUnlockEmail } from "@/lib/permanent-unlock";
 import type { StandardNutritionFood } from "@/lib/standard-nutrition";
 import type { ActualCostRecord, AppData, BillingSettings, BrandImportance, EventPlan, EventSimulationRow, Ingredient, IngredientAlias, InventoryInputMode, InventoryItemType, InventoryRecord, LaborCost, MaterialType, MonthlyTheoryRow, OnboardingSupportSettings, PackagingClassification, PackagingRole, PackagingUsageCategory, PriceImpactRow, Product, ProductLaborCostSummary, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow, SalesRecord, SetProductCostSummary, SetProductItem, WasteItemType, WasteMonthlySummary, WasteReason, WasteRecord, YearRoundUsage } from "@/lib/types";
 
@@ -3575,10 +3576,13 @@ export function CostNutritionApp() {
   const currentBilling = billing.ocrUsedMonth === billingMonth
     ? billing
     : { ...billing, ocrUsedMonth: billingMonth, ocrUsedThisMonth: 0, ocrAddonPacks: 0 };
+  const isPermanentUnlockedAccount = isPermanentUnlockEmail(saasSession?.user.email);
+  const hasUnlimitedFeatureAccess = isAdminSession || isPermanentUnlockedAccount;
+  const unlimitedFeatureLabel = isPermanentUnlockedAccount ? "無期限解放" : "管理者";
   const ocrLimit = currentBilling.ocrBaseLimit + currentBilling.ocrAddonPacks * currentBilling.ocrAddonPackSize;
-  const ocrRemaining = isAdminSession ? null : Math.max(0, ocrLimit - currentBilling.ocrUsedThisMonth);
+  const ocrRemaining = hasUnlimitedFeatureAccess ? null : Math.max(0, ocrLimit - currentBilling.ocrUsedThisMonth);
   const monthlyCharge = currentBilling.baseMonthlyPrice + currentBilling.ocrAddonPacks * currentBilling.ocrAddonPrice;
-  const isOcrLimitReached = !isAdminSession && currentBilling.ocrUsedThisMonth >= ocrLimit;
+  const isOcrLimitReached = !hasUnlimitedFeatureAccess && currentBilling.ocrUsedThisMonth >= ocrLimit;
 
   function saveBilling(nextBilling: BillingSettings) {
     commit({
@@ -4968,8 +4972,13 @@ export function CostNutritionApp() {
           {saasSession && saasStore ? (
             <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-black text-teal-800">
               <span className="rounded-full bg-teal-50 px-3 py-1">
-                {saasSession.user.email} / {saasStore.name} / {saasProfile?.role || "owner"} / {saasStore.plan}
+                {saasSession.user.email} / {saasStore.name} / {saasProfile?.role || "owner"} / {isPermanentUnlockedAccount ? "無期限解放" : saasStore.plan}
               </span>
+              {isPermanentUnlockedAccount ? (
+                <span className="rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-amber-900">
+                  全機能 無期限解放
+                </span>
+              ) : null}
               <span className="rounded-full bg-blue-50 px-3 py-1 text-blue-800">
                 最終同期: {lastSyncedAt || "未同期"}
               </span>
@@ -5173,12 +5182,12 @@ export function CostNutritionApp() {
                   月額1,400円スタート <span className="text-base text-blue-700">（OCR月30枚込み）</span>
                 </h3>
                 <p className="mt-2 text-sm font-bold text-neutral-700">
-                  30枚を超える場合は、その月だけ +500円でOCRを50枚追加できます。管理者キーでは追加料金は発生しません。
+                  30枚を超える場合は、その月だけ +500円でOCRを50枚追加できます。管理者・無期限解放アカウントでは追加料金は発生しません。
                 </p>
                 <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                  <MiniStatus label="今月のOCR利用" value={isAdminSession ? "管理者" : `${currentBilling.ocrUsedThisMonth}枚`} />
-                  <MiniStatus label="OCR上限" value={isAdminSession ? "制限なし" : `${ocrLimit}枚/月`} />
-                  <MiniStatus label="今月の請求目安" value={isAdminSession ? "なし" : yen(monthlyCharge)} tone={currentBilling.ocrAddonPacks > 0 ? "warn" : "normal"} />
+                  <MiniStatus label="今月のOCR利用" value={hasUnlimitedFeatureAccess ? unlimitedFeatureLabel : `${currentBilling.ocrUsedThisMonth}枚`} />
+                  <MiniStatus label="OCR上限" value={hasUnlimitedFeatureAccess ? "制限なし" : `${ocrLimit}枚/月`} />
+                  <MiniStatus label="今月の請求目安" value={hasUnlimitedFeatureAccess ? "なし" : yen(monthlyCharge)} tone={!hasUnlimitedFeatureAccess && currentBilling.ocrAddonPacks > 0 ? "warn" : "normal"} />
                 </div>
               </div>
               <button
@@ -8676,16 +8685,16 @@ export function CostNutritionApp() {
                   OCRは月30枚まで込み。30枚を超えると、その月だけ +500円でOCRを50枚追加できます。
                 </p>
                 <p className="mt-2 text-xs font-black text-blue-800">
-                  請求対象月: {billingMonth} / 追加パック: {isAdminSession ? "管理者のため対象外" : `${currentBilling.ocrAddonPacks}回`}
+                  請求対象月: {billingMonth} / 追加パック: {hasUnlimitedFeatureAccess ? `${unlimitedFeatureLabel}のため対象外` : `${currentBilling.ocrAddonPacks}回`}
                 </p>
               </div>
               <div className="rounded-md border border-blue-200 bg-white p-3 text-right">
                 <p className="text-xs font-black text-blue-700">OCR利用状況</p>
                 <p className="mt-1 text-lg font-black text-neutral-950">
-                  {isAdminSession ? "管理者" : `${currentBilling.ocrUsedThisMonth} / ${ocrLimit}枚`}
+                  {hasUnlimitedFeatureAccess ? unlimitedFeatureLabel : `${currentBilling.ocrUsedThisMonth} / ${ocrLimit}枚`}
                 </p>
                 <p className={`mt-1 text-xs font-black ${isOcrLimitReached ? "text-red-700" : "text-blue-700"}`}>
-                  {isAdminSession ? "月額・追加料金なし" : `残り ${ocrRemaining}枚 / 請求目安 ${yen(monthlyCharge)}`}
+                  {hasUnlimitedFeatureAccess ? "月額・追加料金なし" : `残り ${ocrRemaining}枚 / 請求目安 ${yen(monthlyCharge)}`}
                 </p>
               </div>
             </div>
@@ -8703,8 +8712,8 @@ export function CostNutritionApp() {
               </div>
               <div className="rounded-md border border-green-200 bg-white p-4">
                 <span className="block text-sm font-black text-green-700">今月の請求目安</span>
-                <strong className="mt-1 block text-2xl font-black text-green-950">{isAdminSession ? "0円" : yen(monthlyCharge)}</strong>
-                <p className="mt-2 text-sm font-bold text-neutral-600">{isAdminSession ? "管理者キーでは加算しません" : `追加${currentBilling.ocrAddonPacks}回分を含む`}</p>
+                <strong className="mt-1 block text-2xl font-black text-green-950">{hasUnlimitedFeatureAccess ? "0円" : yen(monthlyCharge)}</strong>
+                <p className="mt-2 text-sm font-bold text-neutral-600">{hasUnlimitedFeatureAccess ? `${unlimitedFeatureLabel}では加算しません` : `追加${currentBilling.ocrAddonPacks}回分を含む`}</p>
               </div>
             </div>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-blue-100 bg-white p-3">
