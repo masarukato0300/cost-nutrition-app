@@ -7053,7 +7053,7 @@ export function CostNutritionApp() {
               </p>
               <div className="mt-4 overflow-hidden rounded-md border border-cyan-200 bg-[#fff8e8] p-3 shadow-sm">
                 <div className="flex items-start gap-3">
-                  <div className={`patisserie-navi-float relative h-48 w-32 shrink-0 ${isManagementChatSending ? "patisserie-navi-talking" : ""}`}>
+                  <div className={`patisserie-navi-float relative h-72 w-48 shrink-0 ${isManagementChatSending ? "patisserie-navi-talking" : ""}`}>
                     <NextImage
                       src={patisserieNaviMainImage}
                       alt="パティスリー経営ナビ AIキャラクター"
@@ -7066,7 +7066,7 @@ export function CostNutritionApp() {
                     ) : null}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-lg font-black text-cyan-950">ナビシェフ</p>
+                    <p className="text-lg font-black text-cyan-950">なびまる</p>
                     <p className="mt-1 text-xs font-black text-cyan-800">
                       ケーキ屋さんの数字と現場を一緒に整理します。
                     </p>
@@ -7127,7 +7127,7 @@ export function CostNutritionApp() {
                 <div>
                   <h3 className="font-black text-neutral-950">相談チャット</h3>
                   <p className="mt-1 text-xs font-bold text-neutral-500">
-                    LINE風に相談できます。AIには集計済みデータだけを送り、レシピ全文やCSV全文は送りません。
+                    AIには集計済みデータだけを送り、レシピ全文やCSV全文は送りません。
                   </p>
                 </div>
                 <button
@@ -7159,7 +7159,7 @@ export function CostNutritionApp() {
                       }`}
                     >
                       <p className={`text-[11px] font-black ${message.role === "user" ? "text-cyan-100" : "text-cyan-700"}`}>
-                        {message.role === "user" ? "相談" : "ナビシェフ"}
+                        {message.role === "user" ? "相談" : "なびまる"}
                       </p>
                       <p className="mt-1 whitespace-pre-wrap text-sm font-bold leading-7">{message.content}</p>
                     </div>
