@@ -1,5 +1,6 @@
 "use client";
 
+import NextImage from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   calculateEventSimulation,
@@ -228,6 +229,7 @@ const pages = [
   { key: "recipe", label: "レシピ登録" },
   { key: "cost", label: "原価計算" },
   { key: "management", label: "経営判断" },
+  { key: "aiConsult", label: "AI相談" },
   { key: "salesAnalysis", label: "売上・粗利" },
   { key: "commercialArea", label: "商圏分析" },
   { key: "nutrition", label: "栄養成分計算" },
@@ -256,7 +258,7 @@ type WasteCategoryKey = (typeof wasteCategories)[number]["key"];
 const mainNavPageKeys: PageNavKey[] = ["top", "help", "manage"];
 const bottomNavPageKeys: PageNavKey[] = ["ingredient", "product", "recipe"];
 const navGroups = [
-  { key: "costs", label: "原価・値上げ", description: "経営判断、売上粗利、商圏、原価計算", pages: ["management", "salesAnalysis", "commercialArea", "cost", "impact", "event", "labor", "set"] },
+  { key: "costs", label: "原価・値上げ", description: "経営判断、AI相談、売上粗利、商圏、原価計算", pages: ["management", "aiConsult", "salesAnalysis", "commercialArea", "cost", "impact", "event", "labor", "set"] },
   { key: "display", label: "表示・ラベル", description: "栄養成分、アレルゲン、ラベル", pages: ["nutrition", "allergen", "label"] },
   { key: "operation", label: "現場管理", description: "仕込み、発注、棚卸し、包材判断、廃棄、売上CSV、月間原価", pages: ["production", "order", "inventory", "packagingInventory", "waste", "salesImport", "monthly"] },
   { key: "data", label: "データ管理", description: "商品一覧、カテゴリ、原材料一覧、OCR候補、CSV出力、設定", pages: ["productList", "productCategory", "master", "ocrQueue", "csv", "settings"] },
@@ -321,6 +323,12 @@ const pageTones: Record<PageNavKey, { navActive: string; navIdle: string; topCar
     navIdle: "border-emerald-500 bg-emerald-50 text-emerald-900 hover:bg-emerald-100",
     topCard: "border-emerald-100 bg-emerald-50/70 hover:border-emerald-400",
     mark: "bg-emerald-600",
+  },
+  aiConsult: {
+    navActive: "border-cyan-800 bg-cyan-700 text-white shadow-sm",
+    navIdle: "border-cyan-500 bg-cyan-50 text-cyan-900 hover:bg-cyan-100",
+    topCard: "border-cyan-100 bg-cyan-50/70 hover:border-cyan-400",
+    mark: "bg-cyan-600",
   },
   salesAnalysis: {
     navActive: "border-indigo-800 bg-indigo-700 text-white shadow-sm",
@@ -517,6 +525,17 @@ type ManagementAiApiResponse = {
   error?: string;
   diagnosisSessionId?: string;
   historySaved?: boolean;
+};
+type ManagementChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+};
+type ManagementChatApiResponse = {
+  ok?: boolean;
+  answer?: string;
+  error?: string;
+  model?: string;
 };
 type SalesCsvPreviewRow = {
   rawProductName: string;
@@ -1026,6 +1045,7 @@ function NavPictogram({ pageKey }: { pageKey: PageNavKey }) {
     recipe: <><path className={common} d="M7 4h10v17H7z" /><path className={common} d="M9 8h6M9 12h6M9 16h4" /><path className={common} d="M10 3h4" /></>,
     cost: <><circle className={common} cx="12" cy="12" r="9" /><path className={common} d="M8 7l4 5 4-5M9 13h6M9 16h6" /></>,
     management: <><path className={common} d="M4 18h16" /><path className={common} d="M6 15l4-5 3 3 5-7" /><path className={common} d="M16 6h3v3" /><path className={common} d="M5 21h14" /></>,
+    aiConsult: <><path className={common} d="M5 5h14v10H9l-4 4V5Z" /><path className={common} d="M8 9h8M8 12h5" /><path className={common} d="M17 17l1 2 2 1-2 1-1 2-1-2-2-1 2-1 1-2Z" /></>,
     salesAnalysis: <><path className={common} d="M4 19h16" /><path className={common} d="M7 16V9M12 16V5M17 16v-4" /><path className={common} d="M5 7h4l2 4 3-6 2 5h3" /></>,
     commercialArea: <><path className={common} d="M12 21s7-5.2 7-11a7 7 0 1 0-14 0c0 5.8 7 11 7 11Z" /><circle className={common} cx="12" cy="10" r="2.5" /><path className={common} d="M4 21h16" /></>,
     nutrition: <><path className={common} d="M5 13c0-5 4-8 11-8 0 7-3 11-8 11-2 0-3-1-3-3Z" /><path className={common} d="M8 16c2-4 5-6 8-8" /></>,
@@ -1270,6 +1290,7 @@ function topPageDescription(pageKey: PageKey) {
     recipe: "製品名から材料を選び、使用量を入力",
     cost: "材料原価と包材込み原価を確認",
     management: "売上、粗利、廃棄から経営判断を確認",
+    aiConsult: "原価・売上・廃棄を見ながらAIに相談",
     salesAnalysis: "商品別の売上・粗利ランキングを確認",
     commercialArea: "競合数・立地タイプをAI判断に反映",
     nutrition: "レシピから栄養成分表示を計算",
@@ -1974,6 +1995,16 @@ export function CostNutritionApp() {
   const [monthlyTargetMonth, setMonthlyTargetMonth] = useState("2026-05");
   const [managementAiResult, setManagementAiResult] = useState<ManagementAiResult | null>(null);
   const [managementAiStatus, setManagementAiStatus] = useState("");
+  const [managementChatMessages, setManagementChatMessages] = useState<ManagementChatMessage[]>([
+    {
+      id: "ai-chat-welcome",
+      role: "assistant",
+      content: "原価・売上・粗利・廃棄・商圏メモを見ながら相談できます。例: 「焼菓子ギフトを伸ばしたいけど、何から見直すべき？」",
+    },
+  ]);
+  const [managementChatInput, setManagementChatInput] = useState("");
+  const [managementChatStatus, setManagementChatStatus] = useState("");
+  const [isManagementChatSending, setIsManagementChatSending] = useState(false);
   const [salesCsvStatus, setSalesCsvStatus] = useState("");
   const [salesCsvPreviewRows, setSalesCsvPreviewRows] = useState<SalesCsvPreviewRow[]>([]);
   const [salesCsvFileName, setSalesCsvFileName] = useState("");
@@ -2390,6 +2421,115 @@ export function CostNutritionApp() {
       setCloudSyncStatus("Supabase共有済み");
     } catch {
       setCloudSyncStatus("Supabaseへ接続できませんでした。端末内バックアップを表示しています。");
+    }
+  }
+
+  function createManagementChatSummary() {
+    return {
+      storeName: currentStoreDisplayName,
+      month: managementSummary.month,
+      totalSalesAmount: managementSummary.totalSalesAmount,
+      totalGrossProfit: managementSummary.totalGrossProfit,
+      averageCostRate: managementSummary.averageCostRate,
+      wasteCostAmount: managementSummary.wasteCostAmount,
+      productCount: dashboard.productCount,
+      ingredientCount: dashboard.ingredientCount,
+      highCostCount: dashboard.highCostCount,
+      dangerousCostCount: dashboard.dangerousCostCount,
+      priceIncreaseCandidates: managementSummary.priceIncreaseCandidates.slice(0, 6).map((row) => ({
+        name: row.name,
+        category: row.category,
+        salesQuantity: row.salesQuantity,
+        salesAmount: row.salesAmount,
+        grossProfit: row.grossProfit,
+        costRate: row.costRate,
+        recommendedPrice: row.recommendedPrice,
+      })),
+      growthCandidates: managementSummary.growthCandidates.slice(0, 6).map((row) => ({
+        name: row.name,
+        category: row.category,
+        salesQuantity: row.salesQuantity,
+        salesAmount: row.salesAmount,
+        grossProfit: row.grossProfit,
+        costRate: row.costRate,
+      })),
+      wasteRiskProducts: managementSummary.wasteRiskProducts.slice(0, 6).map((row) => ({
+        name: row.name,
+        category: row.category,
+        salesQuantity: row.salesQuantity,
+        wasteQuantity: row.wasteQuantity,
+        wasteCostAmount: row.wasteCostAmount,
+        costRate: row.costRate,
+      })),
+      lowCostTop: dashboard.lowCostTop.slice(0, 6).map((summary) => ({
+        name: summary.product.name,
+        category: summary.product.category,
+        sellingPrice: summary.product.sellingPrice,
+        costPerPiece: summary.costPerPiece,
+        costRate: summary.costRate,
+      })),
+      commercialArea: commercialAreaResult
+        ? {
+            sourceType: commercialAreaResult.sourceType || "manual",
+            locationType: commercialAreaResult.locationType || commercialAreaResult.formattedAddress,
+            memo: commercialAreaResult.memo || commercialAreaResult.note || "",
+            regionalFeatures: commercialAreaResult.regionalFeatures || "",
+            addressSummary: commercialAreaResult.formattedAddress,
+            radiusKm: commercialAreaResult.radiusKm,
+            competitorCounts: commercialAreaResult.groups.map((group) => ({
+              label: group.label,
+              count: group.places.length,
+              nearbyCompetitors: group.places.slice(0, 5).map((place) => ({
+                name: place.name,
+                rating: place.rating,
+                reviewCount: place.reviewCount,
+                addressSummary: place.address,
+              })),
+            })),
+          }
+        : null,
+    };
+  }
+
+  async function sendManagementChat(nextInput?: string) {
+    const question = (nextInput ?? managementChatInput).trim();
+    if (!question || isManagementChatSending) return;
+    if (!saasSession) {
+      setManagementChatStatus("AI相談は販売版ログイン後に使えます。先にログインしてください。");
+      return;
+    }
+    const userMessage: ManagementChatMessage = { id: createId("chat-user"), role: "user", content: question };
+    const nextMessages = [...managementChatMessages, userMessage];
+    setManagementChatMessages(nextMessages);
+    setManagementChatInput("");
+    setManagementChatStatus("AI相談の回答を作成中...");
+    setIsManagementChatSending(true);
+    try {
+      const response = await fetch("/api/management-chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${saasSession.accessToken}`,
+        },
+        body: JSON.stringify({
+          messages: nextMessages
+            .filter((message) => message.id !== "ai-chat-welcome")
+            .map((message) => ({ role: message.role, content: message.content })),
+          summary: createManagementChatSummary(),
+          diagnosisAnswers: managementDiagnosisAnswers,
+        }),
+      });
+      const payload = await response.json() as ManagementChatApiResponse;
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "AI相談の回答を作成できませんでした。");
+      setManagementChatMessages((prev) => [
+        ...prev,
+        { id: createId("chat-ai"), role: "assistant", content: payload.answer || "回答を作成できませんでした。" },
+      ]);
+      setManagementChatStatus(payload.model ? `回答モデル: ${payload.model}` : "AI相談の回答を作成しました。");
+    } catch (error) {
+      setManagementChatStatus(error instanceof Error ? error.message : "AI相談の回答を作成できませんでした。");
+    } finally {
+      setIsManagementChatSending(false);
     }
   }
 
@@ -4792,6 +4932,18 @@ export function CostNutritionApp() {
   const currentStoreDisplayName = isSalesDemoStore ? salesDemoStoreName : currentStoreId;
   const demoTodaySalesAmount = new Date().getDay() === 0 || new Date().getDay() === 6 ? 200000 : 100000;
   const demoTheoryCostAmount = managementSummary.totalSalesAmount - managementSummary.totalGrossProfit;
+  const latestAssistantMessageId = [...managementChatMessages].reverse().find((message) => message.role === "assistant")?.id || "";
+  const hasUserChatMessage = managementChatMessages.some((message) => message.role === "user");
+  const patisserieNaviMainImage = isManagementChatSending
+    ? "/patisserie-navi-thinking.png"
+    : hasUserChatMessage
+      ? "/patisserie-navi-smile.png"
+      : "/patisserie-navi-tablet.png";
+  function patisserieNaviMessageImage(message: ManagementChatMessage) {
+    if (message.id === "ai-chat-welcome") return "/patisserie-navi-tablet.png";
+    if (message.id === latestAssistantMessageId) return "/patisserie-navi-smile.png";
+    return "/patisserie-navi-normal.png";
+  }
 
   return (
     <main className="mx-auto flex w-full max-w-7xl flex-col gap-4 p-3 pb-28 text-sm text-neutral-900 md:p-5 md:pb-28">
@@ -6884,6 +7036,175 @@ export function CostNutritionApp() {
                   {managementAiResult.friendly_frameworks ? <FriendlyFrameworks frameworks={managementAiResult.friendly_frameworks} /> : null}
                   {managementAiResult.frameworks ? <FrameworkDetails frameworks={managementAiResult.frameworks} /> : null}
                 </div>
+              ) : null}
+            </section>
+          </div>
+        </Panel>
+      )}
+
+      {activePage === "aiConsult" && (
+        <Panel title="AI相談">
+          <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
+            <section className="rounded-md border border-cyan-100 bg-cyan-50 p-4">
+              <p className="text-xs font-black text-cyan-700">洋菓子店向けAI相談</p>
+              <h2 className="mt-1 text-xl font-black text-neutral-950">原価と売上を見ながら相談</h2>
+              <p className="mt-2 text-sm font-bold text-cyan-900">
+                売上・粗利・原価率・廃棄・商圏メモ・診断回答を添えて、値上げや商品整理を相談します。
+              </p>
+              <div className="mt-4 overflow-hidden rounded-md border border-cyan-200 bg-[#fff8e8] p-3 shadow-sm">
+                <div className="flex items-start gap-3">
+                  <div className={`patisserie-navi-float relative h-48 w-32 shrink-0 ${isManagementChatSending ? "patisserie-navi-talking" : ""}`}>
+                    <NextImage
+                      src={patisserieNaviMainImage}
+                      alt="パティスリー経営ナビ AIキャラクター"
+                      width={160}
+                      height={240}
+                      className="h-full w-full object-contain drop-shadow-lg"
+                    />
+                    {isManagementChatSending ? (
+                      <span className="absolute right-3 top-12 h-3 w-3 rounded-full bg-amber-300 shadow-sm" />
+                    ) : null}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-lg font-black text-cyan-950">ナビシェフ</p>
+                    <p className="mt-1 text-xs font-black text-cyan-800">
+                      ケーキ屋さんの数字と現場を一緒に整理します。
+                    </p>
+                    <div className="mt-3 rounded-md border border-cyan-100 bg-white px-3 py-2 text-xs font-black text-neutral-700 shadow-sm">
+                      {isManagementChatSending ? (
+                        <span className="inline-flex items-center gap-1">
+                          考え中です
+                          <span className="patisserie-navi-thinking-dot inline-block h-1.5 w-1.5 rounded-full bg-cyan-700" />
+                          <span className="patisserie-navi-thinking-dot inline-block h-1.5 w-1.5 rounded-full bg-cyan-700 [animation-delay:0.16s]" />
+                          <span className="patisserie-navi-thinking-dot inline-block h-1.5 w-1.5 rounded-full bg-cyan-700 [animation-delay:0.32s]" />
+                        </span>
+                      ) : "気になる数字から一緒に見ていきましょう"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-2">
+                <StatCard label="売上" value={yen(managementSummary.totalSalesAmount)} tone="blue" />
+                <StatCard label="粗利" value={yen(managementSummary.totalGrossProfit)} tone="green" />
+                <StatCard label="平均原価率" value={percent(managementSummary.averageCostRate)} tone={managementSummary.averageCostRate >= 40 ? "red" : managementSummary.averageCostRate >= 35 ? "amber" : "green"} />
+                <StatCard label="廃棄原価" value={yen(managementSummary.wasteCostAmount)} tone={managementSummary.wasteCostAmount > 0 ? "amber" : "green"} />
+              </div>
+              <div className="mt-4 grid gap-2">
+                {[
+                  "苺ショートは売れているけど原価が高いです。値上げかサイズ変更、どちらがよさそうですか？",
+                  "焼菓子ギフトを伸ばしたいです。今週できる小さな実験を考えてください。",
+                  "生菓子の廃棄を減らしたいです。作る数や予約導線をどう見ればいいですか？",
+                  "箱・保冷剤・包材コストが上がっています。お客様に伝えやすい見直し方を相談したいです。",
+                ].map((prompt) => (
+                  <button
+                    key={prompt}
+                    className="rounded-md border border-cyan-200 bg-white px-3 py-2 text-left text-xs font-black text-cyan-900 hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={() => void sendManagementChat(prompt)}
+                    disabled={isManagementChatSending}
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <button
+                  className="rounded-md border border-cyan-200 bg-white px-3 py-2 text-sm font-black text-cyan-800"
+                  onClick={() => setActivePage("management")}
+                >
+                  診断回答
+                </button>
+                <button
+                  className="rounded-md border border-cyan-200 bg-white px-3 py-2 text-sm font-black text-cyan-800"
+                  onClick={() => setActivePage("commercialArea")}
+                >
+                  商圏メモ
+                </button>
+              </div>
+            </section>
+
+            <section className="rounded-md border border-neutral-200 bg-white p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-black text-neutral-950">相談チャット</h3>
+                  <p className="mt-1 text-xs font-bold text-neutral-500">
+                    LINE風に相談できます。AIには集計済みデータだけを送り、レシピ全文やCSV全文は送りません。
+                  </p>
+                </div>
+                <button
+                  className="rounded-md border border-neutral-300 bg-neutral-50 px-3 py-2 text-xs font-black text-neutral-700"
+                  onClick={() => {
+                    setManagementChatMessages([{
+                      id: "ai-chat-welcome",
+                      role: "assistant",
+                      content: "相談をリセットしました。今月の数字を見ながら、気になることを入力してください。",
+                    }]);
+                    setManagementChatStatus("");
+                  }}
+                >
+                  会話をリセット
+                </button>
+              </div>
+
+              <div className="mt-4 grid max-h-[560px] gap-4 overflow-y-auto rounded-md border border-cyan-100 bg-[#eef5f8] p-3">
+                {managementChatMessages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={`flex items-end gap-2 ${message.role === "user" ? "justify-start" : "justify-end"}`}
+                  >
+                    <div
+                      className={`relative max-w-[82%] rounded-2xl px-4 py-3 shadow-sm ${
+                        message.role === "user"
+                          ? "rounded-bl-sm bg-cyan-700 text-white"
+                          : "order-1 rounded-br-sm border border-neutral-200 bg-white text-neutral-900"
+                      }`}
+                    >
+                      <p className={`text-[11px] font-black ${message.role === "user" ? "text-cyan-100" : "text-cyan-700"}`}>
+                        {message.role === "user" ? "相談" : "ナビシェフ"}
+                      </p>
+                      <p className="mt-1 whitespace-pre-wrap text-sm font-bold leading-7">{message.content}</p>
+                    </div>
+                    {message.role === "assistant" ? (
+                      <div className={`patisserie-navi-float order-2 h-16 w-14 shrink-0 ${isManagementChatSending && message.id === managementChatMessages[managementChatMessages.length - 1]?.id ? "patisserie-navi-talking" : ""}`}>
+                        <NextImage
+                          src={patisserieNaviMessageImage(message)}
+                          alt="パティスリー経営ナビ AIキャラクター"
+                          width={72}
+                          height={84}
+                          className="h-full w-full object-contain drop-shadow-md"
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+
+              <form
+                className="mt-4 grid gap-3"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void sendManagementChat();
+                }}
+              >
+                <textarea
+                  value={managementChatInput}
+                  onChange={(event) => setManagementChatInput(event.target.value)}
+                  placeholder="例：母の日に焼菓子ギフトを伸ばしたいです。生菓子の仕込みは増やしたくありません。"
+                  className="min-h-28 resize-y rounded-md border border-cyan-200 bg-white px-3 py-3 text-base font-bold text-neutral-950 outline-none focus:border-cyan-500"
+                />
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-xs font-bold text-neutral-500">
+                    AIの回答は判断材料です。税務・法務・労務などの最終判断は専門家にも確認してください。
+                  </p>
+                  <button
+                    className="rounded-md bg-cyan-700 px-5 py-3 font-black text-white disabled:cursor-not-allowed disabled:bg-neutral-300"
+                    disabled={isManagementChatSending || !managementChatInput.trim()}
+                  >
+                    {isManagementChatSending ? "相談中..." : "送信"}
+                  </button>
+                </div>
+              </form>
+              {managementChatStatus ? (
+                <p className="mt-3 rounded-md border border-cyan-100 bg-cyan-50 p-3 text-xs font-black text-cyan-900">{managementChatStatus}</p>
               ) : null}
             </section>
           </div>

@@ -30,3 +30,51 @@ select,
 textarea {
   -webkit-tap-highlight-color: transparent;
 }
+
+@keyframes patisserie-navi-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-0.8deg);
+  }
+  50% {
+    transform: translateY(-10px) rotate(1deg);
+  }
+}
+
+@keyframes patisserie-navi-talk {
+  0%,
+  100% {
+    filter: saturate(1) brightness(1);
+  }
+  50% {
+    filter: saturate(1.15) brightness(1.08);
+  }
+}
+
+@keyframes patisserie-navi-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-4px);
+  }
+}
+
+.patisserie-navi-float {
+  animation: patisserie-navi-float 4.8s ease-in-out infinite;
+  transform-origin: 50% 70%;
+}
+
+.patisserie-navi-talking {
+  animation:
+    patisserie-navi-float 2.6s ease-in-out infinite,
+    patisserie-navi-talk 0.9s ease-in-out infinite;
+}
+
+.patisserie-navi-thinking-dot {
+  animation: patisserie-navi-dot 1.2s ease-in-out infinite;
+}
