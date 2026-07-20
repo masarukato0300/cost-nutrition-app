@@ -180,7 +180,7 @@ export const sampleData: AppData = {
     ocrBaseLimit: 30,
     ocrAddonPacks: 0,
     ocrAddonPackSize: 50,
-    ocrAddonPrice: 500,
+    ocrAddonPrice: 550,
     ocrAddonHistory: [
       {
         id: "billing-sample-2026-05",

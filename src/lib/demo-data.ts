@@ -428,7 +428,7 @@ export function createPatisseriePatisDemoData(): AppData {
       ocrBaseLimit: 30,
       ocrAddonPacks: 0,
       ocrAddonPackSize: 50,
-      ocrAddonPrice: 500,
+      ocrAddonPrice: 550,
       ocrAddonHistory: [],
     },
   };

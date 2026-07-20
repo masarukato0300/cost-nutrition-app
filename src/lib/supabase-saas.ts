@@ -609,7 +609,7 @@ export async function loadAppDataFromSupabase(session: SaaSAuthSession, storeId:
       ocrBaseLimit: rowNumber(billing, "ocr_base_limit") || 30,
       ocrAddonPacks: rowNumber(billing, "ocr_addon_packs"),
       ocrAddonPackSize: rowNumber(billing, "ocr_addon_pack_size") || 50,
-      ocrAddonPrice: rowNumber(billing, "ocr_addon_price") || 500,
+      ocrAddonPrice: rowNumber(billing, "ocr_addon_price") || 550,
       ocrAddonHistory: Array.isArray(billing.ocr_addon_history) ? billing.ocr_addon_history as AppData["billing"]["ocrAddonHistory"] : [],
     },
   };

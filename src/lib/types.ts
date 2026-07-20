@@ -137,6 +137,9 @@ export type BillingSettings = {
     addonPacksAfterPurchase: number;
     addedLimit: number;
     price: number;
+    paymentStatus?: "invoice_pending" | "paid" | "canceled";
+    paymentProvider?: "manual_invoice" | "stripe" | "app_store";
+    stripePaymentId?: string;
   }>;
 };
 

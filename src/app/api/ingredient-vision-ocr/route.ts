@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import { billingPeriodKey, ocrAddonStats } from "@/lib/ocr-billing";
+import { isPermanentUnlockEmail } from "@/lib/permanent-unlock";
+import type { BillingSettings } from "@/lib/types";
 
 type IngredientOcrResult = {
   name: string;
@@ -9,6 +12,33 @@ type IngredientOcrResult = {
   price: number | null;
   memo: string;
   confidence: "high" | "medium" | "low";
+};
+
+type SupabaseUser = {
+  id: string;
+  email?: string;
+};
+
+type UserProfile = {
+  store_id: string;
+  role: string;
+};
+
+type StoreRow = {
+  id: string;
+  created_at?: string;
+};
+
+type BillingRow = {
+  id?: string;
+  ocr_used_month?: string;
+  ocr_used_this_month?: number;
+  base_monthly_price?: number;
+  ocr_base_limit?: number;
+  ocr_addon_packs?: number;
+  ocr_addon_pack_size?: number;
+  ocr_addon_price?: number;
+  ocr_addon_history?: BillingSettings["ocrAddonHistory"];
 };
 
 const schema = {
@@ -56,6 +86,18 @@ function bearerToken(request: Request) {
   return header.match(/^Bearer\s+(.+)$/i)?.[1] || "";
 }
 
+async function readJson<T>(response: Response, fallbackMessage: string): Promise<T> {
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = (payload as { error?: { message?: string }; message?: string; error_description?: string }).error?.message
+      || (payload as { message?: string }).message
+      || (payload as { error_description?: string }).error_description
+      || fallbackMessage;
+    throw new Error(message);
+  }
+  return payload as T;
+}
+
 async function requireLoggedInUser(request: Request) {
   const config = supabaseServerConfig();
   if (!config) throw new Error("Supabaseサーバー環境変数が未設定です。OCRは販売版ログイン確認ができる環境でのみ使えます。");
@@ -69,11 +111,127 @@ async function requireLoggedInUser(request: Request) {
     cache: "no-store",
   });
   if (!response.ok) throw new Error("ログイン情報を確認できませんでした。もう一度ログインしてください。");
+  const user = await response.json() as SupabaseUser;
+  const profileResponse = await fetch(`${config.url}/rest/v1/user_profiles?user_id=eq.${encodeURIComponent(user.id)}&select=store_id,role&limit=1`, {
+    headers: {
+      apikey: config.serviceKey,
+      Authorization: `Bearer ${config.serviceKey}`,
+    },
+    cache: "no-store",
+  });
+  const profiles = await readJson<UserProfile[]>(profileResponse, "店舗情報を確認できませんでした。");
+  const profile = profiles[0];
+  if (!profile?.store_id) throw new Error("このユーザーに紐づく店舗がありません。");
+  return { config, user, storeId: profile.store_id };
+}
+
+function mapBilling(row: BillingRow | undefined, billingKey: string): BillingSettings {
+  return {
+    ocrUsedMonth: row?.ocr_used_month || billingKey,
+    ocrUsedThisMonth: Number(row?.ocr_used_this_month) || 0,
+    baseMonthlyPrice: Number(row?.base_monthly_price) || 1400,
+    ocrBaseLimit: Number(row?.ocr_base_limit) || 30,
+    ocrAddonPacks: Number(row?.ocr_addon_packs) || 0,
+    ocrAddonPackSize: Number(row?.ocr_addon_pack_size) || 50,
+    ocrAddonPrice: Number(row?.ocr_addon_price) || 550,
+    ocrAddonHistory: Array.isArray(row?.ocr_addon_history) ? row.ocr_addon_history : [],
+  };
+}
+
+async function checkOcrQuota(params: { config: { url: string; serviceKey: string }; user: SupabaseUser; storeId: string }) {
+  if (isPermanentUnlockEmail(params.user.email)) return { allowed: true, billingKey: billingPeriodKey(), billing: null as BillingSettings | null };
+  const headers = {
+    apikey: params.config.serviceKey,
+    Authorization: `Bearer ${params.config.serviceKey}`,
+  };
+  const storeResponse = await fetch(`${params.config.url}/rest/v1/stores?id=eq.${encodeURIComponent(params.storeId)}&select=id,created_at&limit=1`, {
+    headers,
+    cache: "no-store",
+  });
+  const stores = await readJson<StoreRow[]>(storeResponse, "店舗情報を確認できませんでした。");
+  const billingKey = billingPeriodKey(stores[0]?.created_at);
+  const billingResponse = await fetch(`${params.config.url}/rest/v1/billing_settings?store_id=eq.${encodeURIComponent(params.storeId)}&select=*&limit=1`, {
+    headers,
+    cache: "no-store",
+  });
+  const billingRows = await readJson<BillingRow[]>(billingResponse, "OCR利用状況を確認できませんでした。");
+  const billing = mapBilling(billingRows[0], billingKey);
+  const currentBilling = billing.ocrUsedMonth === billingKey
+    ? billing
+    : { ...billing, ocrUsedMonth: billingKey, ocrUsedThisMonth: 0, ocrAddonPacks: 0 };
+  const addonStats = ocrAddonStats(currentBilling, billingKey);
+  const limit = currentBilling.ocrBaseLimit + addonStats.addedLimit;
+  if (currentBilling.ocrUsedThisMonth >= limit) {
+    return { allowed: false, billingKey, billing: currentBilling, limit };
+  }
+  return { allowed: true, billingKey, billing: currentBilling, limit };
+}
+
+async function incrementOcrUsage(params: { config: { url: string; serviceKey: string }; storeId: string; billingKey: string; billing: BillingSettings | null }) {
+  if (!params.billing) return null;
+  const usedCountAfter = params.billing.ocrUsedThisMonth + 1;
+  const nextBilling = {
+    store_id: params.storeId,
+    id: `${params.storeId}-billing`,
+    ocr_used_month: params.billingKey,
+    ocr_used_this_month: usedCountAfter,
+    base_monthly_price: params.billing.baseMonthlyPrice,
+    ocr_base_limit: params.billing.ocrBaseLimit,
+    ocr_addon_packs: params.billing.ocrAddonPacks,
+    ocr_addon_pack_size: params.billing.ocrAddonPackSize,
+    ocr_addon_price: params.billing.ocrAddonPrice,
+    ocr_addon_history: params.billing.ocrAddonHistory,
+    updated_at: new Date().toISOString(),
+  };
+  await fetch(`${params.config.url}/rest/v1/billing_settings?on_conflict=store_id`, {
+    method: "POST",
+    headers: {
+      apikey: params.config.serviceKey,
+      Authorization: `Bearer ${params.config.serviceKey}`,
+      "Content-Type": "application/json",
+      Prefer: "resolution=merge-duplicates,return=minimal",
+    },
+    body: JSON.stringify(nextBilling),
+  }).catch((error) => {
+    console.error("OCR利用回数の保存に失敗しました。", error);
+  });
+  await fetch(`${params.config.url}/rest/v1/ocr_usage_events`, {
+    method: "POST",
+    headers: {
+      apikey: params.config.serviceKey,
+      Authorization: `Bearer ${params.config.serviceKey}`,
+      "Content-Type": "application/json",
+      Prefer: "return=minimal",
+    },
+    body: JSON.stringify({
+      store_id: params.storeId,
+      billing_month: params.billingKey,
+      status: "success",
+      used_count_after: usedCountAfter,
+    }),
+  }).catch((error) => {
+    console.error("OCR利用イベントの保存に失敗しました。", error);
+  });
+  return {
+    billingMonth: params.billingKey,
+    ocrUsedThisMonth: usedCountAfter,
+    ocrBaseLimit: params.billing.ocrBaseLimit,
+    addedLimit: ocrAddonStats(params.billing, params.billingKey).addedLimit,
+  };
 }
 
 export async function POST(request: Request) {
+  let quotaContext: Awaited<ReturnType<typeof requireLoggedInUser>> | null = null;
+  let quota: Awaited<ReturnType<typeof checkOcrQuota>> | null = null;
   try {
-    await requireLoggedInUser(request);
+    quotaContext = await requireLoggedInUser(request);
+    quota = await checkOcrQuota(quotaContext);
+    if (!quota.allowed) {
+      return NextResponse.json(
+        { error: `OCR上限に達しました。現在 ${quota.billing?.ocrUsedThisMonth || 0}/${quota.limit || 0}枚です。追加パックを購入してください。`, code: "OCR_LIMIT_REACHED" },
+        { status: 402 },
+      );
+    }
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "ログイン情報を確認できませんでした。" },
@@ -151,7 +309,16 @@ export async function POST(request: Request) {
 
   try {
     const result = JSON.parse(content) as { rawText: string; memo: string; ingredients: IngredientOcrResult[] };
-    return NextResponse.json({ result: normalizeIngredientOcrResult(result) });
+    let ocrUsage: Awaited<ReturnType<typeof incrementOcrUsage>> = null;
+    if (quotaContext && quota?.billing) {
+      ocrUsage = await incrementOcrUsage({
+        config: quotaContext.config,
+        storeId: quotaContext.storeId,
+        billingKey: quota.billingKey,
+        billing: quota.billing,
+      });
+    }
+    return NextResponse.json({ result: normalizeIngredientOcrResult(result), ocrUsage });
   } catch {
     return NextResponse.json({ error: "OCR結果JSONを解析できませんでした。", raw: content }, { status: 502 });
   }

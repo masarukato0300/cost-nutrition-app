@@ -47,6 +47,7 @@ import {
   type SaaSUserProfile,
 } from "@/lib/supabase-saas";
 import { buildManagementDecisionSummary, type ProductManagementMetric } from "@/lib/management-analysis";
+import { billingPeriodKey, billingPeriodLabel, isPaidPlan, ocrAddonPlans, ocrAddonStats, type OcrAddonPlan } from "@/lib/ocr-billing";
 import { isPermanentUnlockEmail } from "@/lib/permanent-unlock";
 import type { StandardNutritionFood } from "@/lib/standard-nutrition";
 import type { ActualCostRecord, AppData, BillingSettings, BrandImportance, EventPlan, EventSimulationRow, Ingredient, IngredientAlias, InventoryInputMode, InventoryItemType, InventoryRecord, LaborCost, MaterialType, MonthlyTheoryRow, OnboardingSupportSettings, PackagingClassification, PackagingRole, PackagingUsageCategory, PriceImpactRow, Product, ProductLaborCostSummary, ProductStatus, RecipeItem, RecipeUsageType, RequirementRow, SalesRecord, SetProductCostSummary, SetProductItem, WasteItemType, WasteMonthlySummary, WasteReason, WasteRecord, YearRoundUsage } from "@/lib/types";
@@ -197,7 +198,7 @@ const defaultBilling: BillingSettings = {
   ocrBaseLimit: 30,
   ocrAddonPacks: 0,
   ocrAddonPackSize: 50,
-  ocrAddonPrice: 500,
+  ocrAddonPrice: 550,
   ocrAddonHistory: [],
 };
 const materialTypeLabels: Record<MaterialType, string> = {
@@ -924,7 +925,7 @@ function normalizeData(parsed: AppData): AppData {
       ocrBaseLimit: parsed.billing?.ocrBaseLimit || 30,
       ocrAddonPacks: parsed.billing?.ocrUsedMonth === currentMonth() ? parsed.billing?.ocrAddonPacks || 0 : 0,
       ocrAddonPackSize: parsed.billing?.ocrAddonPackSize || 50,
-      ocrAddonPrice: parsed.billing?.ocrAddonPrice || 500,
+      ocrAddonPrice: parsed.billing?.ocrAddonPrice || 550,
       ocrAddonHistory: parsed.billing?.ocrAddonHistory || [],
     },
   };
@@ -2845,7 +2846,7 @@ export function CostNutritionApp() {
     saveStores(nextStores);
   }
 
-  async function readIngredientImageWithOcr(imageDataUrl: string, imageName: string, bypassLimitCheck = false, billingForCount = currentBilling) {
+  async function readIngredientImageWithOcr(imageDataUrl: string, imageName: string, bypassLimitCheck = false) {
     if (!bypassLimitCheck && isOcrLimitReached) {
       setIngredientOcrStatus(`今月のOCR上限${ocrLimit}枚に達しました。追加パックを確認してください。`);
       setPendingOcrAddonRequest({ imageDataUrl, imageName });
@@ -2892,7 +2893,6 @@ export function CostNutritionApp() {
         setIngredientOcrStatus(rawText ? "文字は一部読めましたが、登録項目に分けられませんでした。読み取り結果を手直しして「読み込み確認」を押してください。" : "登録に必要な情報を抽出できませんでした。明るい場所で、紙を画面いっぱいに入れて撮り直してください。");
         return;
       }
-      countOcrUsage(billingForCount);
       const candidates = validResults.map((item) => {
         const candidate = ingredientFromVisionResult({ ...item, rawText }, ingredientForm);
         const learnedAlias = findIngredientAlias(candidate, data.ingredientAliases);
@@ -2928,7 +2928,14 @@ export function CostNutritionApp() {
   }
 
   async function fetchIngredientOcrImages(imageDataUrls: string[]) {
-    const settledResults = await Promise.allSettled(imageDataUrls.map((imageDataUrl) => fetchIngredientOcr(imageDataUrl)));
+    const settledResults: Array<PromiseSettledResult<IngredientVisionOcrResponse | IngredientVisionOcrResult>> = [];
+    for (const imageDataUrl of imageDataUrls) {
+      try {
+        settledResults.push({ status: "fulfilled", value: await fetchIngredientOcr(imageDataUrl) });
+      } catch (error) {
+        settledResults.push({ status: "rejected", reason: error });
+      }
+    }
     const successfulResults = settledResults
       .filter((result): result is PromiseFulfilledResult<IngredientVisionOcrResponse | IngredientVisionOcrResult> => result.status === "fulfilled")
       .map((result) => result.value);
@@ -2970,6 +2977,14 @@ export function CostNutritionApp() {
     const json = await response.json();
     if (!response.ok) {
       throw new Error(json.error || "OpenAI Vision OCRに失敗しました。");
+    }
+    if (json.ocrUsage?.billingMonth) {
+      const nextBilling: BillingSettings = {
+        ...currentBilling,
+        ocrUsedMonth: json.ocrUsage.billingMonth,
+        ocrUsedThisMonth: Number(json.ocrUsage.ocrUsedThisMonth) || currentBilling.ocrUsedThisMonth,
+      };
+      saveBilling(nextBilling);
     }
     return json.result as IngredientVisionOcrResponse | IngredientVisionOcrResult;
   }
@@ -3571,18 +3586,23 @@ export function CostNutritionApp() {
     window.open(url, "_blank", "noopener,noreferrer");
   }
 
+  const isSalesDemoStore = currentStoreId === salesDemoStoreId;
   const billing = data.billing || defaultBilling;
-  const billingMonth = currentMonth();
+  const billingMonth = billingPeriodKey(saasStore?.createdAt);
+  const billingCycleLabel = billingPeriodLabel(billingMonth);
   const currentBilling = billing.ocrUsedMonth === billingMonth
     ? billing
     : { ...billing, ocrUsedMonth: billingMonth, ocrUsedThisMonth: 0, ocrAddonPacks: 0 };
   const isPermanentUnlockedAccount = isPermanentUnlockEmail(saasSession?.user.email);
   const hasUnlimitedFeatureAccess = isAdminSession || isPermanentUnlockedAccount;
   const unlimitedFeatureLabel = isPermanentUnlockedAccount ? "無期限解放" : "管理者";
-  const ocrLimit = currentBilling.ocrBaseLimit + currentBilling.ocrAddonPacks * currentBilling.ocrAddonPackSize;
+  const currentAddonStats = ocrAddonStats(currentBilling, billingMonth);
+  const ocrLimit = currentBilling.ocrBaseLimit + currentAddonStats.addedLimit;
   const ocrRemaining = hasUnlimitedFeatureAccess ? null : Math.max(0, ocrLimit - currentBilling.ocrUsedThisMonth);
-  const monthlyCharge = currentBilling.baseMonthlyPrice + currentBilling.ocrAddonPacks * currentBilling.ocrAddonPrice;
+  const hasPaidManagementAccess = hasUnlimitedFeatureAccess || isSalesDemoStore || isPaidPlan(saasStore?.plan, saasStore?.subscriptionStatus);
+  const monthlyCharge = hasPaidManagementAccess && !hasUnlimitedFeatureAccess ? currentBilling.baseMonthlyPrice + currentAddonStats.addonCharge : 0;
   const isOcrLimitReached = !hasUnlimitedFeatureAccess && currentBilling.ocrUsedThisMonth >= ocrLimit;
+  const isManagementAreaLocked = !hasPaidManagementAccess;
 
   function saveBilling(nextBilling: BillingSettings) {
     commit({
@@ -3600,33 +3620,25 @@ export function CostNutritionApp() {
     });
   }
 
-  function countOcrUsage(billingForCount = currentBilling) {
-    commit({
-      ...data,
-      billing: {
-        ...billingForCount,
-        ocrUsedMonth: billingMonth,
-        ocrUsedThisMonth: billingForCount.ocrUsedThisMonth + 1,
-      },
-    });
-  }
-
-  function confirmOcrAddonPack() {
+  function confirmOcrAddonPack(plan: OcrAddonPlan) {
     if (!pendingOcrAddonRequest) return;
     const request = pendingOcrAddonRequest;
+    const nextAddonCount = currentAddonStats.addonCount + 1;
     const nextBilling: BillingSettings = {
       ...currentBilling,
       ocrUsedMonth: billingMonth,
-      ocrAddonPacks: currentBilling.ocrAddonPacks + 1,
+      ocrAddonPacks: nextAddonCount,
       ocrAddonHistory: [
         ...(currentBilling.ocrAddonHistory || []),
         {
           id: createId("billing"),
           billingMonth,
           agreedAt: now(),
-          addonPacksAfterPurchase: currentBilling.ocrAddonPacks + 1,
-          addedLimit: currentBilling.ocrAddonPackSize,
-          price: currentBilling.ocrAddonPrice,
+          addonPacksAfterPurchase: nextAddonCount,
+          addedLimit: plan.addedLimit,
+          price: plan.price,
+          paymentStatus: "invoice_pending",
+          paymentProvider: "manual_invoice",
         },
       ],
     };
@@ -3635,9 +3647,12 @@ export function CostNutritionApp() {
       billing: nextBilling,
     });
     setPendingOcrAddonRequest(null);
-    window.setTimeout(() => {
-      void readIngredientImageWithOcr(request.imageDataUrl, request.imageName, true, nextBilling);
-    }, 0);
+    setIngredientOcrStatus(`${plan.label}を請求予定として追加しました。OCR上限は${ocrLimit + plan.addedLimit}枚です。`);
+    if (request.imageDataUrl) {
+      window.setTimeout(() => {
+        void readIngredientImageWithOcr(request.imageDataUrl, request.imageName, true);
+      }, 0);
+    }
   }
 
   function syncIngredientName(value: string) {
@@ -4932,7 +4947,6 @@ export function CostNutritionApp() {
     !("storeTypes" in group) || group.storeTypes.some((storeType) => managementDiagnosisAnswers.storeTypes.includes(storeType))
   ));
   const canClearSampleData = hasSampleData(data);
-  const isSalesDemoStore = currentStoreId === salesDemoStoreId;
   const currentStoreDisplayName = isSalesDemoStore ? salesDemoStoreName : currentStoreId;
   const demoTodaySalesAmount = new Date().getDay() === 0 || new Date().getDay() === 6 ? 200000 : 100000;
   const demoTheoryCostAmount = managementSummary.totalSalesAmount - managementSummary.totalGrossProfit;
@@ -5182,12 +5196,12 @@ export function CostNutritionApp() {
                   月額1,400円スタート <span className="text-base text-blue-700">（OCR月30枚込み）</span>
                 </h3>
                 <p className="mt-2 text-sm font-bold text-neutral-700">
-                  30枚を超える場合は、その月だけ +500円でOCRを50枚追加できます。管理者・無期限解放アカウントでは追加料金は発生しません。
+                  月額1,400円にOCR30枚込み。上限後は10枚150円、30枚350円、50枚550円、120枚1,000円でその請求期間だけ追加できます。
                 </p>
                 <div className="mt-3 grid gap-2 sm:grid-cols-3">
                   <MiniStatus label="今月のOCR利用" value={hasUnlimitedFeatureAccess ? unlimitedFeatureLabel : `${currentBilling.ocrUsedThisMonth}枚`} />
-                  <MiniStatus label="OCR上限" value={hasUnlimitedFeatureAccess ? "制限なし" : `${ocrLimit}枚/月`} />
-                  <MiniStatus label="今月の請求目安" value={hasUnlimitedFeatureAccess ? "なし" : yen(monthlyCharge)} tone={!hasUnlimitedFeatureAccess && currentBilling.ocrAddonPacks > 0 ? "warn" : "normal"} />
+                  <MiniStatus label="OCR上限" value={hasUnlimitedFeatureAccess ? "制限なし" : `${ocrLimit}枚`} />
+                  <MiniStatus label="今月の請求目安" value={hasUnlimitedFeatureAccess ? "なし" : yen(monthlyCharge)} tone={!hasUnlimitedFeatureAccess && currentAddonStats.addonCharge > 0 ? "warn" : "normal"} />
                 </div>
               </div>
               <button
@@ -5312,34 +5326,52 @@ export function CostNutritionApp() {
 
       {activePage === "manage" && (
         <Panel title="管理">
-          <div className="grid gap-3 md:grid-cols-2">
-            {navGroups.map((group) => {
-              const tone = pageTone(group.pages[0]);
-              return (
-                <section key={group.key} className={`rounded-md border p-4 shadow-sm ${tone.topCard}`}>
-                  <h3 className="text-lg font-black text-neutral-950">{group.label}</h3>
-                  <p className="mt-1 text-xs font-bold text-neutral-500">{group.description}</p>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                    {group.pages.map((pageKey) => (
-                      <button
-                        key={pageKey}
-                        className="flex min-h-14 items-center gap-2 rounded-md border border-white bg-white px-3 py-2 text-left text-sm font-black text-neutral-900 shadow-sm"
-                        onClick={() => setActivePage(pageKey)}
-                      >
-                        <span className={`grid h-9 w-9 place-items-center rounded-md ${pageTone(pageKey).mark} text-white`}>
-                          <NavPictogram pageKey={pageKey} />
-                        </span>
-                        <span>
-                          <span className="block">{pageLabel(pageKey)}</span>
-                          <span className="block text-[11px] font-bold text-neutral-500">{topPageDescription(pageKey)}</span>
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              );
-            })}
-          </div>
+          {isManagementAreaLocked ? (
+            <section className="rounded-md border border-amber-200 bg-amber-50 p-5 shadow-sm">
+              <p className="text-xs font-black text-amber-700">月額プランが必要です</p>
+              <h3 className="mt-1 text-xl font-black text-amber-950">管理機能は月額1,400円プランで利用できます</h3>
+              <p className="mt-2 text-sm font-bold leading-7 text-neutral-700">
+                無課金では、原材料の手入力・商品登録・レシピ登録は使えます。原価分析、AI相談、売上粗利、棚卸し、CSV、影響分析などの管理機能は月額プランで解放されます。
+              </p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <MiniStatus label="基本料金" value="月額1,400円" />
+                <MiniStatus label="OCR込み枚数" value="30枚/更新期間" />
+                <MiniStatus label="追加OCR" value="10枚150円から" />
+              </div>
+              <p className="mt-3 rounded-md border border-white bg-white p-3 text-xs font-black text-amber-900">
+                決済連携前のため、プラン変更は管理者側で設定します。販売開始後はStripeまたはApp Store課金で自動反映できる構成にします。
+              </p>
+            </section>
+          ) : (
+            <div className="grid gap-3 md:grid-cols-2">
+              {navGroups.map((group) => {
+                const tone = pageTone(group.pages[0]);
+                return (
+                  <section key={group.key} className={`rounded-md border p-4 shadow-sm ${tone.topCard}`}>
+                    <h3 className="text-lg font-black text-neutral-950">{group.label}</h3>
+                    <p className="mt-1 text-xs font-bold text-neutral-500">{group.description}</p>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      {group.pages.map((pageKey) => (
+                        <button
+                          key={pageKey}
+                          className="flex min-h-14 items-center gap-2 rounded-md border border-white bg-white px-3 py-2 text-left text-sm font-black text-neutral-900 shadow-sm"
+                          onClick={() => setActivePage(pageKey)}
+                        >
+                          <span className={`grid h-9 w-9 place-items-center rounded-md ${pageTone(pageKey).mark} text-white`}>
+                            <NavPictogram pageKey={pageKey} />
+                          </span>
+                          <span>
+                            <span className="block">{pageLabel(pageKey)}</span>
+                            <span className="block text-[11px] font-bold text-neutral-500">{topPageDescription(pageKey)}</span>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                );
+              })}
+            </div>
+          )}
         </Panel>
       )}
 
@@ -5556,16 +5588,28 @@ export function CostNutritionApp() {
         <div className="fixed inset-0 z-[70] grid place-items-center bg-black/50 p-3">
           <section className="w-full max-w-md rounded-md border border-blue-200 bg-white p-5 shadow-2xl">
             <p className="text-xs font-black text-blue-700">OCR追加パックの確認</p>
-            <h2 className="mt-1 text-xl font-black text-neutral-950">今月のみOCRを50枚追加しますか？</h2>
+            <h2 className="mt-1 text-xl font-black text-neutral-950">OCR追加枚数を選んでください</h2>
             <div className="mt-3 rounded-md border border-blue-100 bg-blue-50 p-3">
-              <p className="text-sm font-black text-blue-950">{billingMonth}分の追加料金: +{yen(currentBilling.ocrAddonPrice)}</p>
-              <p className="mt-1 text-lg font-black text-blue-800">OCR上限 {ocrLimit}枚 → {ocrLimit + currentBilling.ocrAddonPackSize}枚</p>
-              <p className="mt-2 text-sm font-bold text-neutral-700">「はい」を押すと、このままAI画像読み取りを続けます。</p>
+              <p className="text-sm font-black text-blue-950">請求期間: {billingCycleLabel}</p>
+              <p className="mt-1 text-lg font-black text-blue-800">現在 {currentBilling.ocrUsedThisMonth} / {ocrLimit}枚</p>
+              <p className="mt-2 text-sm font-bold text-neutral-700">選んだ追加分は「請求予定」として記録し、このままAI画像読み取りを続けます。</p>
             </div>
             <p className="mt-3 text-sm font-bold leading-7 text-neutral-700">
-              請求は後日請求書をお送りさせていただき、銀行振込となります。今月分のみ加算され、翌月は自動で月額1,400円・OCR30枚に戻ります。
+              請求は後日請求書をお送りさせていただき、銀行振込となります。この追加枠は現在の請求期間だけ有効で、次回更新日に月額1,400円・OCR30枚へ戻ります。
             </p>
-            <div className="mt-5 grid grid-cols-2 gap-3">
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              {ocrAddonPlans.map((plan) => (
+                <button
+                  key={plan.id}
+                  className="min-h-14 rounded-md border border-blue-200 bg-blue-700 px-4 py-2 text-left font-black text-white shadow-sm hover:bg-blue-800"
+                  onClick={() => confirmOcrAddonPack(plan)}
+                >
+                  <span className="block text-base">{plan.label}</span>
+                  <span className="block text-sm opacity-90">+{number(plan.price, 0)}円 / 上限 {ocrLimit}枚 → {ocrLimit + plan.addedLimit}枚</span>
+                </button>
+              ))}
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-3">
               <button
                 className="min-h-12 rounded-md border border-neutral-300 bg-white px-4 py-2 font-black text-neutral-700"
                 onClick={() => {
@@ -5573,13 +5617,7 @@ export function CostNutritionApp() {
                   setIngredientOcrStatus("OCR追加をキャンセルしました。読み取りは停止しました。");
                 }}
               >
-                いいえ
-              </button>
-              <button
-                className="min-h-12 rounded-md bg-blue-700 px-4 py-2 font-black text-white shadow-sm hover:bg-blue-800"
-                onClick={confirmOcrAddonPack}
-              >
-                はい
+                追加せず停止
               </button>
             </div>
           </section>
@@ -5891,6 +5929,12 @@ export function CostNutritionApp() {
         <Panel title="原材料登録">
           <section className="mb-4 rounded-md border border-teal-200 bg-teal-50 p-3">
             <h3 className="font-black text-teal-900">カメラ / OCRから読み込み</h3>
+            <div className="mt-2 grid gap-2 sm:grid-cols-4">
+              <MiniStatus label="請求期間" value={billingCycleLabel} />
+              <MiniStatus label="OCR利用" value={hasUnlimitedFeatureAccess ? unlimitedFeatureLabel : `${currentBilling.ocrUsedThisMonth}枚`} />
+              <MiniStatus label="OCR上限" value={hasUnlimitedFeatureAccess ? "制限なし" : `${ocrLimit}枚`} />
+              <MiniStatus label="今月の課金" value={hasUnlimitedFeatureAccess ? "なし" : yen(monthlyCharge)} tone={currentAddonStats.addonCharge > 0 ? "warn" : "normal"} />
+            </div>
             <div className="mt-3 grid gap-3 md:grid-cols-[260px_1fr]">
               <div className="grid place-items-center gap-2 rounded-md border border-red-100 bg-white p-3">
                 <input
@@ -5916,20 +5960,40 @@ export function CostNutritionApp() {
                     handleIngredientOcrFile(file);
                   }}
                 />
-                <button
-                  className="grid h-28 w-28 place-items-center rounded-full bg-red-600 px-4 text-center text-lg font-black leading-tight text-white shadow-lg disabled:bg-neutral-300"
-                  disabled={isIngredientOcrReading}
-                  onClick={() => ingredientCameraInputRef.current?.click()}
-                >
-                  カメラ<br />起動
-                </button>
-                <button
-                  className="rounded-md border border-neutral-300 bg-white px-5 py-2 font-bold text-neutral-800 disabled:bg-neutral-100"
-                  disabled={isIngredientOcrReading}
-                  onClick={() => ingredientPhotoInputRef.current?.click()}
-                >
-                  写真
-                </button>
+                {isOcrLimitReached ? (
+                  <div className="w-full rounded-md border border-amber-200 bg-amber-50 p-3 text-center">
+                    <p className="text-sm font-black text-amber-900">OCR上限に達したため、カメラ起動は停止中です。</p>
+                    <p className="mt-1 text-xs font-bold text-amber-800">追加パックを選ぶと、この請求期間だけ再開できます。</p>
+                    <div className="mt-3 grid gap-2">
+                      {ocrAddonPlans.map((plan) => (
+                        <button
+                          key={plan.id}
+                          className="rounded-md bg-amber-600 px-3 py-2 text-sm font-black text-white"
+                          onClick={() => setPendingOcrAddonRequest({ imageDataUrl: "", imageName: "" })}
+                        >
+                          {plan.label} / +{number(plan.price, 0)}円
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <button
+                      className="grid h-28 w-28 place-items-center rounded-full bg-red-600 px-4 text-center text-lg font-black leading-tight text-white shadow-lg disabled:bg-neutral-300"
+                      disabled={isIngredientOcrReading}
+                      onClick={() => ingredientCameraInputRef.current?.click()}
+                    >
+                      カメラ<br />起動
+                    </button>
+                    <button
+                      className="rounded-md border border-neutral-300 bg-white px-5 py-2 font-bold text-neutral-800 disabled:bg-neutral-100"
+                      disabled={isIngredientOcrReading}
+                      onClick={() => ingredientPhotoInputRef.current?.click()}
+                    >
+                      写真
+                    </button>
+                  </>
+                )}
                 <span className="text-xs font-bold text-neutral-500">
                   {ingredientOcrImageName ? `選択中: ${ingredientOcrImageName}` : "撮影・選択後に文字範囲を確認します。"}
                 </span>
@@ -8682,10 +8746,10 @@ export function CostNutritionApp() {
                 <p className="text-xs font-black text-blue-700">料金</p>
                 <h3 className="mt-1 text-xl font-black text-blue-950">月額1,400円スタート</h3>
                 <p className="mt-2 text-sm font-bold text-neutral-700">
-                  OCRは月30枚まで込み。30枚を超えると、その月だけ +500円でOCRを50枚追加できます。
+                  OCRは更新日ごとに30枚まで込み。上限後は単発追加パックを請求予定として追加できます。
                 </p>
                 <p className="mt-2 text-xs font-black text-blue-800">
-                  請求対象月: {billingMonth} / 追加パック: {hasUnlimitedFeatureAccess ? `${unlimitedFeatureLabel}のため対象外` : `${currentBilling.ocrAddonPacks}回`}
+                  請求期間: {billingCycleLabel} / 追加パック: {hasUnlimitedFeatureAccess ? `${unlimitedFeatureLabel}のため対象外` : `${currentAddonStats.addonCount}回`}
                 </p>
               </div>
               <div className="rounded-md border border-blue-200 bg-white p-3 text-right">
@@ -8707,18 +8771,18 @@ export function CostNutritionApp() {
               </div>
               <div className="rounded-md border border-amber-200 bg-white p-4">
                 <span className="block text-sm font-black text-amber-700">追加パック</span>
-                <strong className="mt-1 block text-2xl font-black text-amber-950">+{number(currentBilling.ocrAddonPrice, 0)}円</strong>
-                <p className="mt-2 text-sm font-bold text-neutral-600">その月だけOCR+{currentBilling.ocrAddonPackSize}枚</p>
+                <strong className="mt-1 block text-2xl font-black text-amber-950">単発追加</strong>
+                <p className="mt-2 text-sm font-bold text-neutral-600">10枚150円 / 30枚350円 / 50枚550円 / 120枚1,000円</p>
               </div>
               <div className="rounded-md border border-green-200 bg-white p-4">
                 <span className="block text-sm font-black text-green-700">今月の請求目安</span>
                 <strong className="mt-1 block text-2xl font-black text-green-950">{hasUnlimitedFeatureAccess ? "0円" : yen(monthlyCharge)}</strong>
-                <p className="mt-2 text-sm font-bold text-neutral-600">{hasUnlimitedFeatureAccess ? `${unlimitedFeatureLabel}では加算しません` : `追加${currentBilling.ocrAddonPacks}回分を含む`}</p>
+                <p className="mt-2 text-sm font-bold text-neutral-600">{hasUnlimitedFeatureAccess ? `${unlimitedFeatureLabel}では加算しません` : `追加${currentAddonStats.addonCount}回分を含む`}</p>
               </div>
             </div>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-blue-100 bg-white p-3">
               <p className="text-xs font-bold text-neutral-600">
-                OCR利用枚数と追加パックは1ヶ月ごとに自動でリセットされます。
+                OCR利用枚数と追加枠は、店舗の更新日ごとに自動で月30枚へ戻ります。
               </p>
               <button className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-black text-blue-800" onClick={resetOcrUsage}>
                 OCR利用枚数を今月分リセット
@@ -8731,7 +8795,7 @@ export function CostNutritionApp() {
                   {currentBilling.ocrAddonHistory.slice().reverse().slice(0, 5).map((record) => (
                     <div key={record.id} className="flex flex-wrap justify-between gap-2 rounded-md bg-blue-50 px-3 py-2 text-xs font-bold text-blue-950">
                       <span>{record.billingMonth} 請求分</span>
-                      <span>+{record.addedLimit}枚 / +{number(record.price, 0)}円</span>
+                      <span>+{record.addedLimit}枚 / +{number(record.price, 0)}円 / {record.paymentStatus === "paid" ? "支払い済み" : "請求予定"}</span>
                       <span>{new Date(record.agreedAt).toLocaleDateString("ja-JP")}</span>
                     </div>
                   ))}
